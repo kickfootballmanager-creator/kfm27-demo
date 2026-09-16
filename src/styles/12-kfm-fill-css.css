@@ -1,0 +1,8 @@
+
+.kcal{display:flex;flex-direction:column;min-height:calc(100vh - 6px)}
+.kcal-body{flex:1;min-height:0}
+.kcal-cal{display:flex;flex-direction:column;height:100%}
+.kcal-grid{flex:1;grid-auto-rows:1fr}
+.kc-cell{min-height:0}
+.kcal-side{height:100%;align-content:start}
+:has(>.kcal),:has(>*>.kcal),:has(>*>*>.kcal){background:#05070d!important}

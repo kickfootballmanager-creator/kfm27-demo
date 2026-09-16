@@ -1,0 +1,46 @@
+
+/* ===== RESPONSIVE (tutti i dispositivi, anche telefono) ===== */
+@media (max-width: 960px){
+  html, body { height: auto; min-height: 100%; }
+  body { overflow-x: hidden; overflow-y: auto; }
+  .fc-dashboard, .draft-container { height: auto !important; min-height: 100vh; grid-template-columns: 1fr !important; padding: 16px !important; gap: 16px !important; }
+  .fc-sidebar, .fc-main, .fc-right { padding: 18px !important; }
+  .fc-top-nav { overflow-x: auto; white-space: nowrap; gap: 16px !important; }
+  .fc-date-main { font-size: 30px !important; }
+  .pitch-wrapper { min-height: 360px; margin: 12px !important; }
+}
+@media (max-width: 600px){
+  .setup-wrap { padding: 14px !important; }
+  .home-title { font-size: 56px !important; }
+  .choice-cards { grid-template-columns: 1fr !important; }
+  .choice-title { font-size: 26px !important; }
+  .choice-card { padding: 22px 20px !important; }
+  .setup-box, .st-box { padding: 24px 18px !important; }
+  .setup-title { font-size: 42px !important; }
+  .fc-date-main { font-size: 24px !important; }
+  .fc-date-sub { font-size: 13px !important; }
+  .fc-nav-item { font-size: 13px !important; }
+  .lg-grid { grid-template-columns: 1fr 1fr !important; }
+  .node { width: 34px !important; height: 34px !important; font-size: 11px !important; }
+  .node-name { font-size: 10px !important; }
+  .p-rate { font-size: 18px !important; }
+  .ch-grid { grid-template-columns: repeat(auto-fill,minmax(78px,1fr)) !important; }
+  .fc-avatar { width: 64px !important; height: 64px !important; }
+}
+@media (max-width: 400px){
+  .home-title { font-size: 46px !important; }
+  .lg-grid { grid-template-columns: 1fr !important; }
+  .choice-card h3 { font-size: 20px !important; }
+}
+@media (max-width: 1150px){
+  html, body { height: auto !important; min-height: 100% !important; overflow-x: hidden; overflow-y: auto; }
+  .fc-shell { height: auto !important; min-height: 100vh !important; overflow: visible !important; padding: 10px 12px 16px !important; }
+  .fc-grid { grid-template-columns: 1fr !important; overflow: visible !important; min-height: 0 !important; height: auto !important; gap: 12px !important; }
+  .fc-sidebar, .fc-main, .fc-right, .fc-page { overflow: visible !important; min-height: 0 !important; height: auto !important; max-height: none !important; }
+  .theme-cal .fc-page { overflow: visible !important; }
+  .fc-topbar { flex-wrap: wrap !important; justify-content: center !important; gap: 10px !important; }
+  .fc-nav { order: 3; width: 100% !important; overflow-x: auto !important; flex-wrap: nowrap !important; white-space: nowrap !important; gap: 16px !important; padding-bottom: 4px; -webkit-overflow-scrolling: touch; }
+  .fc-nav-item { flex: 0 0 auto !important; font-size: 14px !important; padding-bottom: 6px !important; }
+  .fc-bottombar { gap: 12px !important; font-size: 11px !important; }
+  .fc-top-nav { overflow-x: auto; white-space: nowrap; }
+}

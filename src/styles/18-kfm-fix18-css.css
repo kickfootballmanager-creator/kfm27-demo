@@ -1,0 +1,20 @@
+
+/* ------- stemma club: piu' piccolo e piu' basso, non tocca la bandiera ---- */
+.utc .uc-club{top:44.5%!important}
+.utc .uc-club img{width:calc(var(--cw,86px)*.1)!important;height:calc(var(--cw,86px)*.1)!important}
+
+/* ------- sfumatura/sfocatura sul collo della miniface (non su ETERNAL) --- */
+.utc .uc-ph{position:absolute}
+.utc:not(.v-special2) .uc-ph::after{content:'';position:absolute;left:4%;right:4%;bottom:0;
+  height:16%;pointer-events:none;z-index:2;
+  -webkit-backdrop-filter:blur(2.5px);backdrop-filter:blur(2.5px);
+  -webkit-mask-image:linear-gradient(to top,#000 0%,rgba(0,0,0,.55) 55%,rgba(0,0,0,0) 100%);
+  mask-image:linear-gradient(to top,#000 0%,rgba(0,0,0,.55) 55%,rgba(0,0,0,0) 100%)}
+
+/* ------------------- ETERNAL: tutto il blocco info piu' basso ------------ */
+.utc.v-special2 .uc-lv{top:15.5%!important;left:50%!important;width:31%!important}
+.utc.v-special2 .uc-ovr{top:19%!important}
+.utc.v-special2 .uc-pos{top:31%!important}
+.utc.v-special2 .uc-nat{top:38.5%!important}
+.utc.v-special2 .uc-club{top:48.5%!important}
+.utc.v-special2 .uc-ph{top:23.5%!important}

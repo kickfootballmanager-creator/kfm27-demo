@@ -1,0 +1,21 @@
+
+#kfm-esc{display:none!important}
+#kfm-fs2{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(14px);z-index:2147483600;
+  display:flex;align-items:center;gap:12px;padding:11px 20px;background:rgba(6,10,18,.92);border:1px solid rgba(255,255,255,.22);
+  color:#eaf0f8;font-family:Inter,system-ui,sans-serif;font-size:11.5px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;
+  opacity:0;pointer-events:none;transition:opacity .3s ease,transform .3s ease;backdrop-filter:blur(8px);cursor:pointer}
+#kfm-fs2.on{pointer-events:auto}
+#kfm-fs2.on{opacity:1;transform:translateX(-50%) translateY(0)}
+#kfm-fs2 .r{width:18px;height:18px;border-radius:50%;border:2px solid rgba(255,255,255,.25);position:relative;flex:none}
+#kfm-fs2 .r i{position:absolute;inset:-2px;border-radius:50%;border:2px solid #fff;clip-path:inset(0 0 100% 0);transition:clip-path .08s linear}
+.kcal{min-height:100%}
+.kcal-side button,.kcal-side .btn,.kcal-side a.btn{font-family:Inter,system-ui,sans-serif!important;font-weight:800!important;
+  letter-spacing:.16em!important;text-transform:uppercase!important;font-size:11px!important;border-radius:0!important;
+  padding:12px 14px!important;width:100%!important;border:1px solid rgba(255,255,255,.18)!important;
+  background:linear-gradient(150deg,rgba(255,255,255,.1),rgba(255,255,255,.03))!important;color:#eaf0f8!important;
+  box-shadow:none!important;transition:all .22s ease!important;cursor:pointer}
+.kcal-side button:hover{background:#fff!important;color:#06101d!important;transform:translateY(-1px)}
+.kcal-side button.kc-primary{background:#fff!important;color:#06101d!important;border-color:#fff!important}
+.kcal-side button.kc-primary:hover{background:rgba(255,255,255,.86)!important}
+.kcal-side *{font-family:Inter,system-ui,sans-serif!important}
+.kcal-side b,.kcal-side strong{letter-spacing:.06em}

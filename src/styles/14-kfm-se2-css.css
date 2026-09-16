@@ -1,0 +1,12 @@
+
+.utc.v-special2{--ink:#fff4dc;
+  --shadow:0 2px 6px rgba(0,0,0,.95),0 0 5px rgba(48,10,74,.85)}
+.utc.v-special2 .uc-nm{letter-spacing:.4px}
+.utc.v-special2:not(.empty):hover{filter:drop-shadow(0 16px 34px rgba(170,96,255,.5))}
+.ut-pack.v-special2{border-color:rgba(170,96,255,.6);
+  background:linear-gradient(180deg,#170f23,#09070d)}
+.ut-pmeta .pm.t-special2,.mk-tag.t-special2{color:#ecd0ff;
+  border-color:rgba(170,96,255,.55);background:rgba(170,96,255,.16)}
+.ut-orow .ov.r-special2{color:#dcaaff}
+.ut-mcard.v-special2{border-color:rgba(170,96,255,.5);
+  background:linear-gradient(180deg,#150e1f,#09070d)}

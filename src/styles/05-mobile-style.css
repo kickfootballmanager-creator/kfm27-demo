@@ -1,0 +1,645 @@
+
+/* =====================================================================
+   ADATTAMENTO TELEFONO — attivo solo sotto gli 820px di larghezza.
+   Filosofia: COMPRIMERE per far stare le cose nello schermo, non
+   allargarle e costringere a scorrere. Sopra gli 820px non viene
+   toccata nessuna regola: il layout PC resta identico.
+   ===================================================================== */
+@media (max-width: 820px){
+
+  /* ---------- 1. base ---------- */
+  html, body{
+    height:auto !important; min-height:100% !important;
+    overflow-x:hidden !important; overflow-y:auto !important;
+    -webkit-text-size-adjust:100%;
+  }
+  body{ background-attachment:scroll !important; }
+  *{ -webkit-tap-highlight-color:rgba(0,0,0,0); }
+  button, .fc-menu-item, .fc-tile, .fc-rail-item, .p-card, .mk-row, .hub-row,
+  .cal-cell, .fm-node, .rosa-node, .tv-node, .node, .slot-item, .lg-card,
+  .rep-row, .choice-card, .fm-bcard{ touch-action:manipulation; }
+  input, select, textarea{ font-size:16px !important; }  /* evita lo zoom iOS */
+
+  .fc-shell, .fc-dashboard, .draft-container{
+    height:auto !important; min-height:100vh !important; min-height:100dvh !important;
+    max-height:none !important; overflow:visible !important;
+    padding:0 !important; gap:0 !important;
+  }
+  .fc-col{ padding:8px 8px 14px !important; gap:8px !important; overflow:visible !important;
+           min-height:0 !important; height:auto !important; }
+  .cf-fs .fc-col, .fin-fs .fc-col{ padding:0 !important; }
+  .fc-grid{ grid-template-columns:1fr !important; gap:8px !important;
+            overflow:visible !important; min-height:0 !important; }
+  .fc-page{ padding:10px !important; border-radius:14px !important;
+            overflow:visible !important; max-height:none !important; height:auto !important; }
+  .glass-panel{ border-radius:14px !important; }
+  .cf-fs, .fin-fs{
+    height:100vh !important; height:100dvh !important;
+    overflow-y:auto !important; overflow-x:hidden !important; -webkit-overflow-scrolling:touch;
+  }
+
+  /* ---------- 2. navigazione compatta e sempre visibile ---------- */
+  .fc-rail{
+    position:sticky !important; top:0; z-index:60;
+    padding:4px 4px !important; gap:0 !important;
+    box-shadow:0 4px 14px rgba(0,0,0,.3);
+  }
+  .fc-rail-item{ min-width:46px !important; width:auto !important; padding:5px 3px !important; gap:1px !important; }
+  .fc-rail-ic svg{ width:17px !important; height:17px !important; }
+  .fc-rail-lb{ font-size:7.5px !important; letter-spacing:0 !important; }
+  .fc-topbar{ padding:2px 4px !important; gap:6px !important; }
+  .fc-shortcuts, .fc-site-logo{ display:none !important; }
+  .fc-bottombar{ font-size:9px !important; gap:8px !important; padding:5px !important; }
+  .fc-nav, .fc-top-nav, .fm-tabs, .fmd2-tabs, .cf-tabs2, .class-tabs, .hub-sorts,
+  .mk-filters, .cf-pos-row, .fmd2-chips{
+    overflow-x:auto !important; flex-wrap:nowrap !important; white-space:nowrap !important;
+    -webkit-overflow-scrolling:touch; scrollbar-width:none; gap:12px !important;
+  }
+  .fc-nav::-webkit-scrollbar, .fm-tabs::-webkit-scrollbar, .fmd2-tabs::-webkit-scrollbar,
+  .class-tabs::-webkit-scrollbar, .hub-sorts::-webkit-scrollbar,
+  .mk-filters::-webkit-scrollbar{ display:none; }
+  .fc-nav-item, .fm-tab, .fmd2-tab, .cf-t{ flex:0 0 auto !important; font-size:12px !important; }
+
+  /* ---------- 3. titoli e numeri giganti, ridotti ---------- */
+  .setup-title{ font-size:30px !important; }
+  .home-title{ font-size:38px !important; }
+  .choice-title{ font-size:19px !important; margin-bottom:10px !important; }
+  .custom-h{ font-size:22px !important; }
+  .custom-sub, .fm-form-hint, .fc-welcome{ font-size:11px !important; }
+  .fc-date-main{ font-size:20px !important; margin-bottom:10px !important; }
+  .fc-date-sub{ font-size:12px !important; }
+  .fc-match-info h2{ font-size:19px !important; }
+  .fc-match-info p{ font-size:11px !important; }
+  .fm-sq-title, .fin-head h2, .cf-head2 h2, .se-title, .m26-title{ font-size:18px !important; }
+  .ui-score{ font-size:30px !important; }
+  .ui-stat-val{ font-size:20px !important; }
+  .hd-ovr, .fm-dovr, .ps-rate, .hr-ovrbig{ font-size:24px !important; }
+  .se-v, .mk-budget-v, .fin-kpi .k-v, .tr-proj-card b, .fc-donut-inner b{ font-size:19px !important; }
+  .neg-done-ic, .choice-ic{ font-size:26px !important; }
+  .p-rate{ font-size:17px !important; }
+
+  /* ---------- 4. immagini e blocchi sovradimensionati ---------- */
+  .fc-avatar{ width:48px !important; height:48px !important; }
+  .fc-team-logo{ width:40px !important; height:40px !important; }
+  .fc-match-logos img{ width:44px !important; height:44px !important; }
+  .fc-donut-wrap{ width:92px !important; height:92px !important; }
+  .fc-donut-inner{ width:72px !important; height:72px !important; }
+  .fc-news-img{ height:96px !important; }
+  .fc-social{ height:190px !important; }
+  .fc-gauge{ width:54px !important; height:54px !important; }
+  .fc-vs > img, .ui-team img, .fmd2-vs-team img{ width:42px !important; height:42px !important; }
+  .m26-vs .t img{ width:44px !important; height:44px !important; }
+  .logo-opt{ width:44px !important; height:44px !important; }
+  .cal-side-logo{ width:56px !important; height:56px !important; }
+  .fm-dhead img, .cf-hc-face, .ps-face, .neg-face-wrap{ width:46px !important; height:46px !important; }
+  .se-badge{ width:52px !important; height:52px !important; }
+  .tr-id{ width:auto !important; max-width:100% !important; }
+  .fm-loanout-card{ width:150px !important; }
+  .fc-match-banner{ flex-direction:column !important; align-items:flex-start !important;
+                    gap:10px !important; padding:12px 0 !important; }
+
+  /* ---------- 5. densita': piu' colonne strette, non una sola larga ---------- */
+  .lg-grid{ grid-template-columns:repeat(3,1fr) !important; gap:6px !important; margin-bottom:12px !important; }
+  .lg-card{ padding:9px 4px !important; border-radius:12px !important; }
+  .lg-badge{ height:30px !important; margin-bottom:5px !important; }
+  .lg-badge img{ max-height:28px !important; max-width:28px !important; }
+  .lg-name{ font-size:11px !important; line-height:1.15 !important; }
+  .lg-meta{ font-size:8.5px !important; }
+  .choice-cards{ grid-template-columns:1fr !important; gap:8px !important; }
+  .choice-card{ padding:12px 14px !important; border-radius:14px !important; }
+  .choice-card h3{ font-size:15px !important; }
+  .choice-card p{ font-size:11px !important; }
+  .fc-tiles{ grid-template-columns:repeat(4,1fr) !important; gap:5px !important; margin:8px 0 !important; }
+  .fc-tile{ padding:7px 2px !important; border-radius:11px !important; gap:2px !important; }
+  .fc-tile span{ font-size:14px !important; }
+  .fc-tile b{ font-size:8px !important; }
+  .fmd2-facts, .ps-info, .fin-body, .tr-proj{
+    grid-template-columns:1fr 1fr !important; gap:6px !important;
+  }
+  .search-grid, .custom-grid, .cf-hubgrid{
+    grid-template-columns:repeat(auto-fit,minmax(130px,1fr)) !important; gap:8px !important;
+  }
+  .fc-grid > *, .fmd2-grid > *{ min-width:0 !important; }
+  .fmd2-grid, .hub-layout, .tv-wrap, .ui-body, .fm-dgrid, .hd-grid,
+  .rosa-layout, .rosa-layout.rosa-fm, .rosa-wrap, .fm-sq-grid, .cal-layout,
+  .fm-loanout-grid{ grid-template-columns:1fr !important; gap:8px !important; }
+  .fm-dact, .fm-loan-actions{ grid-template-columns:1fr 1fr !important; gap:6px !important; }
+
+  /* ---------- 6. liste: restano riquadri che scorrono da soli ---------- */
+  .rep-list{ max-height:56vh !important; max-height:56dvh !important; padding:4px !important; }
+  .rep-row{ padding:7px 9px !important; gap:9px !important; }
+  .rep-row img{ width:26px !important; height:26px !important; }
+  .rep-n{ font-size:12.5px !important; }
+  .rep-s{ font-size:10px !important; }
+  .rep-go{ display:none !important; }
+  .mk-list, .hub-list, .off-list, .cf-reslist, .players-list, .slots-list, .se-renew-list{
+    max-height:52vh !important; max-height:52dvh !important; overflow-y:auto !important;
+    -webkit-overflow-scrolling:touch;
+  }
+  .off-row, .cf-rgrow, .rnw-row{ padding:6px 9px !important; gap:8px !important; }
+  .tr-face{ width:28px !important; height:28px !important; }
+  .mk-tag, .hub-sub{ font-size:9.5px !important; }
+
+  /* ============ MERCATO: riga essenziale, il resto si apre toccando ============ */
+  .cf-screen, .cf-results{ padding:8px 10px 10px !important; }
+  .cf-head2{ flex-wrap:wrap !important; gap:6px !important; align-items:center !important;
+             margin-bottom:8px !important; }
+  .cf-head2 .mk-budget-v{ font-size:16px !important; }
+  .cf-head2 .mk-budget-l{ font-size:9px !important; }
+  .cf-tabs2{ gap:14px !important; margin-top:4px !important; }
+  .cf-tabs2 span{ font-size:12.5px !important; }
+  .cf-resbar{ gap:8px !important; margin-bottom:8px !important; }
+  .cf-resbar h2{ font-size:15px !important; }
+  .cf-esc, .cf-key{ display:none !important; }
+  .cf-grid{ grid-template-columns:1fr !important; grid-auto-rows:auto !important; gap:8px !important; }
+  .cf-tile{ padding:10px !important; }
+  .cf-tile.tall3{ grid-row:auto !important; }
+  .cf-bigic svg{ width:26px !important; height:26px !important; }
+  .cf-crest{ width:34px !important; height:34px !important; }
+  .cf-selv{ font-size:14px !important; }
+  .cf-selsub{ font-size:9.5px !important; }
+  .cf-pchip{ min-width:42px !important; padding:7px 8px !important; font-size:12px !important; }
+  .cf-schip{ padding:6px 10px !important; font-size:10.5px !important; }
+  .cf-bar{ gap:8px !important; padding:9px 10px !important; margin-top:8px !important; }
+  .cf-search{ margin-left:0 !important; flex:1 1 100% !important; justify-content:center !important; }
+  .cf-reslist{ padding-right:0 !important; gap:6px !important; }
+
+  /* riga giocatore: faccia, nome, ruolo/club, OVR, prezzo. Nient'altro. */
+  .mk-row{ padding:8px 10px !important; gap:9px !important; border-radius:11px !important; }
+  .mk-face{ width:34px !important; height:34px !important; }
+  .mk-name{ font-size:12.5px !important; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .mk-meta{ font-size:10px !important; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .mk-rate{ font-size:17px !important; width:26px !important; }
+  .mk-price{ width:auto !important; min-width:50px !important; font-size:12px !important; }
+  .mk-tag{ font-size:8px !important; padding:1px 4px !important; }
+  /* i pulsanti azione spariscono dalla riga: si trovano nella scheda che si apre al tocco */
+  .mk-row[onclick] .mk-buy{ display:none !important; }
+  .mk-row[onclick]::after{
+    content:'\203A'; flex:none; color:var(--ink-light);
+    font-size:20px; line-height:1; opacity:.55; margin-left:2px;
+  }
+  .cf-reslist .mk-row[onclick]::after{ color:rgba(255,255,255,.55); }
+  /* la riga contratti (non cliccabile) resta con i suoi pulsanti, ma compatti */
+  .mk-row .mk-buy{ padding:7px 10px !important; font-size:11px !important; }
+
+  /* ============ HUB MERCATO: schede a lista, dettagli al tocco ============ */
+  .cf-hubgrid{ grid-template-columns:1fr !important; gap:6px !important; padding:4px 0 14px !important; }
+  .cf-hubcard{
+    display:grid !important;
+    grid-template-columns:44px minmax(0,1fr) auto auto !important;
+    grid-template-areas:"face name ovr price" "face meta ovr price" !important;
+    align-items:center !important; gap:1px 9px !important;
+    padding:8px 26px 8px 9px !important; border-radius:12px !important; text-align:left !important;
+  }
+  .cf-hubcard .cf-hc-face{ grid-area:face; width:44px !important; height:44px !important; }
+  .cf-hubcard .cf-hc-name{ grid-area:name; margin-top:0 !important; font-size:12.5px !important; }
+  .cf-hubcard .cf-hc-meta{ grid-area:meta; font-size:10px !important; }
+  .cf-hubcard .cf-hc-meta + .cf-hc-meta{ display:none !important; }
+  .cf-hubcard .cf-hc-ovr{ grid-area:ovr; margin-top:0 !important; font-size:13px !important;
+                          padding:2px 8px !important; }
+  .cf-hubcard .cf-hc-price{ grid-area:price; margin:0 !important; font-size:12px !important;
+                            text-align:right; min-width:48px; }
+  .cf-hubcard .cf-hc-stats, .cf-hubcard .mk-buy{ display:none !important; }
+  .cf-hubcard .hubc-x{ top:50% !important; transform:translateY(-50%); right:6px !important;
+                       font-size:20px !important; padding:0 4px !important; }
+  .cf-hubempty{ padding:30px 16px !important; font-size:12px !important; }
+
+  /* ---- la scheda che si apre al tocco: tutto dentro una schermata ---- */
+  .m-header{ padding:12px 14px !important; }
+  .ps-top{ padding:12px 14px !important; gap:10px !important; }
+  .ps-id h2{ font-size:16px !important; }
+  .ps-id p{ font-size:11px !important; }
+  .ps-id .ps-sub{ font-size:10px !important; }
+  .ps-info{ padding:10px 14px !important; gap:6px !important; }
+  .ps-info div{ padding:6px 8px !important; }
+  .ps-info span{ font-size:9px !important; }
+  .ps-info b{ font-size:12.5px !important; }
+  .ps-stats{ padding:2px 14px 12px !important; }
+  .ps-row{ gap:8px !important; margin-bottom:6px !important; }
+  .ps-l{ width:58px !important; font-size:10.5px !important; }
+  .ps-v{ font-size:13px !important; width:22px !important; }
+  .ps-actions{ padding:0 14px 16px !important; gap:6px !important; }
+  .ps-price{ font-size:11px !important; }
+
+  /* ============ SQUAD HUB: lista corta + scheda subito sotto ============ */
+  .hub-top{ gap:8px !important; margin-bottom:6px !important; }
+  .hub-top .custom-h{ font-size:17px !important; }
+  .hub-rate{ gap:8px !important; padding:6px 10px !important; }
+  .hr-ovrbig{ font-size:20px !important; }
+  .hub-list{ max-height:36vh !important; max-height:36dvh !important; }
+  .hub-row{ padding:6px 9px !important; gap:8px !important; }
+  .hub-row .hr-no, .hub-row .hr-role, .hub-row .hr-mor,
+  .hub-listhead span:nth-child(1), .hub-listhead span:nth-child(5),
+  .hub-listhead span:nth-child(6){ display:none !important; }
+  .hr-face{ width:28px !important; height:28px !important; }
+  .hr-name{ font-size:12px !important; gap:5px !important; }
+  .hr-pos{ font-size:10px !important; }
+  .hr-ovr{ font-size:15px !important; width:auto !important; min-width:30px !important; }
+  .hub-tag{ font-size:8px !important; padding:1px 4px !important; }
+  .hub-listhead{ padding:7px 9px !important; font-size:9.5px !important; }
+  .hub-detail{ min-height:0 !important; padding:12px !important; border-radius:12px !important; }
+  .class-table-wrap{ max-height:56vh !important; max-height:56dvh !important; overflow:auto !important; }
+  .data-table{ font-size:10.5px !important; }
+  .data-table th{ padding:7px 3px !important; font-size:9px !important; }
+  .data-table td{ padding:7px 3px !important; }
+  .data-table .team-cell img, .data-table .t-logo{ width:16px !important; height:16px !important; }
+
+  /* ---------- 7. ROSA E FORMAZIONE: il campo entra nello schermo ---------- */
+  .fm-squad, .rosa-wrap{
+    padding:8px !important; min-height:0 !important; overflow:visible !important;
+    background-attachment:scroll !important;
+  }
+  .fm-sq-top{ gap:8px !important; margin-bottom:8px !important; }
+  .fm-pitchwrap{ padding:6px !important; border-radius:12px !important; }
+  .fm-pitch, .rosa-pitch, .tv-pitch{
+    width:auto !important;
+    height:min(52vh, calc(92vw * 9 / 7)) !important;
+    height:min(52dvh, calc(92vw * 9 / 7)) !important;
+    max-height:none !important;
+    margin:0 auto !important;
+  }
+  .fm-node{ width:42px !important; }
+  .fm-node img, .fm-node .fn-role{ width:30px !important; height:30px !important; }
+  .fm-node .fn-n{ font-size:8px !important; margin-top:1px !important; }
+  .fm-node .fn-pos{ font-size:7px !important; }
+  .fm-node .fn-r{ font-size:8.5px !important; top:-3px !important; right:3px !important; }
+  .rosa-node{ width:40px !important; }
+  .rosa-node img{ width:29px !important; height:29px !important; }
+  .tv-node{ width:38px !important; }
+  .node{ width:32px !important; height:32px !important; font-size:11px !important; }
+  .node-name{ font-size:8px !important; padding:1px 4px !important; }
+  .pitch-wrapper{ margin:8px !important; min-height:260px !important; }
+  .fm-bench{ margin-top:8px !important; }
+  .fm-bench-h, .rosa-bench-h, .tv-bench-h{ font-size:10px !important; margin-bottom:5px !important; }
+  .fm-bench-grid, .rosa-bench-grid, .tv-bench-grid{
+    grid-template-columns:repeat(auto-fill,minmax(92px,1fr)) !important;
+    gap:5px !important; max-height:104px !important; overflow-y:auto !important;
+  }
+  .fm-bcard{ width:auto !important; max-width:none !important; flex:1 1 auto !important;
+             padding:4px 6px !important; gap:5px !important; border-radius:9px !important; }
+  .fm-bcard img{ width:24px !important; height:24px !important; }
+  .fm-bcard .fb-n{ font-size:10px !important; }
+  .fm-bcard .fb-p{ font-size:8.5px !important; }
+  .fm-bcard .fb-r{ font-size:11px !important; }
+  .fm-detail, .rosa-fmdetail{
+    position:static !important; max-height:none !important; padding:10px !important;
+    border-radius:12px !important;
+  }
+  .fm-attr, .fm-dsec-h, .fm-dhint{ font-size:10.5px !important; }
+  .fm-formgrid{ grid-template-columns:repeat(3,1fr) !important; gap:6px !important; }
+  .fm-formbtn{ padding:9px 4px !important; font-size:13px !important; }
+  .fm-formbtn small{ font-size:8.5px !important; margin-top:2px !important; }
+
+  /* ---------- 8. calendario ---------- */
+  .cal-cell{ min-height:38px !important; padding:3px !important; font-size:9px !important; }
+  .cal-num{ font-size:10px !important; }
+  .cal-ev, .cal-res{ font-size:8px !important; }
+  .cal-dow{ font-size:9px !important; }
+  .cal-grid, .cal-dows{ gap:3px !important; }
+
+  /* ---------- 9. bottoni e modali ---------- */
+  .btn-primary, .fc-action-btn, .fc-menu-item, .m26-btn, .se-btn, .hd-btn, .fm-abtn,
+  .neg-go, .cf-escbtn, .mk-buy, .hub-offbtn, .rnw-btn, .cal-adv-btn, .choice-go, .choice-back{
+    min-height:42px !important; padding:10px 14px !important; font-size:14px !important;
+  }
+  .fc-menu-item{ padding:10px 14px !important; font-size:13px !important; }
+  .fc-menu-list{ margin-top:12px !important; gap:6px !important; }
+  .modal-overlay, .fmd2-pop-ov, .rmenu-ov{ padding:0 !important; align-items:flex-end !important; }
+  .modal-box, .m26-card, .ps-box, .pick-box, .neg-box, .tv-box, .se-card,
+  .rmenu, .fmd2-pop, .prize-box, .match-ui-box{
+    width:100% !important; max-width:100% !important;
+    max-height:90vh !important; max-height:90dvh !important;
+    overflow-y:auto !important; -webkit-overflow-scrolling:touch;
+    border-radius:18px 18px 0 0 !important;
+    padding:14px 12px calc(14px + env(safe-area-inset-bottom)) !important;
+  }
+  .choice-wrap, .league-wrap, .tr-wrap, .setup-box{ width:100% !important; max-width:100% !important; }
+  .setup-wrap{
+    height:auto !important; min-height:100vh !important; min-height:100dvh !important;
+    justify-content:flex-start !important; padding:14px 10px 24px !important;
+  }
+  .setup-box{ padding:18px 14px !important; gap:14px !important; }
+  .se-wrap{ padding:14px 10px calc(14px + env(safe-area-inset-bottom)) !important; }
+  .mgr-toast{ left:8px !important; right:8px !important; width:auto !important; font-size:12px !important; }
+
+
+  /* ================= CORREZIONI DA TEST SU DISPOSITIVO ================= */
+  /* 1. niente sbordamento orizzontale: 1fr = minmax(auto,1fr) e un figlio largo
+        (es. la riga panchina con il testo lungo) sfondava la griglia, spingendo
+        il pannello dettagli fuori dallo schermo */
+  .fm-sq-grid, .rosa-wrap, .rosa-layout, .rosa-layout.rosa-fm, .hub-layout,
+  .cal-layout, .tv-wrap, .fmd2-grid, .fc-grid, .cf-grid, .ui-body, .fin-body,
+  .fm-loanout-grid, .hd-grid{ grid-template-columns:minmax(0,1fr) !important; }
+  .fm-sq-grid > *, .rosa-wrap > *, .hub-layout > *, .cal-layout > *, .tv-wrap > *,
+  .fmd2-grid > *, .fc-grid > *, .cf-grid > *, .fm-dgrid > *, .fin-body > *,
+  .ui-body > *{ min-width:0 !important; max-width:100% !important; }
+  .fm-squad, .fm-detail, .rosa-panel, .rosa-list, .fm-pitchwrap, .fc-page,
+  .cf-screen, .fin-screen, .hub-detail{ overflow-x:hidden !important; }
+  .fm-bench-hint, .fc-bottombar{ display:none !important; }
+
+  /* 2. campo formazione: altezza esplicita, senza dipendere da aspect-ratio */
+  .fm-pitch, .rosa-pitch, .tv-pitch{
+    width:100% !important; max-width:calc(52vh * 0.78) !important;
+    height:52vh !important; max-height:none !important;
+    aspect-ratio:auto !important; margin:0 auto !important;
+  }
+  @supports (height:1dvh){
+    .fm-pitch, .rosa-pitch, .tv-pitch{ max-width:calc(52dvh * 0.78) !important; height:52dvh !important; }
+  }
+
+  /* 3. panchina: striscia che si scorre col dito (l'hover non esiste sul telefono) */
+  .fm-bench{ min-height:0 !important; }
+  .fm-bench-grid, .fm-bench.open .fm-bench-grid, .fm-bench-grid.raised{
+    position:static !important; display:flex !important; flex-wrap:nowrap !important;
+    max-height:none !important; overflow-x:auto !important; overflow-y:hidden !important;
+    left:auto !important; right:auto !important; bottom:auto !important;
+    gap:6px !important; padding:4px 0 6px !important; -webkit-overflow-scrolling:touch;
+  }
+  .fm-bcard, .fm-bench.open .fm-bench-grid .fm-bcard, .fm-bench-grid.raised .fm-bcard{
+    flex:0 0 auto !important; width:auto !important; min-width:112px !important;
+    max-width:none !important; padding:5px 7px !important;
+  }
+  .fm-bench.open .fm-bench-grid .fm-bcard img, .fm-bench-grid.raised .fm-bcard img{
+    width:24px !important; height:24px !important;
+  }
+
+  /* 4. intestazione schermata squadra piu' bassa */
+  .fm-sq-title{ font-size:16px !important; }
+  .fm-sq-sub{ font-size:10px !important; line-height:1.35 !important; }
+  .fm-sq-actions{ display:grid !important; grid-template-columns:1fr 1fr 1fr !important;
+                  gap:5px !important; margin-bottom:8px !important; }
+  .fm-abtn{ min-height:36px !important; padding:8px 4px !important; font-size:10.5px !important;
+            justify-content:center !important; text-align:center !important; }
+  .fm-tab{ padding:7px 12px !important; font-size:11.5px !important; }
+
+  /* 5. Mercato Rosa: la colonna nome spariva, schiacciata dalle colonne fisse */
+  .rt-head, .rt-row{
+    grid-template-columns:26px 32px 28px minmax(0,1fr) 26px 32px !important;
+    gap:6px !important; padding:6px 8px !important;
+  }
+  .rt-mor{ display:none !important; }
+  .rt-name{ font-size:12px !important; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .rt-face{ width:26px !important; height:26px !important; }
+  .rt-no, .rt-pos, .rt-age, .rt-ovr{ font-size:11px !important; }
+  .rt-actions{ grid-template-columns:1fr 1fr !important; gap:5px !important; padding:8px !important; }
+  .rt-actions button{ font-size:10.5px !important; padding:8px 7px !important;
+                      white-space:normal !important; text-align:center !important; line-height:1.25 !important; }
+  .rosa-list{ max-height:46vh !important; overflow-y:auto !important; }
+  .rosa-panel{ padding:10px !important; }
+  .rp-mface{ width:34px !important; height:34px !important; }
+
+  /* 6. filtri mercato: il corpo del riquadro collassava a zero (flex:1 + min-height:0) */
+  .cf-tile{ min-height:0 !important; }
+  .cf-body, .cf-pick-face, .cf-pos{ flex:none !important; min-height:auto !important; }
+  .cf-tile .cf-t{ margin-bottom:6px !important; }
+
+  /* ---------- 10. partita FM (diretta 2D) ---------- */
+  #fm26{ height:100vh; height:100dvh; }
+  #fm26 .fmx-main{ padding:7px !important; gap:7px !important; }
+  #fm26 .fmx-tabs{ padding:5px 7px !important; gap:5px !important; }
+  #fm26 .fmx-tabs button{ padding:9px 4px !important; font-size:11px !important; }
+  #fm26 .fmx-seg2 button{ padding:8px 4px !important; font-size:11px !important; }
+  #fm26 .fmx-card{ padding:10px !important; border-radius:11px !important; }
+  #fm26 .fmx-pitch{
+    flex:0 0 auto !important; aspect-ratio:16/11;
+    min-height:170px !important; max-height:44vh; max-height:44dvh;
+  }
+  #fm26 .fmx-tok b{ display:none !important; }
+  #fm26 .fmx-cap{ font-size:11px !important; padding:6px 9px !important; }
+  #fm26 .fmx-ev{ padding:8px 9px !important; gap:8px !important; }
+  #fm26 .fmx-ev .tx{ font-size:12px !important; }
+  #fm26 .fmx-ev .mn{ font-size:11px !important; min-width:32px !important; }
+  #fm26 .fmx-bot{
+    position:sticky; bottom:0; z-index:20; gap:5px !important;
+    padding:7px 8px calc(7px + env(safe-area-inset-bottom)) !important;
+  }
+  #fm26 .fmx-bot .fmx-btn{ flex:1 1 46%; min-height:40px; padding:8px 6px !important;
+                           font-size:11px !important; text-align:center; }
+  #fm26 .fmx-spd{ flex:1 1 100%; display:flex; gap:5px; }
+  #fm26 .fmx-spd .fmx-btn{ flex:1; min-width:0 !important; }
+  #fm26 .fmx-box{ width:100% !important; max-height:86vh !important; max-height:86dvh !important;
+                  border-radius:16px !important; padding:14px 12px !important; }
+  #fm26 .fmx-acts .fmx-btn{ min-width:0 !important; flex:1 1 100%; }
+  #fm26 .fmx-ov{ padding:8px !important; }
+
+  /* ---------- 11. partita arcade 3D ---------- */
+  #m26-bug{ top:calc(6px + env(safe-area-inset-top)) !important; left:6px !important; }
+  #m26-bug .sc{ font-size:17px !important; }
+  #m26-bug .tm{ font-size:11px !important; }
+  #m26-bug .tm img{ width:16px !important; height:16px !important; }
+  #m26-hint{ display:none !important; }
+  #m26-ov #m26-radar{ width:104px !important; height:70px !important;
+                      bottom:calc(6px + env(safe-area-inset-bottom)) !important; }
+  #m26-pbar{ bottom:calc(84px + env(safe-area-inset-bottom)) !important; padding:5px 9px !important; }
+  #m26-pbar img{ width:26px !important; height:26px !important; }
+  #m26-pow{ bottom:calc(126px + env(safe-area-inset-bottom)) !important; width:130px !important; }
+}
+
+/* ---------- schermi molto stretti (iPhone SE, 360px e simili) ---------- */
+@media (max-width: 400px){
+  .fc-tiles{ grid-template-columns:repeat(4,1fr) !important; }
+  .setup-title{ font-size:26px !important; }
+  .choice-title{ font-size:17px !important; }
+  .fc-date-main{ font-size:18px !important; }
+  .fm-node{ width:38px !important; }
+  .fm-node img, .fm-node .fn-role{ width:27px !important; height:27px !important; }
+  .fm-bench-grid, .rosa-bench-grid, .tv-bench-grid{
+    grid-template-columns:repeat(auto-fill,minmax(84px,1fr)) !important;
+  }
+  .fm-formgrid{ grid-template-columns:repeat(2,1fr) !important; }
+  .data-table{ font-size:9.5px !important; }
+  #fm26 .fmx-bot .fmx-btn{ flex:1 1 100%; }
+}
+
+/* =====================================================================
+   TELEFONO IN ORIZZONTALE (larghezza fino a 1024px con altezza <=560px:
+   un PC non entra mai in questa combinazione). Qui lo spazio scarso e'
+   l'ALTEZZA, quindi si torna a due colonne e si abbassa tutto.
+   ===================================================================== */
+@media (max-width:1024px) and (max-height:560px){
+
+  html, body{ height:auto !important; overflow-x:hidden !important; overflow-y:auto !important; }
+  *{ -webkit-tap-highlight-color:rgba(0,0,0,0); }
+  input, select, textarea{ font-size:16px !important; }
+  .fc-shell, .fc-dashboard, .draft-container{
+    height:auto !important; min-height:100vh !important; overflow:visible !important; padding:0 !important;
+  }
+  .fc-col{ padding:6px 8px 12px !important; gap:7px !important; height:auto !important; overflow:visible !important; }
+  .fc-page{ padding:9px !important; border-radius:12px !important; overflow:visible !important;
+            max-height:none !important; height:auto !important; }
+  .cf-fs, .fin-fs{ height:100vh !important; overflow-y:auto !important; overflow-x:hidden !important; }
+  .cf-screen, .cf-results, .fin-screen{ padding:7px 10px !important; }
+
+  /* barra di navigazione: solo icone */
+  .fc-rail{ position:sticky !important; top:0; z-index:60; padding:2px 4px !important; }
+  .fc-rail-item{ min-width:40px !important; padding:4px 2px !important; }
+  .fc-rail-lb{ display:none !important; }
+  .fc-rail-ic svg{ width:18px !important; height:18px !important; }
+  .fc-bottombar, .fc-shortcuts, .fm-bench-hint, .cf-esc, .cf-key{ display:none !important; }
+  .fc-nav, .fm-tabs, .fmd2-tabs, .cf-tabs2, .class-tabs, .hub-sorts, .mk-filters{
+    overflow-x:auto !important; flex-wrap:nowrap !important; white-space:nowrap !important;
+    scrollbar-width:none; gap:12px !important;
+  }
+
+  /* titoli bassi: l'altezza e' preziosa */
+  .setup-title{ font-size:24px !important; }
+  .choice-title{ font-size:17px !important; margin-bottom:8px !important; }
+  .custom-h, .fm-sq-title, .fin-head h2, .cf-head2 h2, .se-title, .m26-title{ font-size:16px !important; }
+  .custom-sub, .fm-sq-sub, .fm-form-hint{ font-size:10px !important; }
+  .fc-date-main{ font-size:17px !important; }
+  .fc-match-info h2{ font-size:16px !important; }
+  .fc-avatar{ width:40px !important; height:40px !important; }
+  .fc-donut-wrap{ width:76px !important; height:76px !important; }
+  .fc-donut-inner{ width:58px !important; height:58px !important; }
+  .fc-news-img{ height:74px !important; }
+  .fc-social{ height:150px !important; }
+  .setup-wrap{ height:auto !important; min-height:100vh !important;
+               justify-content:flex-start !important; padding:12px 14px 20px !important; }
+
+  /* due colonne: in orizzontale ci stanno bene */
+  .fm-sq-grid, .rosa-wrap, .rosa-layout, .hub-layout, .fmd2-grid, .cal-layout, .tv-wrap{
+    grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr) !important; gap:8px !important;
+  }
+  .fc-grid{ grid-template-columns:minmax(0,1fr) minmax(0,1fr) !important; gap:8px !important; }
+  .cf-grid{ grid-template-columns:repeat(3,minmax(0,1fr)) !important; grid-auto-rows:auto !important; gap:7px !important; }
+  .lg-grid{ grid-template-columns:repeat(6,1fr) !important; gap:6px !important; }
+  .fc-tiles{ grid-template-columns:repeat(4,1fr) !important; gap:5px !important; }
+  .fm-sq-grid > *, .rosa-wrap > *, .hub-layout > *, .fmd2-grid > *, .fc-grid > *,
+  .cf-grid > *, .tv-wrap > *{ min-width:0 !important; max-width:100% !important; }
+  .fm-squad, .fm-detail, .rosa-panel, .rosa-list, .fm-pitchwrap, .fc-page,
+  .cf-screen, .hub-detail{ overflow-x:hidden !important; }
+
+  /* campo formazione: si prende l'altezza disponibile */
+  .fm-pitch, .rosa-pitch, .tv-pitch{
+    width:100% !important; max-width:calc(74vh * 0.78) !important;
+    height:74vh !important; max-height:none !important;
+    aspect-ratio:auto !important; margin:0 auto !important;
+  }
+  .fm-node{ width:38px !important; }
+  .fm-node img, .fm-node .fn-role{ width:27px !important; height:27px !important; }
+  .fm-node .fn-n{ font-size:7.5px !important; }
+  .fm-node .fn-pos{ font-size:7px !important; }
+  .fm-squad{ padding:7px !important; min-height:0 !important; }
+  .fm-sq-top{ margin-bottom:6px !important; gap:6px !important; }
+  .fm-sq-actions{ display:grid !important; grid-template-columns:1fr 1fr 1fr !important; gap:5px !important;
+                  margin-bottom:7px !important; }
+  .fm-abtn{ min-height:34px !important; padding:7px 4px !important; font-size:10px !important;
+            justify-content:center !important; }
+  .fm-bench-grid, .fm-bench.open .fm-bench-grid, .fm-bench-grid.raised{
+    position:static !important; display:flex !important; flex-wrap:nowrap !important;
+    max-height:none !important; overflow-x:auto !important; overflow-y:hidden !important;
+    left:auto !important; right:auto !important; bottom:auto !important; gap:5px !important;
+  }
+  .fm-bcard, .fm-bench.open .fm-bench-grid .fm-bcard{
+    flex:0 0 auto !important; width:auto !important; min-width:104px !important;
+    max-width:none !important; padding:4px 6px !important;
+  }
+  .fm-bcard img{ width:22px !important; height:22px !important; }
+  .fm-bcard .fb-n{ font-size:9.5px !important; } .fm-bcard .fb-p{ font-size:8px !important; }
+  .fm-detail{ position:static !important; max-height:none !important; padding:9px !important; }
+  .fm-formgrid{ grid-template-columns:repeat(4,1fr) !important; gap:5px !important; }
+  .fm-formbtn{ padding:7px 4px !important; font-size:12px !important; }
+
+  /* liste con scorrimento interno */
+  .rep-list, .mk-list, .hub-list, .off-list, .cf-reslist, .rosa-list, .class-table-wrap{
+    max-height:62vh !important; overflow-y:auto !important; -webkit-overflow-scrolling:touch;
+  }
+  .rep-row{ padding:6px 8px !important; } .rep-row img{ width:24px !important; height:24px !important; }
+  .rep-n{ font-size:12px !important; } .rep-go{ display:none !important; }
+  .lg-card{ padding:8px 4px !important; } .lg-badge{ height:26px !important; margin-bottom:4px !important; }
+  .lg-badge img{ max-height:24px !important; max-width:24px !important; }
+  .lg-name{ font-size:10px !important; } .lg-meta{ font-size:8px !important; }
+
+  /* mercato: stessa logica del verticale, dettagli al tocco */
+  .mk-row{ padding:6px 9px !important; gap:8px !important; }
+  .mk-face{ width:30px !important; height:30px !important; }
+  .mk-name{ font-size:12px !important; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .mk-meta{ font-size:9.5px !important; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .mk-rate{ font-size:15px !important; width:24px !important; }
+  .mk-price{ width:auto !important; min-width:48px !important; font-size:11px !important; }
+  .mk-row[onclick] .mk-buy{ display:none !important; }
+  .cf-hubgrid{ grid-template-columns:repeat(2,minmax(0,1fr)) !important; gap:6px !important; }
+  .cf-hubcard{
+    display:grid !important; grid-template-columns:38px minmax(0,1fr) auto auto !important;
+    grid-template-areas:"face name ovr price" "face meta ovr price" !important;
+    align-items:center !important; gap:1px 8px !important; padding:6px 24px 6px 8px !important;
+  }
+  .cf-hubcard .cf-hc-face{ grid-area:face; width:38px !important; height:38px !important; }
+  .cf-hubcard .cf-hc-name{ grid-area:name; margin-top:0 !important; font-size:11.5px !important; }
+  .cf-hubcard .cf-hc-meta{ grid-area:meta; font-size:9.5px !important; }
+  .cf-hubcard .cf-hc-meta + .cf-hc-meta{ display:none !important; }
+  .cf-hubcard .cf-hc-ovr{ grid-area:ovr; margin-top:0 !important; font-size:12px !important; padding:1px 7px !important; }
+  .cf-hubcard .cf-hc-price{ grid-area:price; margin:0 !important; font-size:11px !important; text-align:right; }
+  .cf-hubcard .cf-hc-stats, .cf-hubcard .mk-buy{ display:none !important; }
+  .cf-hubcard .hubc-x{ top:50% !important; transform:translateY(-50%); right:5px !important; }
+  .cf-tile{ min-height:0 !important; padding:8px !important; }
+  .cf-body, .cf-pick-face, .cf-pos{ flex:none !important; min-height:auto !important; }
+  .cf-selv{ font-size:13px !important; } .cf-crest{ width:30px !important; height:30px !important; }
+  .cf-bigic svg{ width:22px !important; height:22px !important; }
+  .cf-pchip{ min-width:38px !important; padding:6px !important; font-size:11px !important; }
+
+  /* Mercato Rosa */
+  .rt-head, .rt-row{ grid-template-columns:26px 32px 28px minmax(0,1fr) 26px 32px 70px !important;
+                     gap:6px !important; padding:5px 8px !important; }
+  .rt-name{ font-size:11.5px !important; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .rt-face{ width:24px !important; height:24px !important; }
+  .rt-actions{ grid-template-columns:repeat(3,1fr) !important; gap:5px !important; padding:7px !important; }
+  .rt-actions button{ font-size:10px !important; padding:7px 6px !important;
+                      white-space:normal !important; text-align:center !important; }
+
+  /* Squad Hub */
+  .hub-list{ max-height:62vh !important; }
+  .hub-row{ padding:5px 8px !important; gap:7px !important; }
+  .hub-row .hr-no, .hub-listhead span:nth-child(1){ display:none !important; }
+  .hr-face{ width:24px !important; height:24px !important; }
+  .hr-name{ font-size:11.5px !important; } .hr-ovr{ font-size:14px !important; }
+  .hub-detail{ min-height:0 !important; padding:10px !important; }
+
+  /* tabelle */
+  .data-table{ font-size:10.5px !important; }
+  .data-table th{ padding:6px 4px !important; font-size:9px !important; }
+  .data-table td{ padding:6px 4px !important; }
+
+  /* pulsanti e modali: centrate, non a comparsa dal basso */
+  .btn-primary, .fc-action-btn, .fc-menu-item, .m26-btn, .se-btn, .hd-btn,
+  .neg-go, .cf-escbtn, .mk-buy, .hub-offbtn, .rnw-btn, .cal-adv-btn, .choice-go, .choice-back{
+    min-height:36px !important; padding:8px 12px !important; font-size:12.5px !important;
+  }
+  .modal-overlay, .fmd2-pop-ov, .rmenu-ov{ padding:10px !important; align-items:center !important; }
+  .modal-box, .m26-card, .ps-box, .pick-box, .neg-box, .tv-box, .se-card, .rmenu, .fmd2-pop, .prize-box{
+    width:100% !important; max-width:560px !important;
+    max-height:92vh !important; overflow-y:auto !important;
+    border-radius:16px !important; padding:12px !important;
+  }
+  .ps-top{ padding:10px 12px !important; gap:9px !important; }
+  .ps-face{ width:44px !important; height:44px !important; }
+  .ps-rate{ font-size:22px !important; }
+  .ps-info{ grid-template-columns:repeat(3,1fr) !important; padding:8px 12px !important; gap:5px !important; }
+  .ps-info b{ font-size:12px !important; } .ps-info span{ font-size:9px !important; }
+  .ps-stats{ padding:2px 12px 10px !important; }
+  .ps-row{ margin-bottom:5px !important; } .ps-l{ width:56px !important; font-size:10px !important; }
+  .ps-actions{ padding:0 12px 12px !important; gap:6px !important; }
+
+  /* calendario */
+  .cal-cell{ min-height:32px !important; padding:3px !important; font-size:9px !important; }
+
+  /* partita 2D: il campo si prende tutta l'altezza libera */
+  #fm26{ height:100vh; }
+  #fm26 .fmx-main{ padding:6px !important; gap:6px !important; }
+  #fm26 .fmx-tabs button{ padding:7px 4px !important; font-size:10.5px !important; }
+  #fm26 .fmx-pitch{ flex:1 1 auto !important; aspect-ratio:auto !important;
+                    min-height:150px !important; max-height:none !important; }
+  #fm26 .fmx-tok b{ display:none !important; }
+  #fm26 .fmx-cap{ font-size:10.5px !important; padding:5px 8px !important; }
+  #fm26 .fmx-bot{ padding:5px 7px !important; gap:5px !important; flex-wrap:nowrap !important; }
+  #fm26 .fmx-bot .fmx-btn{ flex:1 1 0; min-width:0 !important; min-height:34px;
+                           padding:6px 4px !important; font-size:10px !important; }
+  #fm26 .fmx-clock{ min-width:58px !important; padding:5px !important; }
+  #fm26 .fmx-box{ max-height:88vh !important; padding:12px !important; }
+  #fm26 .fmx-ev .tx{ font-size:11.5px !important; }
+
+  /* partita arcade */
+  #m26-hint{ display:none !important; }
+  #m26-bug .sc{ font-size:16px !important; }
+  #m26-ov #m26-radar{ width:96px !important; height:64px !important; }
+}

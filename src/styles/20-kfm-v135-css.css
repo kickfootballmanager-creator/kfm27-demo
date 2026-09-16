@@ -1,0 +1,94 @@
+
+/* KFM27 v131 - animazioni ampie: allenamento da sinistra, home a pannelli */
+html,body{background:#050b13!important;overscroll-behavior:none}
+#kfm-backdrop{position:fixed;inset:0;background:#050b13;z-index:-1;pointer-events:none}
+.fc-page.kx-plain,.fc-col.kx-plain,#app.kx-plain{background:#050b13!important;border:0!important;box-shadow:none!important;backdrop-filter:none!important;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+.kx-card,.kx-pc,.kx-tr{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+.kx-card{background:rgba(10,17,28,.82)}
+::-webkit-scrollbar{width:9px;height:9px;background:#050b13}
+::-webkit-scrollbar-thumb{background:#1b2637;border-radius:9px}
+::-webkit-scrollbar-thumb:hover{background:#2a3852}
+
+#app,.fc-page,.fc-col,.fc-grid,.kx{overflow-x:hidden}
+
+.kx{min-height:100vh;min-height:100dvh}
+.kx:before,.kx:after{position:fixed!important;inset:0!important}
+.kx:before{background-size:cover!important;background-position:center center!important;background-repeat:no-repeat!important}
+.kx:after{background:linear-gradient(180deg,rgba(5,11,19,.42),rgba(5,11,19,.62) 55%,rgba(5,11,19,.86))!important}
+
+.kx .kx-pills{display:inline-flex;gap:0;padding:0;border-radius:11px;overflow:hidden;background:linear-gradient(180deg,#121a29,#0a0f1a);border:1px solid rgba(212,175,55,.34);box-shadow:0 10px 28px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.06)}
+.kx .kx-pills button{position:relative;border:0;border-radius:0;cursor:pointer;padding:14px 30px;background:transparent;color:#9fb0c9;font:800 13px/1 Oswald,Inter,sans-serif;letter-spacing:.12em;text-transform:uppercase;transition:color .3s cubic-bezier(.4,0,.2,1),background .3s cubic-bezier(.4,0,.2,1)}
+.kx .kx-pills button+button{border-left:1px solid rgba(212,175,55,.2)}
+.kx .kx-pills button:hover{color:#e8eefc;background:rgba(212,175,55,.08)}
+.kx .kx-pills button.on,.kx.st .kx-pills button.on{color:#1a1206;z-index:2;background:linear-gradient(160deg,#f7e08a 0%,#d9b545 42%,#f2d574 68%,#c79a2e 100%);box-shadow:0 0 22px rgba(212,175,55,.42),inset 0 1px 0 rgba(255,255,255,.55)}
+.kx .kx-pills button.on:not(:last-child){clip-path:polygon(0 0,100% 0,calc(100% - 26px) 100%,0 100%);margin-right:-20px;padding-right:52px}
+.kx .kx-pills button.on:last-child{clip-path:polygon(26px 0,100% 0,100% 100%,0 100%);margin-left:-20px;padding-left:52px}
+
+/* ===================== ANIMAZIONI ===================== */
+.kfm-pre{opacity:0!important}
+
+@keyframes kfmHead{from{opacity:0;transform:translate3d(-26px,0,0)}to{opacity:1;transform:none}}
+.kfm-a-head{animation:kfmHead .56s cubic-bezier(.16,1,.3,1) both;animation-delay:calc(var(--i,0) * 62ms)}
+
+/* pannelli home: SOLO transform, nessuna opacita' */
+@keyframes kfmPanL{from{transform:translate3d(-52px,0,0)}to{transform:none}}
+@keyframes kfmPanR{from{transform:translate3d(52px,0,0)}to{transform:none}}
+.kfm-a-panl{animation:kfmPanL .72s cubic-bezier(.16,1,.3,1) both;animation-delay:calc(var(--i,0) * 90ms)}
+.kfm-a-panr{animation:kfmPanR .72s cubic-bezier(.16,1,.3,1) both;animation-delay:calc(var(--i,0) * 90ms)}
+
+/* giocatori allenamento: corsa lunga da sinistra */
+@keyframes kfmRow{from{opacity:0;transform:translate3d(-78px,0,0)}55%{opacity:1}to{opacity:1;transform:none}}
+.kfm-a-row{animation:kfmRow .66s cubic-bezier(.16,1,.3,1) both;animation-delay:calc(var(--i,0) * 56ms)}
+
+@keyframes kfmSlide{from{opacity:0;transform:translate3d(-34px,0,0)}to{opacity:1;transform:none}}
+.kfm-a-slide{animation:kfmSlide .56s cubic-bezier(.16,1,.3,1) both;animation-delay:calc(var(--i,0) * 34ms)}
+
+@keyframes kfmCell{from{opacity:0;transform:scale(.92)}to{opacity:1;transform:none}}
+.kfm-a-cell{animation:kfmCell .46s cubic-bezier(.16,1,.3,1) both;animation-delay:calc(var(--i,0) * 13ms)}
+
+@keyframes kfmCard{from{opacity:0;transform:scale(.965)}to{opacity:1;transform:none}}
+.kfm-a-card{animation:kfmCard .56s cubic-bezier(.16,1,.3,1) both;animation-delay:calc(var(--i,0) * 46ms)}
+
+@keyframes kfmFade{from{opacity:0}to{opacity:1}}
+.kfm-a-fade{animation:kfmFade .38s cubic-bezier(.33,0,.2,1) both}
+
+@keyframes kfmBadge{from{opacity:0;transform:scale(.5)}to{opacity:1;transform:none}}
+.kx-pc i.kfm-a-badge{display:inline-block;animation:kfmBadge .46s cubic-bezier(.34,1.5,.64,1) both;animation-delay:calc(var(--i,0) * 46ms + .38s)}
+
+.kfm-bar-anim{transition:width 1s cubic-bezier(.16,1,.3,1)!important}
+
+/* micro-interazioni */
+button,[role="button"],.kx-cta,.kx-pills button,.kx-card,.kx-tr,.kx-pc,.kc-cell,.kc-card,.kfm-home-item,.kfm-home-btn,.nav-item,.fc-nav button,.fc-nav a,.kx-sel,.kcal-mnav button,.fc-tile,.fc-menu-item,.fc-notif,.fc-obj-i,.fc-comp-row{transition:transform .3s cubic-bezier(.16,1,.3,1),box-shadow .34s cubic-bezier(.16,1,.3,1),background .3s cubic-bezier(.4,0,.2,1),color .26s cubic-bezier(.4,0,.2,1),border-color .3s cubic-bezier(.4,0,.2,1)}
+button:active,[role="button"]:active,.kx-cta:active,.kc-cell:active,.kfm-home-item:active,.kfm-home-btn:active,.nav-item:active,.fc-tile:active,.fc-menu-item:active{transform:scale(.984);transition-duration:.11s}
+.kx-tb tbody tr{transition:background .32s cubic-bezier(.4,0,.2,1)}
+.kx-tb tbody tr:hover{background:rgba(212,175,55,.06)!important}
+.kx-tr:hover{transform:translateX(6px);box-shadow:-6px 0 0 0 rgba(212,175,55,.55),0 16px 34px rgba(0,0,0,.45)}
+.kx-pc:hover,.kc-card:hover,.fc-tile:hover{transform:translateY(-3px);box-shadow:0 16px 34px rgba(0,0,0,.45);border-color:rgba(220,178,100,.32)}
+.kc-cell:hover{transform:scale(1.035);z-index:3;box-shadow:0 10px 24px rgba(0,0,0,.4)}
+.kx-cta:hover,.kx-po button:hover{transform:translateY(-2px)}
+.fc-menu-item:hover,.fc-notif:hover,.fc-comp-row:hover{transform:translateX(4px)}
+
+@media (prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.001s!important;transition-duration:.001s!important}.kfm-bar-anim{transition:none!important}}
+
+/* ===== Sezione SQUADRA: via la cornice bianca e lo stacco dalla barra ===== */
+/* La cornice era .fc-page: bordo bianco 1px, fondo bianco al 65%, raggio 24px. */
+body[data-mode="rosa"] .fc-page{
+  background:transparent !important;
+  border:0 !important;
+  box-shadow:none !important;
+  backdrop-filter:none !important;
+  -webkit-backdrop-filter:none !important;
+  border-radius:0 !important;
+  padding:0 !important;
+}
+
+/* Lo spazio nero a sinistra era il padding di .fc-col (26px):
+   la barra finisce a 80px e la sezione partiva a 107px. */
+body[data-mode="rosa"] .fc-col{ padding-left:0 !important; }
+
+/* Senza margine a sinistra gli angoli arrotondati lascerebbero
+   due spicchi scuri: li tengo solo sul lato destro. */
+body[data-mode="rosa"] .fm-squad{
+  border-radius:0 18px 18px 0 !important;
+  margin-left:0 !important;
+}

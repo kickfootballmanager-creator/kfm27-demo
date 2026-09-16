@@ -1,0 +1,16 @@
+
+/* ---- layout carta: volto piu' grande e basso, stats piu' in basso, stemma club ---- */
+.utc .uc-ph{left:39.5%!important;width:45%!important;top:19.5%!important}
+.utc .uc-ph img{object-position:bottom center}
+.utc .uc-nm{top:66.5%!important}
+.utc.big .uc-stats{top:81%!important;left:13%!important;width:74%!important;gap:3px!important}
+.utc.big .uc-stats b{font-size:14px!important}
+.utc.big .uc-stats b span{font-size:7.5px!important;margin-top:1px}
+
+/* stemma del club sotto la bandiera */
+.utc .uc-club{position:absolute;left:12%;width:27%;top:41.5%;display:flex;
+  align-items:center;justify-content:center;line-height:1;pointer-events:none}
+.utc .uc-club img{width:calc(var(--cw,86px)*.125);height:calc(var(--cw,86px)*.125);
+  display:block;object-fit:contain;
+  filter:drop-shadow(0 1px 2px rgba(0,0,0,.6))}
+.utc.v-legends .uc-club{display:none}

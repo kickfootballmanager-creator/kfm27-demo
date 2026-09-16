@@ -1,0 +1,35 @@
+
+/* scelta orientamento — questi elementi esistono SOLO su telefono */
+#orient-ask, #orient-rot{
+  position:fixed; inset:0; z-index:2000000; display:none;
+  align-items:center; justify-content:center; padding:22px;
+  background:radial-gradient(120% 100% at 50% 0%, #0d2233 0%, #050b12 62%, #02060b 100%);
+  font-family:'Inter',system-ui,sans-serif; color:#e8f1f8;
+}
+#orient-ask.on, #orient-rot.on{ display:flex; }
+.oa-in, .or-in{ width:100%; max-width:420px; text-align:center; }
+.oa-t{ font-family:'Anton','Oswald',sans-serif; font-size:26px; letter-spacing:1px;
+       text-transform:uppercase; margin-bottom:8px; }
+.oa-s, .or-s{ font-size:13px; line-height:1.5; color:#93a6b8; margin-bottom:22px; }
+.oa-g{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.oa-g button{
+  display:flex; flex-direction:column; align-items:center; gap:12px;
+  padding:20px 10px 16px; border-radius:18px; cursor:pointer;
+  background:linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,.03));
+  border:1.5px solid rgba(255,255,255,.14); color:#fff;
+  font-family:'Oswald',sans-serif; font-size:14px; font-weight:600;
+  letter-spacing:.6px; text-transform:uppercase; transition:.15s;
+}
+.oa-g button:active{ transform:scale(.97); }
+.oa-g button.sel{ border-color:#00d26a; background:rgba(0,210,106,.14); }
+.oa-ic{ display:block; border:2.5px solid currentColor; border-radius:5px; opacity:.85; }
+.oa-ic.p{ width:34px; height:54px; }
+.oa-ic.l{ width:54px; height:34px; }
+.oa-note{ margin-top:18px; font-size:11px; color:#6d8092; line-height:1.5; }
+.or-ic{ font-size:44px; margin-bottom:10px; animation:orSpin 2.4s ease-in-out infinite; }
+@keyframes orSpin{ 0%,55%{ transform:rotate(0) } 75%,100%{ transform:rotate(90deg) } }
+.or-t{ font-family:'Anton','Oswald',sans-serif; font-size:22px; letter-spacing:1px;
+       text-transform:uppercase; margin-bottom:8px; }
+.or-b{ margin-top:6px; padding:12px 20px; border-radius:12px; cursor:pointer;
+  background:rgba(255,255,255,.09); border:1px solid rgba(255,255,255,.2); color:#fff;
+  font-family:'Oswald',sans-serif; font-size:12.5px; letter-spacing:.8px; text-transform:uppercase; }

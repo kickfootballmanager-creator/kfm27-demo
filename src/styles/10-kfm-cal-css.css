@@ -1,0 +1,94 @@
+
+.kcal{--kc-bg:#070d18;--kc-pan:rgba(255,255,255,.045);--kc-bd:rgba(255,255,255,.13);--kc-tx:#eaf0f8;
+  position:relative;background:radial-gradient(120% 90% at 12% 0%,#0d1a2d 0%,#070d18 58%,#04070d 100%);
+  color:var(--kc-tx);font-family:Inter,system-ui,sans-serif;border:1px solid var(--kc-bd);
+  padding:clamp(14px,1.6vw,26px);overflow:hidden}
+.kcal *{box-sizing:border-box}
+.kcal:before{content:"";position:absolute;inset:0;pointer-events:none;
+  background:repeating-linear-gradient(0deg,rgba(255,255,255,.035) 0 1px,transparent 1px 3px);opacity:.5}
+.kcal-top{position:relative;display:flex;align-items:center;justify-content:space-between;gap:16px;
+  flex-wrap:wrap;padding-bottom:14px;margin-bottom:16px;border-bottom:1px solid var(--kc-bd)}
+.kcal-now .kc-k{font-size:9px;letter-spacing:.34em;text-transform:uppercase;color:rgba(255,255,255,.45);font-weight:700}
+.kcal-now .kc-d{font-weight:800;font-size:clamp(15px,1.5vw,22px);letter-spacing:.12em;text-transform:uppercase;margin-top:5px}
+.kcal-now .kc-c{font-size:10.5px;letter-spacing:.2em;text-transform:uppercase;color:rgba(255,255,255,.55);font-weight:600;margin-top:4px}
+.kcal-mnav{display:flex;align-items:center;gap:14px}
+.kcal-mnav button{width:34px;height:34px;border:1px solid var(--kc-bd);background:rgba(255,255,255,.04);color:#fff;
+  font-size:15px;cursor:pointer;transition:all .22s ease;line-height:1}
+.kcal-mnav button:hover{background:#fff;color:#06101d;transform:translateY(-1px)}
+.kcal-mnav span{min-width:168px;text-align:center;font-weight:800;font-size:clamp(12px,1.1vw,15px);
+  letter-spacing:.2em;text-transform:uppercase}
+.kcal-team{display:flex;align-items:center;gap:10px}
+.kcal-team img{width:34px;height:34px;object-fit:contain}
+.kcal-team span{font-weight:700;font-size:11.5px;letter-spacing:.18em;text-transform:uppercase;color:rgba(255,255,255,.85)}
+
+.kcal-body{position:relative;display:grid;grid-template-columns:1fr clamp(230px,21vw,300px);gap:clamp(14px,1.4vw,22px);align-items:start}
+.kcal-dows{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-bottom:6px}
+.kcal-dows div{text-align:center;font-size:9px;letter-spacing:.24em;font-weight:800;color:rgba(255,255,255,.4);padding:4px 0}
+.kcal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+.kc-cell{position:relative;min-height:clamp(62px,8.2vh,96px);padding:7px 8px;border:1px solid rgba(255,255,255,.09);
+  background:linear-gradient(160deg,rgba(255,255,255,.05),rgba(255,255,255,.012));
+  display:flex;flex-direction:column;gap:4px;transition:transform .2s ease,border-color .2s ease,background .2s ease;overflow:hidden}
+.kc-cell.empty{background:none;border-color:transparent}
+.kc-cell.free{opacity:.55}
+.kc-cell[data-click]:hover{transform:translateY(-2px);border-color:rgba(255,255,255,.45);background:rgba(255,255,255,.09)}
+.kc-n{font-size:11px;font-weight:800;letter-spacing:.06em;color:rgba(255,255,255,.62)}
+.kc-cell.today{border-color:#fff;box-shadow:inset 0 0 0 1px rgba(255,255,255,.35)}
+.kc-cell.today .kc-n{color:#fff}
+.kc-cell.today:after{content:"OGGI";position:absolute;top:6px;right:7px;font-size:7.5px;letter-spacing:.16em;font-weight:800;
+  padding:2px 5px;background:#fff;color:#06101d}
+.kc-cell.selday{border-color:rgba(255,255,255,.75);background:rgba(255,255,255,.12)}
+.kc-cell.done{opacity:.9}
+.kc-bar{position:absolute;left:0;top:0;bottom:0;width:3px;background:rgba(255,255,255,.5)}
+.kc-cell.cl .kc-bar{background:#5ad1ff}.kc-cell.el .kc-bar{background:#ff9d3d}
+.kc-cell.cup .kc-bar{background:#c9a227}.kc-cell.lg .kc-bar{background:#4ade80}
+.kc-ev{display:flex;align-items:center;gap:6px;margin-top:auto}
+.kc-ev img{width:20px;height:20px;object-fit:contain;flex:none}
+.kc-meta{display:flex;flex-direction:column;line-height:1.15;min-width:0}
+.kc-meta b{font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kc-meta small{font-size:8px;letter-spacing:.16em;text-transform:uppercase;color:rgba(255,255,255,.5);font-weight:700}
+.kc-res{font-weight:800;font-size:10.5px;letter-spacing:.06em}
+.kc-res.V,.kc-res.W{color:#4ade80}.kc-res.N,.kc-res.D,.kc-res.P0{color:#e2c46a}.kc-res.P,.kc-res.L{color:#ff6b6b}
+.kc-special{font-size:9px;letter-spacing:.16em;font-weight:800;text-transform:uppercase;color:#e2c46a;margin-top:auto}
+
+.kcal-side{display:flex;flex-direction:column;gap:12px}
+.kc-card{border:1px solid var(--kc-bd);background:linear-gradient(150deg,rgba(255,255,255,.06),rgba(255,255,255,.015));padding:14px}
+.kc-card h4{margin:0 0 10px;font-size:9px;letter-spacing:.3em;text-transform:uppercase;color:rgba(255,255,255,.45);font-weight:800}
+.kc-next{display:flex;align-items:center;gap:12px}
+.kc-next img{width:40px;height:40px;object-fit:contain}
+.kc-next b{display:block;font-size:13px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
+.kc-next small{display:block;font-size:9px;letter-spacing:.18em;text-transform:uppercase;color:rgba(255,255,255,.55);font-weight:700;margin-top:3px}
+.kc-legend{display:flex;flex-wrap:wrap;gap:8px}
+.kc-lg{display:flex;align-items:center;gap:6px;font-size:8.5px;letter-spacing:.16em;text-transform:uppercase;font-weight:700;color:rgba(255,255,255,.6)}
+.kc-lg i{width:9px;height:9px;display:inline-block}
+.kcal-side .cal-adv,.kcal-side .adv-panel{width:100%}
+
+/* mobile portrait */
+@media (max-width:820px){
+  .kcal-body{grid-template-columns:1fr}
+  .kcal-side{order:-1;flex-direction:row;flex-wrap:wrap}
+  .kcal-side>*{flex:1 1 220px}
+  .kcal-top{gap:10px}
+  .kcal-mnav span{min-width:120px}
+  .kc-cell{min-height:56px;padding:5px}
+  .kc-ev img{width:15px;height:15px}
+  .kc-meta small{display:none}
+}
+@media (max-width:560px){
+  .kcal{padding:12px}
+  .kcal-team{display:none}
+  .kcal-grid,.kcal-dows{gap:4px}
+  .kc-cell{min-height:46px;padding:4px 3px;align-items:center;text-align:center}
+  .kc-n{font-size:10px}
+  .kc-cell.today:after{display:none}
+  .kc-meta b{display:none}
+  .kc-ev{gap:3px;justify-content:center}
+  .kc-res{font-size:9px}
+}
+/* mobile landscape */
+@media (max-height:560px) and (orientation:landscape){
+  .kcal{padding:10px}
+  .kcal-top{padding-bottom:8px;margin-bottom:10px}
+  .kc-cell{min-height:44px}
+  .kcal-body{grid-template-columns:1fr clamp(190px,24vw,240px)}
+  .kc-card{padding:10px}
+}

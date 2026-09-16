@@ -1,0 +1,1 @@
+setTimeout(function(){if(!document.getElementById("kfm-intro"))document.documentElement.classList.add("kfm-live");},9000);

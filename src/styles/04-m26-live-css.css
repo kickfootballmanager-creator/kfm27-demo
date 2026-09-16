@@ -1,0 +1,106 @@
+
+/* ===== M26 LIVE MATCH — overlay & HUD ===== */
+#m26-ov{position:fixed;inset:0;z-index:99999;background:#070b12;font-family:'Oswald','Inter',sans-serif;overflow:hidden;user-select:none;-webkit-user-select:none;touch-action:none}
+#m26-ov canvas#m26-cv{position:absolute;inset:0;width:100%;height:100%;display:block}
+.m26-hud{position:absolute;pointer-events:none;z-index:5}
+
+/* scorebug stile TV */
+#m26-bug{top:14px;left:14px;display:flex;align-items:stretch;background:linear-gradient(180deg,rgba(10,14,22,.92),rgba(10,14,22,.82));border:1px solid rgba(255,255,255,.14);border-radius:10px;overflow:hidden;color:#fff;box-shadow:0 8px 24px rgba(0,0,0,.45);backdrop-filter:blur(6px)}
+#m26-bug .comp{writing-mode:vertical-rl;transform:rotate(180deg);background:linear-gradient(180deg,#00D26A,#0090a8);color:#04121a;font-weight:800;font-size:10px;letter-spacing:1.5px;padding:6px 4px;display:flex;align-items:center;justify-content:center;text-transform:uppercase}
+#m26-bug .mid{padding:7px 12px 7px 10px;display:flex;align-items:center;gap:10px}
+#m26-bug .tm{display:flex;align-items:center;gap:7px;font-weight:700;font-size:15px;letter-spacing:.5px}
+#m26-bug .tm .chip{width:10px;height:16px;border-radius:2px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.35)}
+#m26-bug .tm img{width:22px;height:22px;object-fit:contain}
+#m26-bug .sc{font-family:'Anton';font-size:24px;padding:0 4px;letter-spacing:1px}
+#m26-bug .clk{background:rgba(255,255,255,.08);border-left:1px solid rgba(255,255,255,.12);padding:7px 12px;display:flex;align-items:center;font-weight:700;font-size:15px;color:#9ff3c6;min-width:64px;justify-content:center;font-variant-numeric:tabular-nums}
+#m26-bug .clk.ht{color:#ffd24a}
+
+/* barra giocatore controllato */
+#m26-pbar{left:50%;bottom:16px;transform:translateX(-50%);display:flex;align-items:center;gap:10px;background:linear-gradient(180deg,rgba(10,14,22,.85),rgba(10,14,22,.75));border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:6px 14px 6px 6px;color:#fff;box-shadow:0 8px 24px rgba(0,0,0,.4);backdrop-filter:blur(6px)}
+#m26-pbar img{width:34px;height:34px;border-radius:50%;object-fit:cover;background:#223}
+#m26-pbar .nm{font-weight:700;font-size:14px;letter-spacing:.4px;line-height:1.05}
+#m26-pbar .rl{font-size:10px;color:#9fb3c8;letter-spacing:1.2px;font-weight:600}
+#m26-pbar .stam{width:74px;height:5px;border-radius:3px;background:rgba(255,255,255,.14);overflow:hidden;margin-top:4px}
+#m26-pbar .stam i{display:block;height:100%;border-radius:3px;background:linear-gradient(90deg,#00D26A,#7ef0b2);transition:width .2s}
+
+/* barra potenza tiro */
+#m26-pow{left:50%;bottom:64px;transform:translateX(-50%);width:180px;height:9px;border-radius:6px;background:rgba(6,10,16,.72);border:1px solid rgba(255,255,255,.22);overflow:hidden;opacity:0;transition:opacity .12s}
+#m26-pow i{display:block;height:100%;width:0%;background:linear-gradient(90deg,#34e08a,#ffd24a 55%,#ff5b6e);border-radius:6px}
+
+/* radar */
+#m26-ov #m26-radar{position:absolute;left:50%;top:auto;right:auto;bottom:12px;transform:translateX(-50%);width:172px;height:112px;background:rgba(6,10,16,.55);border:1px solid rgba(255,255,255,.16);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.35);backdrop-filter:blur(4px)}
+
+/* hint comandi */
+#m26-hint{left:14px;bottom:14px;color:#dce8f5;background:rgba(6,10,16,.6);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:8px 12px;font-size:11.5px;line-height:1.65;letter-spacing:.3px;transition:opacity .8s;backdrop-filter:blur(4px)}
+#m26-hint b{color:#7ef0b2;font-weight:700}
+#m26-hint .kk{display:inline-block;min-width:16px;text-align:center;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.22);border-radius:4px;padding:0 4px;font-size:10px;font-weight:700;color:#fff;margin-right:2px}
+
+/* banner centrale (gol, tempi) */
+#m26-banner{left:50%;top:34%;transform:translate(-50%,-50%) scale(.8);text-align:center;color:#fff;opacity:0;transition:opacity .25s,transform .25s;text-shadow:0 6px 30px rgba(0,0,0,.6)}
+#m26-banner.on{opacity:1;transform:translate(-50%,-50%) scale(1)}
+#m26-banner .big{font-family:'Anton';font-size:min(11vw,110px);letter-spacing:4px;line-height:.95;background:linear-gradient(180deg,#fff,#9ff3c6);-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 8px 22px rgba(0,0,0,.55))}
+#m26-banner .who{margin-top:6px;font-size:min(4vw,26px);font-weight:700;letter-spacing:1px;display:flex;align-items:center;justify-content:center;gap:10px}
+#m26-banner .who img{width:44px;height:44px;border-radius:50%;object-fit:cover;border:2px solid rgba(255,255,255,.7);background:#223}
+#m26-banner .sub{font-size:14px;color:#cfe3d8;letter-spacing:2px;font-weight:600;margin-top:6px;text-transform:uppercase}
+
+/* toast evento (cartellini ecc.) */
+#m26-ev{left:50%;top:64px;transform:translateX(-50%);color:#fff;background:rgba(6,10,16,.78);border:1px solid rgba(255,255,255,.16);border-radius:10px;padding:8px 16px;font-size:13px;font-weight:600;letter-spacing:.5px;opacity:0;transition:opacity .3s;backdrop-filter:blur(4px)}
+
+/* menu / pannelli */
+.m26-panel{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(4,8,14,.72);backdrop-filter:blur(8px);z-index:20}
+.m26-card{width:min(680px,94vw);max-height:92vh;overflow-y:auto;background:linear-gradient(180deg,#141b28,#0a0f18);border:1px solid rgba(255,255,255,.12);border-radius:22px;padding:28px clamp(18px,4vw,40px);color:#fff;box-shadow:0 30px 80px rgba(0,0,0,.6);scrollbar-width:none}
+.m26-card::-webkit-scrollbar{display:none}
+.m26-kick{text-align:center;font-size:11px;letter-spacing:3px;color:#7ef0b2;font-weight:700;text-transform:uppercase}
+.m26-title{font-family:'Anton';font-size:30px;letter-spacing:2px;text-align:center;margin:4px 0 2px}
+.m26-sub{text-align:center;color:#9fb3c8;font-size:13px;margin-bottom:18px}
+.m26-vs{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:14px 0 6px}
+.m26-vs .t{flex:1;text-align:center}
+.m26-vs .t img{width:64px;height:64px;object-fit:contain;filter:drop-shadow(0 8px 14px rgba(0,0,0,.4))}
+.m26-vs .t .n{font-weight:700;font-size:15px;margin-top:6px;letter-spacing:.5px}
+.m26-vs .t .s{font-size:11px;color:#8fa9bf;letter-spacing:1px}
+.m26-vs .mid{font-family:'Anton';font-size:26px;color:#5b7186}
+.m26-rows{display:flex;flex-direction:column;gap:10px;margin:16px 0}
+.m26-row{display:flex;align-items:center;justify-content:space-between;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.09);border-radius:12px;padding:10px 14px}
+.m26-row .l{color:#9fb3c8;font-size:12px;letter-spacing:1px;text-transform:uppercase;font-weight:600}
+.m26-seg{display:flex;gap:6px}
+.m26-seg button{background:rgba(255,255,255,.08);color:#cfe0ee;border:1px solid rgba(255,255,255,.12);border-radius:9px;padding:8px 13px;font-family:inherit;font-weight:700;font-size:12.5px;cursor:pointer;transition:.15s}
+.m26-seg button.on{background:linear-gradient(180deg,#00D26A,#00a653);color:#04180d;border-color:transparent;box-shadow:0 4px 14px rgba(0,210,106,.35)}
+.m26-kits{display:flex;gap:8px;align-items:center}
+.m26-kit{width:30px;height:36px;border-radius:6px;border:2px solid rgba(255,255,255,.25);position:relative;overflow:hidden;cursor:pointer;transition:.15s}
+.m26-kit.on{border-color:#00D26A;box-shadow:0 0 0 2px rgba(0,210,106,.4)}
+.m26-btns{display:flex;gap:10px;justify-content:center;margin-top:20px;flex-wrap:wrap}
+.m26-btn{font-family:'Oswald';font-weight:800;letter-spacing:2px;font-size:16px;padding:15px 34px;border-radius:14px;border:none;cursor:pointer;background:linear-gradient(180deg,#00e67a,#00a653);color:#03170c;box-shadow:0 12px 30px rgba(0,210,106,.35);transition:.15s;text-transform:uppercase}
+.m26-btn:hover{transform:translateY(-2px);box-shadow:0 16px 36px rgba(0,210,106,.45)}
+.m26-btn.ghost{background:rgba(255,255,255,.09);color:#dce8f5;box-shadow:none;border:1px solid rgba(255,255,255,.16);font-size:13px;padding:13px 22px}
+.m26-btn.danger{background:linear-gradient(180deg,#ff6b78,#d92338);color:#fff;box-shadow:0 12px 30px rgba(230,57,70,.3)}
+.m26-keys{margin-top:18px;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:12px 16px;font-size:12.5px;color:#b9cbdc;line-height:1.9}
+.m26-keys .kk{display:inline-block;min-width:18px;text-align:center;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.22);border-radius:5px;padding:1px 6px;font-size:11px;font-weight:700;color:#fff;margin-right:3px}
+
+/* rigori */
+#m26-pens{top:14px;left:50%;transform:translateX(-50%);display:flex;gap:14px;align-items:center;background:rgba(6,10,16,.8);border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:8px 16px;color:#fff;backdrop-filter:blur(6px)}
+#m26-pens .tm{font-weight:700;font-size:14px}
+#m26-pens .dots{display:flex;gap:5px}
+#m26-pens .d{width:13px;height:13px;border-radius:50%;border:2px solid rgba(255,255,255,.35);display:inline-block}
+#m26-pens .d.g{background:#00D26A;border-color:#00D26A}
+#m26-pens .d.m{background:#e63946;border-color:#e63946}
+#m26-pens .sc{font-family:'Anton';font-size:20px;padding:0 6px}
+
+/* touch controls */
+#m26-touch{position:absolute;inset:0;z-index:8;display:none}
+#m26-tstick{position:absolute;left:26px;bottom:70px;width:118px;height:118px;border-radius:50%;background:rgba(255,255,255,.07);border:1.5px solid rgba(255,255,255,.22)}
+#m26-tknob{position:absolute;left:50%;top:50%;width:52px;height:52px;border-radius:50%;background:rgba(255,255,255,.28);border:1.5px solid rgba(255,255,255,.45);transform:translate(-50%,-50%)}
+.m26-tbtn{position:absolute;width:64px;height:64px;border-radius:50%;background:rgba(255,255,255,.1);border:1.5px solid rgba(255,255,255,.3);color:#fff;font-family:'Oswald';font-weight:700;font-size:11px;letter-spacing:.5px;display:flex;align-items:center;justify-content:center}
+.m26-tbtn:active{background:rgba(0,210,106,.35)}
+#m26-tb-pass{right:30px;bottom:130px}
+#m26-tb-shot{right:104px;bottom:66px}
+#m26-tb-sprint{right:30px;bottom:210px;background:rgba(255,255,255,.06)}
+#m26-tb-switch{right:112px;bottom:160px;width:52px;height:52px;font-size:10px}
+#m26-tb-pause{position:absolute;top:12px;right:12px;width:44px;height:44px;font-size:16px;border-radius:12px}
+
+@media (max-width:760px){
+  #m26-radar{display:none}
+  #m26-hint{display:none}
+  #m26-pbar{bottom:auto;top:64px;transform:translateX(-50%) scale(.92)}
+  #m26-bug .mid{padding:5px 8px;gap:6px}#m26-bug .tm{font-size:12px}#m26-bug .sc{font-size:19px}#m26-bug .clk{font-size:12px;min-width:52px;padding:5px 8px}
+}
+
