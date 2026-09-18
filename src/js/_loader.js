@@ -3,6 +3,7 @@
     if (i >= list.length){ done(); return; }
     var s = document.createElement('script');
     s.src = list[i];
+    if (/-mod\.js$/.test(list[i])) s.type = 'module';
     s.onload = function(){ loadScriptSeq(list, i + 1, done); };
     s.onerror = function(){ console.error('KFM27: errore caricamento script', list[i]); loadScriptSeq(list, i + 1, done); };
     document.body.appendChild(s);
@@ -59,7 +60,8 @@
     "src/js/049-ng29-bg.js",
     "src/js/050-tac30.js",
     "src/js/051-au31-js.js",
-    "src/js/052-kfm-sagome-js.js"
+    "src/js/052-kfm-sagome-js.js",
+    "src/js/053-fin-motion-mod.js"
   ];
   fetch('src/data/eadb.json')
     .then(function(r){ return r.json(); })

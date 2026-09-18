@@ -2911,25 +2911,50 @@ function renderFinanze(){
   var inTot=Math.round((sums.prize+sums.sale)*10)/10;
   var outTot=Math.round((sums.transfer+sums.wages)*10)/10;
   var maxv=Math.max(1,sums.prize,sums.sale,sums.transfer,sums.wages);
-  function bar(label,val,color){ var pct=Math.round(Math.max(0,val)/maxv*100); return '<div class="fin-bar-row"><span class="bl">'+label+'</span><div class="fin-bar-track"><div class="fin-bar-fill" style="width:'+pct+'%;background:'+color+'"></div></div><span class="bv">\u20ac'+(Math.round(val*10)/10)+'M</span></div>'; }
-  var bars=bar('Premi',sums.prize,'#00d26a')+bar('Cessioni',sums.sale,'#3dd6ff')+bar('Acquisti',sums.transfer,'#ffb13d')+bar('Stipendi',sums.wages,'#ff6b6b');
+  function bar(label,val,tone){ var pct=Math.round(Math.max(0,val)/maxv*100); return '<div class="fin-bar-row"><span class="bl">'+label+'</span><div class="fin-bar-track"><div class="fin-bar-fill '+tone+'" style="width:'+pct+'%"></div></div><span class="bv">\u20ac'+(Math.round(val*10)/10)+'M</span></div>'; }
+  var bars=bar('Premi',sums.prize,'in')+bar('Cessioni',sums.sale,'in')+bar('Acquisti',sums.transfer,'buy')+bar('Stipendi',sums.wages,'out');
   var wpct=Math.min(100,Math.round(wb/Math.max(1,wbud)*100));
+  /* icone SVG: trofeo (premi), documento (rinnovi), figura (ingaggi), freccia in entrata (acquisti) e in uscita (cessioni) */
+  var FIN_IC={
+    trophy:'<path d="M8 4h8v5a4 4 0 0 1-8 0z"/><path d="M8 6H5a3 3 0 0 0 3 4"/><path d="M16 6h3a3 3 0 0 1-3 4"/><path d="M12 13v4"/><path d="M9 20h6"/><path d="M10 17h4"/>',
+    doc:'<path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4"/><path d="M10 12h5"/><path d="M10 15h5"/><path d="M10 18h3"/>',
+    person:'<circle cx="12" cy="7.5" r="3.5"/><path d="M5 21v-1a7 7 0 0 1 14 0v1"/>',
+    buy:'<path d="M17 7 7 17"/><path d="M7 9v8h8"/>',
+    sell:'<path d="M7 17 17 7"/><path d="M9 7h8v8"/>'
+  };
+  function txIcon(t){
+    var k='buy', lb=String(t.label||'');
+    if(t.cat==='prize') k='trophy';
+    else if(t.cat==='sale') k='sell';
+    else if(t.cat==='wages'||t.cat==='wage') k=(lb.indexOf('Ingaggio')===0)?'person':'doc';
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+FIN_IC[k]+'</svg>';
+  }
+  function txDate(ts){
+    if(!ts) return '<span class="tx-day">--</span>';
+    var d=new Date(ts);
+    var mon=d.toLocaleDateString('it-IT',{month:'short'}).split('.').join('');
+    return '<span class="tx-day">'+String(d.getDate()).padStart(2,'0')+'</span><span class="tx-mon">'+mon+' '+d.getFullYear()+'</span>';
+  }
   var txHtml = tx.length ? tx.slice(0,40).map(function(t){
-    var isIn=t.type==='in'; var ic=t.cat==='prize'?'\ud83c\udfc6':t.cat==='sale'?'\ud83d\udcb8':t.cat==='wages'?'\ud83d\udcc5':t.cat==='wage'?'\u270d\ufe0f':'\ud83d\uded2';
-    var amt=(t.cat==='wage'&&t.amount===0)?'\u2014':((isIn?'+':'\u2212')+'\u20ac'+t.amount+'M');
-    var bg=isIn?'rgba(0,210,106,.18)':'rgba(255,107,107,.18)';
-    return '<div class="fin-tx"><div class="tx-ic" style="background:'+bg+'">'+ic+'</div><div class="tx-d"><div class="tx-t">'+t.label+'</div><div class="tx-s">Stagione '+t.season+' \u00b7 '+t.year+'</div></div><div class="tx-a '+(isIn?'in':'out')+'">'+amt+'</div></div>';
-  }).join('') : '<div class="fin-empty">Ancora nessuna transazione registrata.</div>';
+    var isIn=t.type==='in'; var zero=!t.amount;
+    var amt=zero?'\u20ac0M':((isIn?'+':'-')+'\u20ac'+t.amount+'M');
+    var tone=zero?'':(isIn?'in':'out');
+    return '<div class="fin-tx"><div class="tx-date">'+txDate(t.day)+'</div><div class="tx-ic">'+txIcon(t)+'</div><div class="tx-d"><div class="tx-t">'+t.label+'</div><div class="tx-s">Stagione '+t.season+', '+t.year+'</div></div><div class="tx-a '+tone+'">'+amt+'</div><div class="tx-k">'+(isIn?'Entrata':'Uscita')+'</div></div>';
+  }).join('') : '<div class="fin-empty">Nessuna transazione. Premi, acquisti, cessioni e rinnovi compariranno qui.</div>';
   return `<div class="fin-screen">
-    <div class="fin-head"><div><h2>Finanze</h2><p>Bilancio del club, monte ingaggi e movimenti di mercato.</p></div></div>
+    <div class="fin-head"><span class="fin-eyebrow">Club</span><h2>Finanze</h2><p>Bilancio del club, monte ingaggi e movimenti di mercato.</p></div>
     <div class="fin-body">
-      <div class="fin-kpi green"><div class="k-l">Budget trasferimenti</div><div class="k-v">\u20ac${budget}M</div></div>
-      <div class="fin-kpi"><div class="k-l">Monte ingaggi / sett.</div><div class="k-v">\u20ac${wb}k</div></div>
-      <div class="fin-kpi red"><div class="k-l">Stipendi annui stimati</div><div class="k-v">\u20ac${aw}M</div></div>
-      <div class="fin-kpi"><div class="k-l">Valore rosa</div><div class="k-v">\u20ac${sv}M</div></div>
-      <div class="fin-panel fin-c2"><h3>Entrate / Uscite (stagione)</h3>${bars}<div style="display:flex;justify-content:space-between;margin-top:12px;font-size:13px;"><span style="color:#00d26a;font-weight:700;">Entrate \u20ac${inTot}M</span><span style="color:#ff6b6b;font-weight:700;">Uscite \u20ac${outTot}M</span></div></div>
-      <div class="fin-panel fin-c2"><h3>Budget monte ingaggi</h3><div class="fin-bar-row"><span class="bl">Utilizzato</span><div class="fin-bar-track"><div class="fin-bar-fill" style="width:${wpct}%;background:${wpct>90?'#ff6b6b':'#00d26a'}"></div></div><span class="bv">${wpct}%</span></div><p style="color:rgba(255,255,255,.6);font-size:12px;margin:6px 0 0;">Spesi \u20ac${wb}k/sett. su un tetto di \u20ac${wbud}k/sett. concesso dalla societ\u00e0.</p></div>
-      <div class="fin-panel" style="grid-column:1/-1;"><h3>Ultime transazioni</h3>${txHtml}</div>
+      <div class="fin-kpis">
+        <div class="fin-kpi"><div class="k-l">Budget trasferimenti</div><div class="k-v">\u20ac${budget}M</div><div class="k-s">Spendibile sul mercato</div></div>
+        <div class="fin-kpi"><div class="k-l">Monte ingaggi / sett.</div><div class="k-v">\u20ac${wb}k</div><div class="k-s">Somma degli stipendi della rosa</div></div>
+        <div class="fin-kpi out"><div class="k-l">Stipendi annui stimati</div><div class="k-v">\u20ac${aw}M</div><div class="k-s">Monte ingaggi per 52 settimane</div></div>
+        <div class="fin-kpi"><div class="k-l">Valore rosa</div><div class="k-v">\u20ac${sv}M</div><div class="k-s">Somma dei valori di mercato</div></div>
+      </div>
+      <div class="fin-mid">
+        <div class="fin-panel"><h3>Entrate / Uscite (stagione)</h3>${bars}<div class="fin-tot"><span>Entrate<b class="in">\u20ac${inTot}M</b></span><span>Uscite<b class="out">\u20ac${outTot}M</b></span></div></div>
+        <div class="fin-panel"><h3>Budget monte ingaggi</h3><div class="fin-wmeter"><div class="fin-bar-track"><div class="fin-bar-fill ${wpct>90?'out':''}" style="width:${wpct}%"></div></div><span class="pct ${wpct>90?'out':''}">${wpct}%</span></div><div class="fin-wstats"><div><span>Utilizzato</span><b>\u20ac${wb}k <small>/ sett.</small></b></div><div><span>Tetto concesso</span><b>\u20ac${wbud}k <small>/ sett.</small></b></div></div><p class="fin-note">Spesi \u20ac${wb}k/sett. su un tetto di \u20ac${wbud}k/sett. concesso dalla societ\u00e0.</p></div>
+      </div>
+      <div class="fin-panel fin-txp"><h3>Ultime transazioni</h3><div class="fin-txlist" tabindex="0" aria-label="Ultime transazioni">${txHtml}</div></div>
     </div>
   </div>`;
 }
