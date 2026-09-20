@@ -104,7 +104,8 @@
   border:1px solid var(--nz-line);
   border-radius:4px;
   overflow:hidden;
-  transition:border-color .14s ease, background-color .14s ease;
+  /* il passaggio del mouse cambia colore e bordo, e lo fa subito:
+     niente spostamenti, niente ingrandimenti */
 }
 .nz-card:hover,
 .nz-card:focus-visible{
@@ -179,7 +180,9 @@
   width:11px; height:11px;
   z-index:3;
   opacity:0;
-  transition:opacity .14s ease;
+  transform:scale(.94);
+  /* i mirini della scheda scelta: solo opacita' e scala, 0.16s */
+  transition:opacity .16s ease, transform .16s ease;
   pointer-events:none;
 }
 .nz-mira::before{ top:5px;    left:5px;  border-top:1px solid #fff;    border-left:1px solid #fff; }
@@ -189,7 +192,11 @@
 .nz-card:hover::before,       .nz-card:focus-visible::before,
 .nz-card:hover::after,        .nz-card:focus-visible::after,
 .nz-card:hover .nz-mira::before, .nz-card:focus-visible .nz-mira::before,
-.nz-card:hover .nz-mira::after,  .nz-card:focus-visible .nz-mira::after{ opacity:1; }
+.nz-card:hover .nz-mira::after,  .nz-card:focus-visible .nz-mira::after{ opacity:1; transform:scale(1); }
+
+/* lo strato dove finisce la schermata che se ne va, per i 0.18s
+   dell'uscita: sta sopra, non riceve clic */
+#anim-uscita{ position:fixed; inset:0; z-index:60; pointer-events:none; }
 
 /* --- stemma del campionato, al posto della bandiera ---
    qui l'immagine e' un logo, non stoffa: sta intera, senza onda */
@@ -220,7 +227,6 @@
   padding:8px 0;
   font-size:11px; font-weight:600; letter-spacing:.18em;
   text-transform:uppercase; color:var(--nz-soft);
-  transition:color .14s ease;
 }
 .nz-back svg{ flex:none; }
 .nz-back:hover,
@@ -230,6 +236,14 @@
 
 @media (prefers-reduced-motion:reduce){
   .nz-bg{ transition:none; }
+  .nz-card::before,
+  .nz-card::after,
+  .nz-mira::before,
+  .nz-mira::after{ transition:none; transform:none; }
+  .nz-card:hover::before, .nz-card:focus-visible::before,
+  .nz-card:hover::after, .nz-card:focus-visible::after,
+  .nz-card:hover .nz-mira::before, .nz-card:focus-visible .nz-mira::before,
+  .nz-card:hover .nz-mira::after, .nz-card:focus-visible .nz-mira::after{ transform:none; }
 }
 
 /* --- schermi stretti: tre colonne restano --- */

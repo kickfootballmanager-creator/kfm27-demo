@@ -1,0 +1,385 @@
+/* =====================================================================
+   Flusso "Scegli allenatore" (S.screen === "setupTeam").
+   Due stati sulla stessa scena: riepilogo e griglia.
+
+   Tutto sotto il prefisso co-, niente regole globali: le altre
+   schermate non vedono questo foglio.
+
+   Palette: nero, blu-nero, bianco caldo, avorio, un filo d'oro.
+   ===================================================================== */
+
+.co-screen{
+  --co-ink:#f4f1ea;          /* bianco caldo */
+  --co-avorio:#ded2b8;       /* seconda riga del titolo, bordi scelti */
+  --co-oro:#b99a5b;          /* accento, usato pochissimo */
+  --co-soft:rgba(244,241,234,.66);
+  --co-dim:rgba(244,241,234,.44);
+  --co-pane:rgba(9,13,19,.78);
+  --co-pane-2:rgba(13,18,26,.72);
+  --co-bordo:rgba(222,210,184,.16);
+  --co-bordo-on:rgba(222,210,184,.52);
+
+  position:fixed; inset:0; z-index:0;
+  overflow:hidden;
+  background:#070a0e;
+  color:var(--co-ink);
+  font-family:'Inter',sans-serif;
+}
+
+/* --- scena --- */
+.co-bg{
+  position:absolute; inset:0; z-index:0;
+  background-repeat:no-repeat;
+  background-position:center center;
+  background-size:cover;
+  opacity:0;
+  pointer-events:none;
+}
+.co-bg.on{ opacity:1; }
+
+/* due velature sole: una a sinistra per il testo, una a destra sotto
+   il pannello, perche' non sembri un rettangolo nero appiccicato */
+.co-veil{
+  position:absolute; inset:0; z-index:1;
+  pointer-events:none;
+  background:
+    linear-gradient(90deg, rgba(5,8,12,.86) 0%, rgba(5,8,12,.62) 26%, rgba(5,8,12,.12) 46%, rgba(5,8,12,0) 58%),
+    linear-gradient(270deg, rgba(5,8,12,.72) 0%, rgba(5,8,12,.42) 22%, rgba(5,8,12,0) 44%);
+}
+
+.co-layout{
+  position:relative; z-index:2;
+  display:grid;
+  grid-template-columns:minmax(0,1fr) minmax(0,46%);
+  gap:32px;
+  height:100%;
+  padding:32px 40px;
+}
+
+/* --- colonna sinistra --- */
+.co-left{
+  display:grid;
+  grid-template-rows:auto 1fr;
+  min-height:0;
+}
+.co-logo{
+  width:clamp(120px,11vw,190px);
+  height:auto;
+  align-self:start;
+  justify-self:start;
+}
+.co-intro{ align-self:center; max-width:560px; }
+
+.co-eyebrow{
+  font-size:11px; font-weight:600; letter-spacing:.42em;
+  text-transform:uppercase; color:var(--co-soft);
+}
+.co-title{
+  margin-top:16px;
+  font-family:'Anton',sans-serif;
+  font-weight:400;
+  font-size:clamp(38px,4.6vw,76px);
+  line-height:.96;
+  letter-spacing:.01em;
+  text-transform:uppercase;
+}
+.co-title span{ display:block; }
+.co-t1{ color:#fff; }
+.co-t2{ color:var(--co-avorio); }
+
+.co-desc{
+  margin-top:24px;
+  font-size:16px;
+  line-height:1.65;
+  color:var(--co-soft);
+  max-width:46ch;
+}
+
+/* --- colonna destra, comune ai due stati --- */
+.co-right{
+  display:grid;
+  grid-template-rows:auto minmax(0,1fr);
+  gap:24px;
+  min-height:0;
+}
+
+.co-head{
+  display:flex; align-items:center; gap:16px;
+  justify-content:flex-end;
+}
+.co-head span{
+  font-size:11px; font-weight:600; letter-spacing:.34em;
+  text-transform:uppercase; color:var(--co-soft); white-space:nowrap;
+}
+.co-rule{
+  width:clamp(40px,8vw,150px); height:1px; flex:none;
+  background:linear-gradient(90deg,rgba(222,210,184,.42),rgba(222,210,184,0));
+}
+
+/* =====================  STATO 1: riepilogo  ===================== */
+/* le due schede e il pulsante sono un gruppo compatto, non tre fasce
+   stirate sull'altezza: la scheda prende l'altezza del suo contenuto */
+.co-somma{
+  display:grid;
+  grid-template-rows:auto auto auto;
+  gap:16px;
+  min-height:0;
+  align-content:center;
+  overflow-y:auto;
+  scrollbar-width:none;
+}
+.co-somma::-webkit-scrollbar{ display:none; }
+
+.co-card{
+  display:grid;
+  grid-template-columns:auto minmax(0,1fr) auto;
+  align-items:center;
+  gap:24px;
+  width:100%;
+  padding:16px;
+  text-align:left;
+  font-family:inherit;
+  background:var(--co-pane);
+  border:1px solid var(--co-bordo);
+  border-radius:10px;
+  color:inherit;
+}
+.co-card.is-on{ border-color:var(--co-bordo-on); background:var(--co-pane-2); }
+.co-card:hover,
+.co-card:focus-visible{ border-color:var(--co-bordo-on); outline:none; }
+
+.co-card-img{
+  width:clamp(84px,9vw,124px);
+  aspect-ratio:1;
+  border-radius:8px;
+  overflow:hidden;
+  background:#0d1218;
+  display:block;
+}
+.co-card-img img{ width:100%; height:100%; object-fit:cover; display:block; }
+
+.co-card-t{
+  display:block;
+  font-size:16px; font-weight:600; letter-spacing:.12em;
+  text-transform:uppercase; color:var(--co-ink);
+}
+.co-card-d{
+  display:block; margin-top:12px;
+  font-size:13px; line-height:1.6; color:var(--co-dim);
+}
+.co-card-meta{
+  display:block; margin-top:12px;
+  font-size:11px; letter-spacing:.16em; text-transform:uppercase;
+  color:var(--co-dim);
+}
+
+.co-arrow{ display:flex; align-items:center; color:var(--co-soft); padding-right:8px; }
+.co-card:hover .co-arrow,
+.co-card:focus-visible .co-arrow{ color:var(--co-ink); }
+
+/* --- crea il club: stessa scheda, dentro i campi --- */
+.co-club-form{ display:block; }
+.co-club-in{
+  width:100%; margin-top:12px;
+  background:rgba(5,8,12,.6);
+  border:1px solid var(--co-bordo);
+  border-radius:6px;
+  padding:10px 12px;
+  font-family:inherit; font-size:13px; letter-spacing:.06em;
+  color:var(--co-ink);
+}
+.co-club-in:focus{ outline:none; border-color:var(--co-bordo-on); }
+.co-club-up{
+  margin-top:12px;
+  display:inline-block;
+  padding:8px 16px;
+  border:1px solid var(--co-bordo);
+  border-radius:6px;
+  font-size:11px; font-weight:600; letter-spacing:.18em;
+  text-transform:uppercase; color:var(--co-soft);
+  cursor:pointer;
+}
+.co-club-up:hover{ border-color:var(--co-bordo-on); color:var(--co-ink); }
+
+/* --- pulsante continua --- */
+.co-cta{
+  display:flex; align-items:center; justify-content:center; gap:16px;
+  width:100%;
+  padding:18px;
+  background:rgba(7,10,15,.72);
+  border:1px solid var(--co-bordo);
+  border-radius:10px;
+  font-family:inherit;
+  font-size:13px; font-weight:600; letter-spacing:.26em;
+  text-transform:uppercase; color:var(--co-ink);
+}
+.co-cta:hover,
+.co-cta:focus-visible{
+  border-color:var(--co-bordo-on);
+  background:rgba(13,18,26,.82);
+  outline:none;
+}
+.co-cta[disabled]{ color:var(--co-dim); border-color:rgba(222,210,184,.09); cursor:not-allowed; }
+.co-cta[disabled]:hover{ border-color:rgba(222,210,184,.09); background:rgba(7,10,15,.72); }
+
+/* =====================  STATO 2: griglia  ===================== */
+.co-pannello{
+  display:grid;
+  grid-template-rows:auto minmax(0,1fr) auto auto;
+  gap:16px;
+  min-height:0;
+  padding:24px;
+  background:var(--co-pane);
+  border:1px solid var(--co-bordo);
+  border-radius:12px;
+}
+
+.co-ph{
+  display:grid;
+  grid-template-columns:auto minmax(24px,1fr) auto;
+  align-items:center;
+  gap:16px;
+}
+.co-ph-t{
+  font-size:16px; font-weight:600; letter-spacing:.18em;
+  text-transform:uppercase; color:var(--co-ink);
+}
+.co-ph-line{ height:1px; background:linear-gradient(90deg,var(--co-oro),rgba(185,154,91,0)); }
+.co-ph-n{
+  font-size:11px; font-weight:600; letter-spacing:.2em;
+  text-transform:uppercase; color:var(--co-dim);
+}
+
+.co-grid{
+  display:grid;
+  grid-template-columns:repeat(6,minmax(0,1fr));
+  gap:8px;
+  min-height:0;
+  overflow-y:auto;
+  overscroll-behavior:contain;
+  scrollbar-width:thin;
+  scrollbar-color:rgba(222,210,184,.22) transparent;
+  align-content:start;
+  padding-right:4px;
+}
+.co-grid::-webkit-scrollbar{ width:4px; }
+.co-grid::-webkit-scrollbar-track{ background:transparent; }
+.co-grid::-webkit-scrollbar-thumb{ background:rgba(222,210,184,.22); border-radius:2px; }
+
+.co-tile{
+  display:grid;
+  grid-template-rows:1fr auto;
+  gap:8px;
+  padding:8px;
+  background:rgba(13,18,26,.66);
+  border:1px solid var(--co-bordo);
+  border-radius:8px;
+  font-family:inherit;
+  color:inherit;
+  /* il cambio di selezione passa dal bordo e dalla luminosita', senza
+     spostare ne' ingrandire la scheda */
+  transition:border-color .16s ease, background-color .16s ease;
+}
+@media (prefers-reduced-motion:reduce){ .co-tile{ transition:none; } }
+.co-tile-img{
+  display:block;
+  width:100%;
+  aspect-ratio:1;
+  border-radius:6px;
+  overflow:hidden;
+  background:#0d1218;
+}
+.co-tile-img img{ width:100%; height:100%; object-fit:cover; display:block; }
+.co-tile-n{
+  display:block;
+  font-size:11px; font-weight:600; letter-spacing:.08em;
+  text-transform:uppercase; text-align:center;
+  color:var(--co-dim);
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.co-tile:hover,
+.co-tile:focus-visible{ border-color:var(--co-bordo-on); outline:none; }
+.co-tile:hover .co-tile-n,
+.co-tile:focus-visible .co-tile-n{ color:var(--co-soft); }
+
+/* scelto: bordo avorio, dentro un filo piu' chiaro, nome leggibile */
+.co-tile[aria-pressed="true"]{
+  border-color:var(--co-avorio);
+  background:rgba(26,32,42,.82);
+}
+.co-tile[aria-pressed="true"] .co-tile-n{ color:var(--co-ink); }
+
+/* --- allenatore personalizzato, in fondo al pannello --- */
+.co-custom{
+  display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+  padding-top:16px;
+  border-top:1px solid var(--co-bordo);
+}
+.co-custom-l{
+  font-size:11px; font-weight:600; letter-spacing:.2em;
+  text-transform:uppercase; color:var(--co-dim);
+}
+.co-custom input[type=text]{
+  flex:1; min-width:140px;
+  background:rgba(5,8,12,.6);
+  border:1px solid var(--co-bordo);
+  border-radius:6px;
+  padding:9px 12px;
+  font-family:inherit; font-size:13px; color:var(--co-ink);
+}
+.co-custom input[type=text]:focus{ outline:none; border-color:var(--co-bordo-on); }
+.co-custom button,
+.co-custom .co-up{
+  padding:9px 16px;
+  background:none;
+  border:1px solid var(--co-bordo);
+  border-radius:6px;
+  font-family:inherit;
+  font-size:11px; font-weight:600; letter-spacing:.18em;
+  text-transform:uppercase; color:var(--co-soft);
+  cursor:pointer;
+}
+.co-custom button:hover,
+.co-custom .co-up:hover{ border-color:var(--co-bordo-on); color:var(--co-ink); }
+
+/* --- ritorno --- */
+.co-back{
+  margin-top:32px;
+  display:flex; align-items:center; gap:12px;
+  padding:8px 0;
+  font-family:inherit;
+  font-size:11px; font-weight:600; letter-spacing:.2em;
+  text-transform:uppercase; color:var(--co-soft);
+}
+.co-back:hover,
+.co-back:focus-visible{ color:var(--co-ink); outline:none; }
+.co-back svg{ flex:none; }
+
+/* --- larghezze: le colonne seguono lo schermo --- */
+@media (max-width:1499px){
+  .co-grid{ grid-template-columns:repeat(5,minmax(0,1fr)); }
+}
+@media (max-width:1199px){
+  .co-grid{ grid-template-columns:repeat(4,minmax(0,1fr)); }
+  .co-layout{ grid-template-columns:minmax(0,1fr) minmax(0,52%); gap:24px; padding:24px; }
+}
+@media (max-width:899px){
+  .co-layout{
+    grid-template-columns:minmax(0,1fr);
+    grid-template-rows:auto minmax(0,1fr);
+    gap:16px; padding:16px;
+  }
+  .co-left{ grid-template-rows:auto auto; gap:12px; }
+  .co-intro{ align-self:start; }
+  .co-title{ font-size:clamp(30px,7vw,44px); }
+  .co-desc{ margin-top:16px; font-size:13px; }
+  .co-grid{ grid-template-columns:repeat(3,minmax(0,1fr)); }
+  .co-card{ gap:16px; padding:12px; }
+  .co-card-img{ width:72px; }
+  .co-pannello{ padding:16px; }
+}
+
+/* --- movimento ridotto: niente dissolvenza sullo sfondo --- */
+@media (prefers-reduced-motion:reduce){
+  .co-bg{ transition:none; }
+}

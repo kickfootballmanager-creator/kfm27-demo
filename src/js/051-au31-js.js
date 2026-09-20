@@ -41,8 +41,21 @@ function meta(){
   return { team:S2.teamName||S2.club||'Squadra', league:S2.leagueName||'', season:S2.season||'', week:S2.currentWeek||0,
     strength:S2.strength||0, mode:S2.setupMode||'', at:Date.now() };
 }
+/* Scrive lo slot dicendo se ce l'ha fatta. Prima inghiottiva ogni
+   errore: a memoria piena l'utente vedeva "Partita salvata" e lo slot
+   restava vuoto. Se la scrittura fallisce, lo slot che c'era prima
+   viene rimesso al suo posto. */
 function slotWrite(n){
-  try{ var raw=localStorage.getItem('mgr26save'); if(!raw) return; wr(slotKey(n),{meta:meta(),raw:raw}); }catch(e){}
+  var raw=null;
+  try{ raw=localStorage.getItem('mgr26save'); }catch(e){ return false; }
+  if(!raw) return false;
+  var k=slotKey(n), prima=null;
+  try{ prima=localStorage.getItem(k); }catch(e){}
+  try{ localStorage.setItem(k, JSON.stringify({meta:meta(), raw:raw})); return true; }
+  catch(e){
+    if(prima!==null){ try{ localStorage.setItem(k, prima); }catch(e2){} }
+    return false;
+  }
 }
 var _save=window.saveGame;
 var _load=window.loadGame;
@@ -50,8 +63,17 @@ function doSave(n){
   CUR.slot=n;
   try{ wr(curKey(),n); }catch(e){}
   var r=(typeof _save==='function')?_save.call(window):undefined;
-  slotWrite(n);
-  return r;
+  /* _save torna false quando non e' riuscito a scrivere mgr26save:
+     in quel caso non ha senso copiare nulla nello slot */
+  if(r===false) return false;
+  if(!slotWrite(n)){
+    if(typeof gameMsg==='function') gameMsg({title:'Slot non scritto',msg:'La partita &egrave; stata salvata, ma non &egrave; entrata nello slot '+n+': memoria del browser piena. Elimina uno slot e riprova.',icon:'warn'});
+    else if(typeof toast==='function') toast('Slot '+n+' non scritto: memoria piena');
+    return false;
+  }
+  /* prima il disco, poi il cloud: se il cloud non c'e' non cambia nulla */
+  try{ if(typeof window.kfmCloudPush==='function') window.kfmCloudPush(n); }catch(e){}
+  return true;
 }
 window.saveGameSilent=function(){ if(!CUR.slot) CUR.slot=firstFree()||1; return doSave(CUR.slot); };
 function silentSave(){
@@ -133,7 +155,9 @@ function authUI(){
     '<button class="au-btn" onclick="auSubmit()"><span>'+(reg?'Crea account e gioca':'Accedi')+'</span></button>'+
     '<div class="au-or">oppure</div>'+
     '<button class="au-g" onclick="auGoogle()">'+GLOGO+'Continua con Google</button>'+
-    '<div class="au-foot">'+(reg?'Hai gi\u00e0 un account? <b onclick="auTab(\'in\')">Accedi</b>':'Non hai un account? <b onclick="auTab(\'up\')">Registrati</b>')+' \u00b7 I dati restano solo su questo dispositivo.</div>'+
+    '<div class="au-foot">'+(reg?'Hai gi\u00e0 un account? <b onclick="auTab(\'in\')">Accedi</b>':'Non hai un account? <b onclick="auTab(\'up\')">Registrati</b>')
+      +(reg?'':' \u00b7 <b onclick="auRecupera()">Password dimenticata?</b>')
+      +' \u00b7 '+(cloudAuth()?'La carriera viene salvata anche nel tuo account.':'I dati restano solo su questo dispositivo.')+'</div>'+
   '</div>');
   bgFromHome();
   try{ var mi=document.getElementById('au-mail'), lm=localStorage.getItem('kfm_last_mail')||''; if(mi&&!reg&&lm&&remGet()) mi.value=lm; }catch(e){}
@@ -144,6 +168,23 @@ function authUI(){
   });
 }
 function err(m){ var e=document.getElementById('au-err'); if(e) e.textContent=m||''; }
+/* Quando il modulo cloud e' caricato, l'autenticazione la fa Firebase:
+   stessa schermata, motore diverso. Senza Firebase (o senza rete) resta
+   il percorso locale di prima, cosi' il gioco funziona comunque. */
+function cloudAuth(){ return (window.kfmAuth && window.kfmAuth.attivo) ? window.kfmAuth : null; }
+function entrato(u, registrato){
+  var mail=String((u&&u.email)||'').toLowerCase();
+  var nm=(u&&(u.displayName||''))||mail.split('@')[0];
+  var list=accounts(), found=null;
+  list.forEach(function(a){ if(a.mail===mail) found=a; });
+  if(!found){ list.push({mail:mail,name:nm,pw:'',prov:'firebase',at:Date.now()}); wr(AK,list); }
+  else if(nm && found.name!==nm){ found.name=nm; wr(AK,list); }
+  var r=remBox(); remSet(r); REM_G=r;
+  setSession(mail,r); done();
+  if(registrato && typeof toast==='function'){
+    toast('Ti abbiamo mandato una email per confermare l’indirizzo.');
+  }
+}
 window.auSubmit=function(){
   var reg=(mode==='up');
   var mail=(document.getElementById('au-mail')||{}).value||'';
@@ -151,6 +192,18 @@ window.auSubmit=function(){
   mail=mail.trim().toLowerCase();
   if(!mailOk(mail)) return err('Inserisci un indirizzo email valido.');
   if(pass.length<6) return err('La password deve avere almeno 6 caratteri.');
+  var ca=cloudAuth();
+  if(ca){
+    var nome2=((document.getElementById('au-name')||{}).value||'').trim();
+    if(reg){
+      var pb=(document.getElementById('au-pass2')||{}).value||'';
+      if(nome2.length<2) return err('Inserisci il tuo nome manager.');
+      if(pass!==pb) return err('Le due password non coincidono.');
+    }
+    err('');
+    gWait(reg?'Creazione dell’account…':'Accesso in corso…');
+    return ca.submit(reg,{mail:mail,pass:pass,nome:nome2},entrato,err);
+  }
   var list=accounts(), found=null;
   list.forEach(function(a){ if(a.mail===mail) found=a; });
   if(reg){
@@ -199,6 +252,12 @@ function gFail(msg){
 }
 window.auGoogle=function(){
   REM_G=remBox(); remSet(REM_G);
+  var ca=cloudAuth();
+  if(ca){
+    err('');
+    gWait('Apertura della finestra Google…');
+    return ca.google(entrato,err);
+  }
   var id=gcid();
   if(!id) return window.auGoogleSetup();
   gWait('Apertura della finestra Google\u2026');
@@ -291,7 +350,43 @@ function syncBadge(){
     '<div class="nm"><span>'+(a.prov==='google'?'Google':'Account')+'</span>'+esc(a.name)+'</div>'+
     '<button onclick="auLogout()">Esci</button>';
 }
-window.auLogout=function(){ setSession(''); CUR.slot=0; syncBadge(); mode='in'; authUI(); };
+window.auLogout=function(){
+  var ca=cloudAuth(); if(ca) ca.logout();
+  setSession(''); CUR.slot=0; syncBadge(); mode='in'; authUI();
+};
+/* Ripristino della sessione: onAuthStateChanged e' la sorgente, questa
+   funzione allinea la sessione locale a quello che dice Firebase.
+   Chi gioca senza account non viene toccato. */
+window.auFirebaseStato=function(u){
+  if(u){
+    var mail=String(u.email||'').toLowerCase();
+    if(!mail || session()===mail) return;
+    var list=accounts(), found=null;
+    list.forEach(function(a){ if(a.mail===mail) found=a; });
+    if(!found){
+      list.push({mail:mail,name:(u.displayName||mail.split('@')[0]),pw:'',prov:'firebase',at:Date.now()});
+      wr(AK,list);
+    }
+    setSession(mail,true);
+    try{ CUR.slot=(+rd(curKey(),0))||0; }catch(e){}
+    syncBadge();
+  } else {
+    var a=me();
+    if(a && a.prov==='firebase'){ setSession(''); CUR.slot=0; syncBadge(); }
+  }
+};
+/* Recupero password: usa Firebase quando c'e', altrimenti lo dice. */
+window.auRecupera=function(){
+  var mail=String(((document.getElementById('au-mail')||{}).value||'')).trim().toLowerCase();
+  if(!mailOk(mail)) return err('Scrivi la tua email qui sopra, poi premi di nuovo.');
+  var ca=cloudAuth();
+  if(!ca) return err('Il recupero password richiede la connessione a internet.');
+  gWait('Invio del messaggio…');
+  ca.recupera(mail,function(){
+    err('');
+    if(typeof toast==='function') toast('Ti abbiamo mandato una email per reimpostare la password.');
+  },err);
+};
 
 /* ------------------------------------------------------------ SLOT PICKER */
 var pending=null;
@@ -437,7 +532,14 @@ function slotFull(){
 }
 window.auSlotLoad=function(n){
   var s=slotGet(n); if(!s||!s.raw) return;
-  try{ localStorage.setItem('mgr26save',s.raw); }catch(e){}
+  /* se questa copia fallisce si finirebbe per ricaricare in silenzio la
+     carriera precedente, che e' peggio di non caricare nulla */
+  try{ localStorage.setItem('mgr26save',s.raw); }
+  catch(e){
+    if(typeof gameMsg==='function') gameMsg({title:'Slot non caricato',msg:'Non c\'&egrave; spazio nella memoria del browser per aprire lo slot '+n+'. Elimina uno slot e riprova.',icon:'warn'});
+    else if(typeof toast==='function') toast('Slot '+n+' non caricato: memoria piena');
+    return;
+  }
   CUR.slot=n; pending=null; close(); hideIntro(true);
   setTimeout(function(){
     try{ if(typeof _load==='function') _load.call(window); }catch(e){}

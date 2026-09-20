@@ -1,0 +1,74 @@
+rules_version = '2';
+
+/* =====================================================================
+   KFM27 - account e salvataggi cloud.
+
+   Ogni utente vede e scrive soltanto sotto users/{uid}, e uid deve
+   essere quello del token: mai un uid arrivato dall'interfaccia.
+   ===================================================================== */
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function suo(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+    function dati() { return request.resource.data; }
+    /* uid non si cambia: ne' scrivendolo diverso, ne' modificandolo dopo */
+    function uidCoerente(userId) {
+      return dati().uid == userId
+             && (resource == null || resource.data.uid == dati().uid);
+    }
+
+    /* --- profilo ---------------------------------------------------- */
+    match /users/{userId} {
+      allow read: if suo(userId);
+      allow create, update: if suo(userId)
+        && uidCoerente(userId)
+        && dati().keys().hasOnly(['uid','email','displayName','emailVerified',
+                                  'provider','createdAt','lastSeenAt'])
+        && (!dati().keys().hasAny(['email']) || dati().email is string || dati().email == null)
+        && (!dati().keys().hasAny(['displayName']) || dati().displayName is string || dati().displayName == null);
+      allow delete: if suo(userId);
+
+      /* --- metadati di una carriera --------------------------------- */
+      match /saves/{saveId} {
+        /* gli slot del gioco sono cinque: nessun altro identificatore */
+        function idValido() {
+          return saveId.matches('slot-[1-5]') && dati().saveId == saveId;
+        }
+        allow read, delete: if suo(userId);
+        allow create, update: if suo(userId)
+          && uidCoerente(userId)
+          && idValido()
+          && dati().saveVersion is int
+          && dati().saveVersion >= 1 && dati().saveVersion <= 99
+          && dati().bytes is int
+          && dati().bytes >= 0 && dati().bytes <= 8388608
+          && (!dati().keys().hasAny(['saveName']) || dati().saveName is string)
+          && (!dati().keys().hasAny(['teamName']) || dati().teamName == null || dati().teamName is string)
+          && (!dati().keys().hasAny(['managerName']) || dati().managerName == null || dati().managerName is string)
+          && dati().keys().hasOnly(['saveId','uid','saveName','managerId','managerName',
+                                    'teamId','teamName','currentSeason','currentDate',
+                                    'createdAt','updatedAt','saveVersion','bytes']);
+
+        /* --- i pezzi del salvataggio -------------------------------- */
+        match /chunks/{chunkId} {
+          allow read, delete: if suo(userId);
+          /* un pezzo contiene solo la sua stringa, e sotto il limite di
+             1 MiB del documento Firestore */
+          allow create, update: if suo(userId)
+            && chunkId in ['core','players','competitions','transfers','calendar']
+            && dati().keys().hasOnly(['d'])
+            && dati().d is string
+            && dati().d.size() <= 900000;
+        }
+      }
+    }
+
+    /* tutto il resto e' chiuso */
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

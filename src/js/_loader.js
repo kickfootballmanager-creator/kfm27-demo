@@ -61,12 +61,48 @@
     "src/js/050-tac30.js",
     "src/js/051-au31-js.js",
     "src/js/052-kfm-sagome-js.js",
-    "src/js/053-fin-motion-mod.js"
+    "src/js/053-fin-motion-mod.js",
+    "src/js/054-anim-sel-mod.js",
+    "src/js/055-coach-mod.js",
+    "src/js/056-cloud-mod.js"
   ];
   fetch('src/data/eadb.json')
     .then(function(r){ return r.json(); })
     .then(function(data){
       window.EADB = data;
+      /* Riferimento al database appena letto dal file, prima che
+         qualunque modulo lo tocchi. Serve a saveGame: avviare una
+         carriera non crea righe nuove, ne toglie soltanto, quindi il
+         salvataggio puo' registrare gli indici delle righe riprese dal
+         file invece di ricopiarne il testo. Da 4,4 MB a poche decine.
+
+         Delle rose tengo una copia dell'array (r.slice()): le stringhe
+         restano condivise, si copiano solo i riferimenti. Del resto del
+         club basta un'impronta, perche' non cambia mai. */
+      try {
+        function _h(s) {
+          var h = 2166136261;                       /* FNV-1a a 32 bit */
+          for (var i = 0; i < s.length; i++) {
+            h ^= s.charCodeAt(i);
+            h = (h + (h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24)) >>> 0;
+          }
+          return h + ':' + s.length;
+        }
+        var base = {}, firma = '';
+        for (var cn in data) {
+          var c = data[cn], senzaR = {};
+          for (var k in c) if (k !== 'r') senzaR[k] = c[k];
+          var f = _h(JSON.stringify(senzaR));
+          /* 'o' e' un riferimento al club vero, non una copia: serve a
+             rimettere in piedi tid, str, league e simili se un club
+             sparisce da EADB. Quei campi non cambiano mai, quindi il
+             riferimento resta buono e non costa memoria. */
+          base[cn] = { r: (c.r || []).slice(), f: f, o: c };
+          firma += cn + f + ((c.r || []).length) + '|';
+        }
+        window.__EADB_BASE = base;
+        window.__EADB_BASE_ID = _h(firma);   /* per capire se il file e' cambiato */
+      } catch (e) { window.__EADB_BASE = null; window.__EADB_BASE_ID = null; }
       var domReadyBefore = document.readyState !== 'loading';
       var loadReadyBefore = document.readyState === 'complete';
       loadScriptSeq(scripts, 0, function(){

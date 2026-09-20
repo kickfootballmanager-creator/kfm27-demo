@@ -2,7 +2,7 @@
    conteggio dei numeri grandi. Partono una volta sola all'ingresso nella sezione:
    render() sostituisce .fin-screen a ogni ridisegno, ma nello stesso ciclo, quindi
    l'observer la vede sempre presente e non riparte. */
-import { animate } from '../vendor/motion.js';
+import { animate } from '../vendor/motion-es.js';
 
 var BLOCK_DUR = 0.35, BLOCK_STEP = 0.04, BLOCK_MAX = 0.4;
 var BAR_DUR = 0.6, COUNT_DUR = 0.5;

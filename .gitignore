@@ -1,6 +1,19 @@
 node_modules/
 .claude/
 .DS_Store
-node_modules/
-.claude/
-.DS_Store
+
+# materiale di lavoro, non serve al gioco pubblicato
+src/assets/players/
+immagini asset/
+coach_grid_reference.png
+coach_start_reference.png
+src/assets/coach_start_reference.png
+src/assets/ChatGPT Image*.png
+team_selection.png
+
+# segreti: non devono mai finire nel repo
+.env
+.env.*
+*serviceAccount*.json
+*service-account*.json
+*firebase-adminsdk*.json

@@ -146,12 +146,11 @@
   padding:clamp(8px,1.15vh,16px) 16px;
   border-radius:4px;
   font-family:inherit;
-  transition:background-color .12s ease, color .12s ease;
+  /* il passaggio del mouse inverte la riga, e lo fa subito */
 }
 .ts-row::before{
   content:''; position:absolute; top:0; left:16px; right:16px;
   height:1px; background:var(--ts-line);
-  transition:opacity .12s ease;
 }
 .ts-row:first-child::before{ content:none; }
 
@@ -203,7 +202,6 @@
   padding:8px 0;
   font-size:11px; font-weight:600; letter-spacing:.18em;
   text-transform:uppercase; color:var(--ts-ink-mid);
-  transition:color .12s ease;
 }
 .ts-back svg{ flex:none; }
 .ts-back:hover,

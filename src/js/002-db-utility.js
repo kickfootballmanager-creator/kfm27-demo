@@ -1857,15 +1857,23 @@ const TS_BG_EXT=['jpg','png','webp'];
    quando una e' arrivata davvero: se non c'e' nulla resta il fondo
    neutro del CSS, mai l'icona di immagine mancante.
    'base' e' il percorso senza estensione. */
+/* Quale estensione ha funzionato, per ogni percorso. render() ridisegna
+   spesso, e senza memoria la sonda ripartiva da .jpg ogni volta,
+   ripetendo lo stesso 404 a ogni ridisegno. */
+const TS_BG_MEMO = {};
 function tsSfondo(host, base){
   if(typeof host==='string') host=document.getElementById(host);
   if(!host || !base) return;
+  const dipingi=function(src){ host.style.backgroundImage='url("'+src+'")'; host.classList.add('on'); };
+  const noto=TS_BG_MEMO[base];
+  if(noto){ dipingi(noto); return; }
+  if(noto===null) return;              /* gia' provato: non esiste */
   let i=0;
   (function prova(){
-    if(i>=TS_BG_EXT.length) return;
+    if(i>=TS_BG_EXT.length){ TS_BG_MEMO[base]=null; return; }
     const src=base+'.'+TS_BG_EXT[i++];
     const img=new Image();
-    img.onload=function(){ host.style.backgroundImage='url("'+src+'")'; host.classList.add('on'); };
+    img.onload=function(){ TS_BG_MEMO[base]=src; dipingi(src); };
     img.onerror=prova;
     img.src=src;
   })();
@@ -2433,7 +2441,7 @@ function render() {
       app.innerHTML = `<div class="setup-wrap ts-screen">
         <div class="ts-bg" id="ts-bg"></div>
         <div class="ts-veil"></div>
-        <div class="ts-col view-anim">
+        <div class="ts-col">
           <header class="ts-head">
             <div class="ts-eyebrow"><span>${S.pendingLeague}</span><i class="ts-rule"></i></div>
             <h1 class="ts-title">${_tk?'Quale squadra vuoi allenare?':'Quale squadra sostituisci?'}</h1>
@@ -3686,9 +3694,155 @@ window.negFinalize=function(w){ const n=S.neg; if(!n) return; if(rosterFull()){ 
 window.buyPlayer=function(name, club){ const p=findMarket(name, club); if(!p) return; const st=p.status||'signed'; openNegotiate(name, st!=='loan', p.club); };
 function hasSave(){ try{ return !!localStorage.getItem('mgr26save'); }catch(e){ return false; } }
 function toast(msg){ try{ const t=document.createElement('div'); t.className='mgr-toast'; t.innerHTML=msg; document.body.appendChild(t); setTimeout(()=>{ t.style.opacity='0'; t.style.transform='translate(-50%,10px)'; setTimeout(()=>t.remove(),400); },1900); }catch(e){} }
-function saveGame(){ const mk=()=>{ const c=Object.assign({},S); c.usedPlayers=Array.from(S.usedPlayers||[]); c.transferList=Array.from(S.transferList||[]); c.loanList=Array.from(S.loanList||[]); c.neg=null; return c; }; try{ localStorage.setItem('mgr26save', JSON.stringify({v:3, S:mk(), EADB:(typeof EADB!=='undefined'?EADB:null)})); toast('\ud83d\udcbe Partita salvata'); }catch(e){ try{ localStorage.setItem('mgr26save', JSON.stringify({v:3, S:mk()})); toast('\ud83d\udcbe Salvato (mercato escluso: spazio)'); }catch(e2){ alert('Impossibile salvare: memoria del browser piena.'); } } }
+/* ---------- SALVATAGGIO ----------
+   Prima il salvataggio conteneva l'intero EADB: 4,4 MB contro una quota
+   di circa 5, e con cinque slot che ne copiano una ciascuno si arrivava
+   a 26 MB. Funzionava solo al primo slot su profilo vuoto.
+   Ora si salvano solo i club davvero cambiati, confrontando l'impronta
+   presa dal file all'avvio (window.__EADB_BASE). */
+
+function _impronta(o){
+  const s = JSON.stringify(o);
+  let h = 2166136261;
+  for(let i=0;i<s.length;i++){ h ^= s.charCodeAt(i); h = (h + (h<<1) + (h<<4) + (h<<7) + (h<<8) + (h<<24)) >>> 0; }
+  return h + ':' + s.length;
+}
+/* La differenza fra il database in memoria e quello del file.
+   Per ogni rosa si scrive un numero quando la riga viene dal file
+   (l'indice di partenza) e il testo solo quando la riga e' nuova o
+   modificata. Avviare una carriera toglie righe e basta, quindi in
+   pratica si salvano solo numeri.
+   Senza il riferimento di partenza si ricade sul salvataggio pieno:
+   meglio grosso che incompleto. */
+function _eadbDelta(){
+  if(typeof EADB === 'undefined' || !EADB) return {pieno:null, mod:null, via:[]};
+  const base = window.__EADB_BASE;
+  if(!base) return {pieno:EADB, mod:null, via:[]};
+  const mod = {}, via = [];
+  for(const cn in EADB){
+    const c = EADB[cn], b = base[cn];
+    if(!b){ mod[cn] = {tutto:c}; continue; }          /* club aggiunto dopo */
+    const voce = {};
+    const senzaR = {}; for(const k in c) if(k !== 'r') senzaR[k] = c[k];
+    if(_impronta(senzaR) !== b.f) voce.c = senzaR;
+    const cur = c.r || [], br = b.r || [];
+    const idx = new Map();
+    for(let i=0;i<br.length;i++) if(!idx.has(br[i])) idx.set(br[i], i);
+    let identica = (cur.length === br.length);
+    const enc = new Array(cur.length);
+    for(let i=0;i<cur.length;i++){
+      const p = idx.has(cur[i]) ? idx.get(cur[i]) : cur[i];
+      enc[i] = p;
+      if(identica && p !== i) identica = false;
+    }
+    if(!identica) voce.r = enc;
+    if(voce.c || voce.r) mod[cn] = voce;
+  }
+  for(const cn in base) if(!(cn in EADB)) via.push(cn);
+  return {pieno:null, mod, via};
+}
+/* Rimette in piedi il database dalla differenza. */
+function _eadbApplica(blob){
+  if(typeof EADB === 'undefined' || !EADB) return true;
+  if(blob.EADB){ Object.keys(EADB).forEach(k=>delete EADB[k]); Object.assign(EADB, blob.EADB); return true; }
+  if(!blob.EADBmod && !(blob.EADBvia||[]).length) return true;
+  const base = window.__EADB_BASE;
+  /* gli indici hanno senso solo con lo stesso file di partenza */
+  const serveBase = Object.keys(blob.EADBmod||{}).some(cn=>{
+    const v = blob.EADBmod[cn];
+    return v && v.r && v.r.some(x=>typeof x === 'number');
+  });
+  if(serveBase && (!base || (blob.baseId && window.__EADB_BASE_ID && blob.baseId !== window.__EADB_BASE_ID))) return false;
+  (blob.EADBvia||[]).forEach(cn=>{ delete EADB[cn]; });
+  const mod = blob.EADBmod || {};
+  for(const cn in mod){
+    const v = mod[cn];
+    if(v.tutto){ EADB[cn] = v.tutto; continue; }
+    /* club sparito dalla memoria: lo riparto dai campi fissi del file,
+       altrimenti tornerebbe senza tid, str, lega e paese */
+    if(!EADB[cn]){
+      const b = base && base[cn];
+      const nuovo = {};
+      /* stesso ordine di proprieta' del file, r compresa al suo posto */
+      if(b && b.o) for(const k in b.o) nuovo[k] = (k === 'r') ? ((b.r||[]).slice()) : b.o[k];
+      EADB[cn] = nuovo;
+    }
+    if(v.c) Object.assign(EADB[cn], v.c);
+    if(v.r){
+      const br = (base && base[cn] && base[cn].r) || [];
+      EADB[cn].r = v.r.map(x => typeof x === 'number' ? br[x] : x);
+    }
+  }
+  return true;
+}
+/* Nel calendario del mondo simulato ogni giornata ripete per esteso i
+   nomi dei club: 48 leghe per 12 kB l'una. Li sostituisco con la loro
+   posizione dentro clubs, e al caricamento rifaccio il contrario.
+   La struttura viva non viene toccata: si copia solo quello che serve. */
+function _worldStringi(w){
+  if(!w || !w.leagues) return w;
+  const out = Object.assign({}, w), lg = {};
+  for(const n in w.leagues){
+    const L = w.leagues[n];
+    if(!L || !L.rounds || !L.clubs){ lg[n] = L; continue; }
+    const pos = new Map(); L.clubs.forEach((c,i)=>pos.set(c,i));
+    lg[n] = Object.assign({}, L, {
+      rounds: L.rounds.map(g => g.map(p => p.map(c => pos.has(c) ? pos.get(c) : c))),
+      _ri: 1
+    });
+  }
+  out.leagues = lg;
+  return out;
+}
+function _worldAllarga(w){
+  if(!w || !w.leagues) return w;
+  for(const n in w.leagues){
+    const L = w.leagues[n];
+    if(!L || !L._ri || !L.rounds || !L.clubs) continue;
+    L.rounds = L.rounds.map(g => g.map(p => p.map(x => typeof x === 'number' ? L.clubs[x] : x)));
+    delete L._ri;
+  }
+  return w;
+}
+
+/* Scrive senza mai distruggere il salvataggio precedente: se la
+   scrittura fallisce, il vecchio valore torna al suo posto. */
+function _scriviSicuro(chiave, testo){
+  let prima = null;
+  try{ prima = localStorage.getItem(chiave); }catch(e){}
+  try{ localStorage.setItem(chiave, testo); return {ok:true}; }
+  catch(e){
+    if(prima !== null){ try{ localStorage.setItem(chiave, prima); }catch(e2){} }
+    return {ok:false, err:e};
+  }
+}
+function saveGame(){
+  const mk=()=>{ const c=Object.assign({},S); c.usedPlayers=Array.from(S.usedPlayers||[]); c.transferList=Array.from(S.transferList||[]); c.loanList=Array.from(S.loanList||[]); c.neg=null; c.world=_worldStringi(S.world); return c; };
+  const d = _eadbDelta();
+  const pieno = JSON.stringify(d.pieno
+    ? {v:4, S:mk(), EADB:d.pieno}
+    : {v:4, S:mk(), EADBmod:d.mod, EADBvia:d.via, baseId:window.__EADB_BASE_ID||null});
+  let r = _scriviSicuro('mgr26save', pieno);
+  if(r.ok){
+    const kb = Math.max(1, Math.round(pieno.length/1024));
+    toast('\ud83d\udcbe Partita salvata <span style="opacity:.6">('+kb+' kB)</span>');
+    return true;
+  }
+  /* spazio finito: riprovo senza le rose modificate */
+  const magro = JSON.stringify({v:4, S:mk(), EADBmod:null, EADBvia:[]});
+  r = _scriviSicuro('mgr26save', magro);
+  if(r.ok){
+    toast('\ud83d\udcbe Salvato, ma senza le modifiche al mercato: spazio esaurito');
+    return true;
+  }
+  if(typeof gameMsg==='function') gameMsg({title:'Salvataggio non riuscito',msg:'La memoria del browser &egrave; piena. Elimina uno slot dal men&ugrave; delle partite e riprova. Il salvataggio precedente &egrave; rimasto intatto.',icon:'warn'});
+  else alert('Impossibile salvare: memoria del browser piena. Il salvataggio precedente e\' rimasto intatto.');
+  return false;
+}
 window.saveGame=saveGame;
-function loadGame(){ let raw; try{ raw=localStorage.getItem('mgr26save'); }catch(e){ raw=null; } if(!raw){ alert('Nessun salvataggio trovato.'); return; } let blob; try{ blob=JSON.parse(raw); }catch(e){ alert('Salvataggio corrotto.'); return; } const ns=blob.S; if(!ns){ alert('Salvataggio non valido.'); return; } ns.usedPlayers=new Set(ns.usedPlayers||[]); ns.transferList=new Set(ns.transferList||[]); ns.loanList=new Set(ns.loanList||[]); Object.keys(S).forEach(k=>{ if(!(k in ns)) delete S[k]; }); Object.assign(S, ns); if(blob.EADB && typeof EADB!=='undefined'){ Object.keys(EADB).forEach(k=>delete EADB[k]); Object.assign(EADB, blob.EADB); if(typeof buildClub==='function'){ try{ Object.keys(DB_SERIE_A).forEach(cn=>{ if(EADB[cn]) DB_SERIE_A[cn]=buildClub(cn); }); Object.keys(ROSTERS_CL).forEach(cn=>{ if(EADB[cn]) ROSTERS_CL[cn]=buildClub(cn); }); }catch(e){} } } try{ if(typeof MU_repairSave==='function') MU_repairSave(); }catch(e){} _market=null; if(typeof render==='function') render(); toast('\ud83d\udcc2 Partita caricata'); }
+function loadGame(){ let raw; try{ raw=localStorage.getItem('mgr26save'); }catch(e){ raw=null; } if(!raw){ alert('Nessun salvataggio trovato.'); return; } let blob; try{ blob=JSON.parse(raw); }catch(e){ alert('Salvataggio corrotto.'); return; } const ns=blob.S; if(!ns){ alert('Salvataggio non valido.'); return; } ns.usedPlayers=new Set(ns.usedPlayers||[]); ns.transferList=new Set(ns.transferList||[]); ns.loanList=new Set(ns.loanList||[]); Object.keys(S).forEach(k=>{ if(!(k in ns)) delete S[k]; }); Object.assign(S, ns); _worldAllarga(S.world); /* v3: EADB intero. v4: solo i club cambiati, applicati sopra al
+   database appena letto dal file. */
+if(typeof EADB!=='undefined' && (blob.EADB || blob.EADBmod || blob.EADBvia)){ if(!_eadbApplica(blob)){ if(typeof gameMsg==='function') gameMsg({title:'Database cambiato',msg:'Questo salvataggio &egrave; stato fatto con un database diverso da quello attuale. La carriera viene caricata lo stesso, ma le rose tornano a quelle del file.',icon:'warn'}); else alert('Database cambiato: la carriera viene caricata, ma le rose tornano a quelle del file.'); } if(typeof buildClub==='function'){ try{ Object.keys(DB_SERIE_A).forEach(cn=>{ if(EADB[cn]) DB_SERIE_A[cn]=buildClub(cn); }); Object.keys(ROSTERS_CL).forEach(cn=>{ if(EADB[cn]) ROSTERS_CL[cn]=buildClub(cn); }); }catch(e){} } } try{ if(typeof MU_repairSave==='function') MU_repairSave(); }catch(e){} _market=null; if(typeof render==='function') render(); toast('\ud83d\udcc2 Partita caricata'); }
 window.loadGame=(function(_o){ return function(){ var r=_o.apply(this,arguments);
   try{ if(typeof clubHeal==='function') clubHeal(); }catch(e){}
   return r; }; })(loadGame);
