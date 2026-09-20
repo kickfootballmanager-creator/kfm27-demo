@@ -2322,26 +2322,17 @@ function render() {
   const app = document.getElementById("app");
   try{ if(typeof syncCupCalendar==="function") syncCupCalendar(); }catch(e){}
   if(S.screen==="title"){
-    var __t=Date.now();
-    if(!window.__kfmT||(__t-window.__kfmT)>600){
-      window.__kfmT=__t;
-      try{ if(app) app.innerHTML=""; }catch(e){}
-      if(typeof window.kfmHome==="function"){ try{ window.kfmHome(); }catch(e){} return; }
-    }
+    /* La vecchia schermata iniziale non esiste piu': l'ingresso del
+       gioco e' l'intro. Prima qui c'era una limitazione a 600 ms e, se
+       render() veniva richiamata due volte di fila, ricadeva sul
+       vecchio riquadro verde-azzurro. Ora si torna sempre all'intro. */
+    try{ if(app) app.innerHTML=""; }catch(e){}
+    if(typeof window.kfmHome==="function"){ try{ window.kfmHome(); }catch(e){} }
+    else { try{ var _i=document.getElementById("kfm-intro");
+      if(_i){ _i.style.display=""; _i.classList.remove("kfm-gone"); document.documentElement.classList.remove("kfm-live"); } }catch(e){} }
+    return;
   }
-  if(S.screen === "title") {
-      ensureHomeStyle();
-      app.innerHTML = `
-      <div class="setup-wrap home-wrap">
-          <div class="home-hero glass-panel">
-              <div class="home-badge">⚽ MODALITÀ CARRIERA</div>
-              <div class="home-title" style="font-style:italic">KFM<span>27</span></div>
-              <div class="home-sub">Costruisci la tua leggenda: scegli come iniziare, guida il tuo club e conquista ogni trofeo.</div>
-              <button class="home-play" onclick="goChoice()">GIOCA ORA ▸</button>
-              ${hasSave()?`<button class="home-load" onclick="loadGame()">📂 Continua salvataggio</button>`:''}
-          </div>
-      </div>`;
-  } else if(S.screen === "choice") {
+  if(S.screen === "choice") {
       ensureHomeStyle();
       app.innerHTML = `
       <div class="setup-wrap">
@@ -2587,7 +2578,7 @@ function topBar(){
   return `<div class="fc-topbar">
     <div class="fc-shortcuts"><button class="fc-save-btn" onclick="saveGame()">💾 Salva</button><button class="fc-save-btn" onclick="loadGame()">📂 Carica</button></div>
     <div class="fc-nav">${nav.map(([k,l])=>`<span class="fc-nav-item ${S.mode===k?'active':''}" onclick="setMode('${k}')">${l}</span>`).join('')}<span class="fc-nav-item kfm-home-item" onclick="kfmHome()">Home</span></div>
-    <img class="fc-site-logo" src="logosito.png" onerror="this.onerror=null;this.src='${S.userLogo}'">
+    <img class="fc-site-logo" src="${S.userLogo}" onerror="this.onerror=null;this.src=AVT">
   </div>`;
 }
 function bottomBar(){
@@ -3807,15 +3798,36 @@ function _worldAllarga(w){
 
 /* Scrive senza mai distruggere il salvataggio precedente: se la
    scrittura fallisce, il vecchio valore torna al suo posto. */
+/* Quando la memoria e' piena, prima di arrendersi si butta via quello
+   che si puo' rifare: le copie di sicurezza vecchie e le cache delle
+   immagini. Sono le voci che riempivano lo spazio e facevano fallire il
+   salvataggio mentre si avanzava nel calendario. */
+function _liberaSpazio(){
+  let via = 0;
+  try{
+    const backup = Object.keys(localStorage).filter(k => /^kfm_backup_/.test(k)).sort();
+    /* la piu' recente resta, le altre vanno */
+    backup.slice(0, Math.max(0, backup.length - 1)).forEach(k => { localStorage.removeItem(k); via++; });
+    ['mu_cache','KFM_SAGOME_V1','KFM_LOGO_OK_V1'].forEach(k => {
+      if(localStorage.getItem(k) !== null){ localStorage.removeItem(k); via++; }
+    });
+  }catch(e){}
+  return via;
+}
 function _scriviSicuro(chiave, testo){
   let prima = null;
   try{ prima = localStorage.getItem(chiave); }catch(e){}
   try{ localStorage.setItem(chiave, testo); return {ok:true}; }
   catch(e){
+    /* un solo tentativo in piu', dopo aver fatto spazio */
+    if(_liberaSpazio()){
+      try{ localStorage.setItem(chiave, testo); return {ok:true, ripulito:true}; }catch(e2){}
+    }
     if(prima !== null){ try{ localStorage.setItem(chiave, prima); }catch(e2){} }
     return {ok:false, err:e};
   }
 }
+try{ window.kfmLiberaSpazio = _liberaSpazio; }catch(e){}
 function saveGame(){
   const mk=()=>{ const c=Object.assign({},S); c.usedPlayers=Array.from(S.usedPlayers||[]); c.transferList=Array.from(S.transferList||[]); c.loanList=Array.from(S.loanList||[]); c.neg=null; c.world=_worldStringi(S.world); return c; };
   const d = _eadbDelta();

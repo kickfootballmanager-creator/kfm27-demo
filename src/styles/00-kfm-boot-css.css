@@ -1,1 +1,15 @@
 html:not(.kfm-live) #app{visibility:hidden!important}html:not(.kfm-live) body{background:#03070d!important}
+/* Questo foglio sta nell'intestazione e arriva per primo. Serve a non
+   far vedere l'intro non vestita mentre 08-kfm-intro-css.css, che e'
+   linkato nel corpo, e' ancora in viaggio: senza queste righe il logo
+   compariva alla sua dimensione naturale, gigante, e la schermata delle
+   modalita' lampeggiava prima di nascondersi. */
+#kfm-intro{position:fixed;inset:0;z-index:99998;background:#03070d;overflow:hidden}
+#kfm-intro .kfm-logo{position:absolute;top:clamp(18px,3vh,40px);left:clamp(20px,3vw,54px);width:clamp(150px,15vw,280px);z-index:6}
+#kfm-intro .kfm-logo img{width:100%;height:auto;display:block}
+/* le modalita' partono nascoste e le scopre #kfm-intro.kfm-step2, che e'
+   piu' specifico di questa riga. Il riquadro .kfm-fs invece NON va
+   toccato: e' visibile di suo e si nasconde con .off, quindi nasconderlo
+   qui lo renderebbe impossibile da aprire. */
+#kfm-intro .kfm-modes{opacity:0}
+#kfm-intro img{max-width:100%}

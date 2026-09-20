@@ -16,7 +16,7 @@
 .kfm-btn:before{content:"";position:absolute;inset:0;background:#fff;transform:scaleX(0);transform-origin:left center;transition:transform .38s cubic-bezier(.2,.8,.2,1);z-index:1}
 .kfm-btn:after{content:"";position:absolute;top:0;left:-60%;width:38%;height:100%;background:linear-gradient(100deg,transparent,rgba(255,255,255,.5),transparent);transform:skewX(-18deg);animation:kfmShine 3.6s ease-in-out infinite;z-index:3;pointer-events:none}
 @keyframes kfmShine{0%{left:-60%}55%,100%{left:130%}}
-.kfm-btn:hover{color:#04070c;transform:translateY(-3px);letter-spacing:.3em;box-shadow:0 18px 44px rgba(0,0,0,.55)}
+.kfm-btn:hover{color:#04070c;box-shadow:0 18px 44px rgba(0,0,0,.55)}
 .kfm-btn:hover:before{transform:scaleX(1)}
 .kfm-btn:active{transform:translateY(-1px) scale(.985)}
 .kfm-corner{position:absolute;width:11px;height:11px;border:2px solid #fff;opacity:.85;transition:all .34s ease;pointer-events:none;z-index:4}
@@ -108,6 +108,7 @@
 .kfm-btn.sm{padding:13px 26px;font-size:11.5px;letter-spacing:.2em}
 .kfm-btn.ghost{border-color:rgba(255,255,255,.32);color:rgba(255,255,255,.72);background:transparent}
 .kfm-btn.ghost:after{display:none}
+.kfm-btn.ghost:hover{color:#04070c;border-color:#fff}
 
 /* ---------- HOLD ESC ---------- */
 #kfm-esc{position:fixed;left:50%;bottom:46px;transform:translateX(-50%) translateY(14px);z-index:2147483000;display:flex;align-items:center;gap:14px;padding:12px 20px;border:1px solid rgba(255,255,255,.28);background:rgba(3,8,16,.86);backdrop-filter:blur(8px);color:#fff;font-family:Inter,system-ui,sans-serif;font-size:10.5px;letter-spacing:.24em;text-transform:uppercase;font-weight:700;opacity:0;pointer-events:none;transition:opacity .18s ease,transform .18s ease}

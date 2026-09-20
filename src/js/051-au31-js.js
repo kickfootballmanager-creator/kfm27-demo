@@ -53,6 +53,11 @@ function slotWrite(n){
   try{ prima=localStorage.getItem(k); }catch(e){}
   try{ localStorage.setItem(k, JSON.stringify({meta:meta(), raw:raw})); return true; }
   catch(e){
+    /* memoria piena: si butta via quello che si puo' rifare e si riprova
+       una volta sola, poi si rimette a posto lo slot precedente */
+    try{ if(typeof window.kfmLiberaSpazio==='function' && window.kfmLiberaSpazio()){
+      localStorage.setItem(k, JSON.stringify({meta:meta(), raw:raw})); return true;
+    } }catch(e3){}
     if(prima!==null){ try{ localStorage.setItem(k, prima); }catch(e2){} }
     return false;
   }
@@ -127,7 +132,13 @@ function bgFromHome(){
     var home=introVisible();
     if(root.classList.toggle) root.classList[home?'remove':'add']('plain');
     if(!home){ if(bg) bg.style.backgroundImage='none'; return; }
-    var h=document.querySelector('.kfm-heroimg');
+    /* Se siamo sulla schermata delle modalita', lo sfondo del popup deve
+       restare quello: prima prendeva sempre quello della prima
+       schermata, che non c'entra nulla con quello che si sta guardando. */
+    var intro=document.getElementById('kfm-intro');
+    var suModalita=intro&&intro.classList.contains('kfm-step2');
+    var h=document.querySelector(suModalita?'.kfm-mbg':'.kfm-heroimg');
+    if(!h) h=document.querySelector('.kfm-heroimg');
     if(h&&bg){ var b=getComputedStyle(h).backgroundImage; if(b&&b!=='none') bg.style.backgroundImage=b; }
   }catch(e){}
 }
@@ -391,13 +402,42 @@ window.auRecupera=function(){
 /* ------------------------------------------------------------ SLOT PICKER */
 var pending=null;
 var slotMode='new';
+/* Carriere che stanno solo nel cloud: su un altro browser gli slot
+   locali sono vuoti, e prima la lista risultava vuota anche quando
+   nell'account c'erano carriere. */
+var CLOUD_SLOT={};
+function cloudNegliSlot(){
+  if(typeof window.kfmCloudList!=='function') return;
+  window.kfmCloudList().then(function(list){
+    var trovate=0;
+    (list||[]).forEach(function(s){
+      var n=parseInt(String(s.saveId||'').replace('slot-',''),10);
+      if(!(n>=1&&n<=MAX)) return;
+      CLOUD_SLOT[n]=s;
+      if(slotGet(n)) return;                 /* in locale c'e' gia' */
+      trovate++;
+      var el=document.querySelector('.au-slot[data-slot="'+n+'"]');
+      if(!el) return;
+      el.classList.remove('empty');
+      el.setAttribute('onclick', (slotMode==='save'?'auSlotSave(':'auSlotLoad(')+n+')');
+      el.querySelector('.tm').textContent = s.teamName || 'Carriera';
+      el.querySelector('.meta').innerHTML =
+        'Stagione <b>'+esc(s.currentSeason||'-')+'</b><br>'+
+        '<span class="au-incloud">Nel tuo account</span>';
+      var cta=el.querySelector('.cta');
+      if(cta) cta.innerHTML='<i></i>'+(slotMode==='save'?'Sovrascrivi':'Scarica e continua');
+    });
+    if(trovate&&typeof toast==='function') toast(trovate+' carriere recuperate dal tuo account.');
+  }).catch(function(){});
+}
+
 function slotUI(){
   var cards='';
   for(var i=1;i<=MAX;i++){
     var s=slotGet(i);
     if(s&&s.meta){
       var m=s.meta;
-      cards+='<div class="au-slot" style="--s:'+i+'" onclick="'+(slotMode==='save'?'auSlotSave(':'auSlotLoad(')+i+')">'+
+      cards+='<div class="au-slot" data-slot="'+i+'" style="--s:'+i+'" onclick="'+(slotMode==='save'?'auSlotSave(':'auSlotLoad(')+i+')">'+
         '<div class="n">Slot 0'+i+'</div>'+
         '<div class="del" onclick="auSlotDel('+i+',event)" title="Elimina salvataggio">'+TRASH+'</div>'+
         '<div class="tm">'+esc(m.team)+'</div>'+
@@ -406,7 +446,7 @@ function slotUI(){
           'Valutazione <b>'+esc(m.strength||'-')+'</b><br>'+dt(m.at)+'</div>'+
         '<div class="cta"><i></i>'+(slotMode==='save'?'Sovrascrivi':'Continua')+'</div></div>';
     } else {
-      cards+='<div class="au-slot empty" style="--s:'+i+'" onclick="'+(slotMode==='save'?'auSlotSave(':'auSlotNew(')+i+')">'+
+      cards+='<div class="au-slot empty" data-slot="'+i+'" style="--s:'+i+'" onclick="'+(slotMode==='save'?'auSlotSave(':'auSlotNew(')+i+')">'+
         '<div class="n">Slot 0'+i+'</div>'+
         '<div class="tm">Slot vuoto</div>'+
         '<div class="meta">Nessun salvataggio.<br>'+(slotMode==='save'?'Salva qui la tua carriera.':'Inizia qui una nuova carriera.')+'</div>'+
@@ -426,6 +466,7 @@ function slotUI(){
     '</div>'+
   '</div>');
   bgFromHome();
+  cloudNegliSlot();
 }
 function hideIntro(now){
   try{
@@ -531,7 +572,19 @@ function slotFull(){
   try{ if(typeof toast==='function') toast('Tutti i '+MAX+' slot sono occupati: eliminane uno per iniziare una nuova partita.'); }catch(e){}
 }
 window.auSlotLoad=function(n){
-  var s=slotGet(n); if(!s||!s.raw) return;
+  var s=slotGet(n);
+  /* Niente copia locale ma la carriera esiste nell'account: la si scarica
+     e poi si prosegue. E' il caso di chi accede da un altro browser. */
+  if((!s||!s.raw) && CLOUD_SLOT[n] && typeof window.kfmCloudPull==='function'){
+    if(typeof toast==='function') toast('Scarico la carriera dal tuo account…');
+    window.kfmCloudPull(n).then(function(c){
+      if(!c||!c.raw){ if(typeof toast==='function') toast('Carriera non recuperata.'); return; }
+      try{ localStorage.setItem(slotKey(n), JSON.stringify({meta:{team:(CLOUD_SLOT[n].teamName||'Carriera'),league:'',season:CLOUD_SLOT[n].currentSeason||'',week:CLOUD_SLOT[n].currentDate||1,strength:'',mode:'',at:Date.now()}, raw:c.raw})); }catch(e){}
+      window.auSlotLoad(n);
+    }).catch(function(){ if(typeof toast==='function') toast('Carriera non recuperata: controlla la connessione.'); });
+    return;
+  }
+  if(!s||!s.raw) return;
   /* se questa copia fallisce si finirebbe per ricaricare in silenzio la
      carriera precedente, che e' peggio di non caricare nulla */
   try{ localStorage.setItem('mgr26save',s.raw); }
@@ -577,10 +630,19 @@ window.kfmAutoToggle=function(){
   AUTOPICK=true; pending=null; slotMode='save'; slotUI();
 };
 
-/* blocca l\'ingresso al gioco senza account */
-var _kick=window.kfmOpenUT, _draft=window.chooseDraft;
-if(typeof _kick==='function') window.kfmOpenUT=function(){ var self=this, ar=arguments; if(!me()){ pendingAfter=function(){ _kick.apply(self,ar); }; mode='in'; authUI(); return; } return _kick.apply(self,ar); };
-if(typeof _draft==='function') window.chooseDraft=function(){ var self=this, ar=arguments; if(!me()){ pendingAfter=function(){ _draft.apply(self,ar); }; mode='in'; authUI(); return; } return _draft.apply(self,ar); };
+/* Blocca l'ingresso al gioco senza account.
+   Prima erano protette solo Ultimate Team e il draft: entrando da
+   "Allena una squadra" o "Squadra da zero" l'accesso non veniva mai
+   chiesto, e sembrava che il gioco lo domandasse a caso. */
+['kfmOpenUT','chooseDraft','chooseExisting','chooseScratch'].forEach(function(nome){
+  var orig=window[nome];
+  if(typeof orig!=='function') return;
+  window[nome]=function(){
+    var self=this, ar=arguments;
+    if(!me()){ pendingAfter=function(){ orig.apply(self,ar); }; mode='in'; authUI(); return; }
+    return orig.apply(self,ar);
+  };
+});
 
 /* ------------------------------------------------- gate sul tasto GIOCA ORA */
 function introVisible(){
