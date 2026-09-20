@@ -1840,6 +1840,43 @@ window.openCoachPicker=function(){
 window.pickCoach=function(i){ const c=COACHES[i]; if(!c)return; S.coachName=c.n; S.coachNat=c.nat; S.coachFace=coachAvatar(c.n); S.coachPicked=true; const e=document.getElementById('coach-ov'); if(e)e.remove(); render(); };
 window.pickCoachCustom=function(){ const el=document.getElementById('ch-custom-in'); const v=el&&el.value.trim(); if(v){ S.coachName=v.substring(0,24); S.coachFace=coachAvatar(v); S.coachPicked=true; } const e=document.getElementById('coach-ov'); if(e)e.remove(); render(); };
 window.uploadCoachFace=function(ev){ const f=ev.target.files&&ev.target.files[0]; if(!f)return; const r=new FileReader(); r.onload=function(e){ S.coachFace=e.target.result; S.coachPicked=true; const inp=document.getElementById('ch-custom-in'); if(inp&&inp.value.trim()) S.coachName=inp.value.trim().substring(0,24); const o=document.getElementById('coach-ov'); if(o)o.remove(); render(); }; r.readAsDataURL(f); };
+/* ---------- SCELTA SQUADRA: sfondo per campionato ---------- */
+/* Lo slug nasce dal nome della lega: accenti via, tutto minuscolo,
+   ogni gruppo di caratteri estranei diventa un trattino.
+   "Serie C - Girone A" -> "serie-c-girone-a" */
+function tsSlug(n){
+  return String(n==null?'':n)
+    .normalize('NFD').replace(/[̀-ͯ]/g,'')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g,'-')
+    .replace(/^-+|-+$/g,'');
+}
+const TS_BG_DIR='src/assets/leghe/';
+const TS_BG_EXT=['jpg','png','webp'];
+/* Provo le estensioni una alla volta fuori dal DOM e dipingo solo
+   quando una e' arrivata davvero: se non c'e' nulla resta il fondo
+   neutro del CSS, mai l'icona di immagine mancante.
+   'base' e' il percorso senza estensione. */
+function tsSfondo(host, base){
+  if(typeof host==='string') host=document.getElementById(host);
+  if(!host || !base) return;
+  let i=0;
+  (function prova(){
+    if(i>=TS_BG_EXT.length) return;
+    const src=base+'.'+TS_BG_EXT[i++];
+    const img=new Image();
+    img.onload=function(){ host.style.backgroundImage='url("'+src+'")'; host.classList.add('on'); };
+    img.onerror=prova;
+    img.src=src;
+  })();
+}
+function tsLeagueBg(lega){
+  const slug=tsSlug(lega);
+  if(slug) tsSfondo('ts-bg', TS_BG_DIR+slug);
+}
+try{ window.tsSfondo=tsSfondo; window.tsSlug=tsSlug; }catch(e){}
+const TS_CHEVRON='<svg width="8" height="13" viewBox="0 0 8 13" fill="none" aria-hidden="true"><path d="M6.5 1.5 1.5 6.5l5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="square"/></svg>';
+
 function ensureHomeStyle(){ if(document.getElementById('home-style')) return; const s=document.createElement('style'); s.id='home-style'; s.textContent=`
 .setup-wrap{background:linear-gradient(140deg,#0a1230 0%,#221a52 38%,#0b3b6f 66%,#0d5c52 100%);background-size:220% 220%;animation:bgshift 20s ease infinite;position:relative;}
 .setup-wrap::before{content:'';position:absolute;inset:0;pointer-events:none;background:radial-gradient(720px 520px at 14% 8%,rgba(0,210,106,.20),transparent 60%),radial-gradient(720px 620px at 86% 92%,rgba(124,58,237,.24),transparent 60%);}
@@ -2385,16 +2422,31 @@ function render() {
       ensureHomeStyle();
       const clubs = LEAGUES[S.pendingLeague]||[];
       const _tk = S.takeoverMode;
-      const rows = clubs.map(cn=>`<div class="rep-row" onclick="pickReplace('${cn.replace(/'/g,"\\'")}')">
-        <img src="${getLogo(EADB[cn]?EADB[cn].tid:'', cn)}" onerror="this.src=AVT">
-        <div class="rep-n">${cn}</div><div class="rep-s">FOR ${EADB[cn]?EADB[cn].str:''}</div>
-        <span class="rep-go">${_tk?'Allena questo club ▸':'Prendi il posto ▸'}</span></div>`).join('');
-      app.innerHTML = `<div class="setup-wrap"><div class="league-wrap view-anim">
-        <div class="choice-title" style="font-size:30px;">${S.pendingLeague}: ${_tk?'quale squadra vuoi allenare?':'quale squadra sostituisci?'}</div>
-        <p class="custom-sub" style="text-align:center;margin-bottom:18px;">${_tk?'Prendi il controllo di questa squadra con la sua rosa reale. Il club assume il suo nome.':`La squadra scelta esce dal campionato e prendi il suo posto con <b>${S.teamName}</b>.`}</p>
-        <div class="rep-list">${rows}</div>
-        <button class="choice-back" onclick="S.screen='league';render()">‹ Cambia campionato</button>
-      </div></div>`;
+      /* il budget e' quello vero: loadExistingTeam() lo assegna con
+         startBudget(S.leagueName, S._joinClubStr), e a quel punto
+         S.leagueName e' S.pendingLeague e S._joinClubStr e' EADB[cn].str */
+      const rows = clubs.map(cn=>`<button type="button" class="ts-row" onclick="pickReplace('${cn.replace(/'/g,"\\'")}')">
+        <img class="ts-crest" src="${getLogo(EADB[cn]?EADB[cn].tid:'', cn)}" onerror="this.src=AVT" alt="">
+        <span class="ts-name">${cn}</span>
+        <span class="ts-budget">${startBudget(S.pendingLeague, EADB[cn]?EADB[cn].str:undefined)}M</span>
+        <span class="ts-for">${EADB[cn]?EADB[cn].str:''}</span></button>`).join('');
+      app.innerHTML = `<div class="setup-wrap ts-screen">
+        <div class="ts-bg" id="ts-bg"></div>
+        <div class="ts-veil"></div>
+        <div class="ts-col view-anim">
+          <header class="ts-head">
+            <div class="ts-eyebrow"><span>${S.pendingLeague}</span><i class="ts-rule"></i></div>
+            <h1 class="ts-title">${_tk?'Quale squadra vuoi allenare?':'Quale squadra sostituisci?'}</h1>
+            <p class="ts-sub">${_tk?'Prendi il controllo di questa squadra con la sua rosa reale.<br>Il club assume il suo nome.':`La squadra scelta esce dal campionato.<br>Prendi il suo posto con <b>${S.teamName}</b>.`}</p>
+          </header>
+          <div class="ts-panel">
+            <div class="ts-head-row"><span class="ts-h-pad"></span><span>Squadra</span><span class="ts-h-budget">Budget</span><span class="ts-h-for">For</span></div>
+            <div class="ts-list">${rows}</div>
+          </div>
+          <button type="button" class="ts-back" onclick="S.screen='league';render()">${TS_CHEVRON}Cambia campionato</button>
+        </div>
+      </div>`;
+      tsLeagueBg(S.pendingLeague);
   } else if(S.screen === "draft") { app.innerHTML = renderDraft(); }
   else if(S.screen === "hub") { app.innerHTML = renderHub(); afterHubRender(); }
   if(S.pending) showModal();

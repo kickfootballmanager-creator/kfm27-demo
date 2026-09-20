@@ -68,22 +68,44 @@ function legheDi(paese){
   var o=[]; for (var lg in PAESI) if (PAESI[lg]===paese && LEAGUES[lg]) o.push(lg); return o;
 }
 
+/* il filtro che increspa le bandiere: feTurbulence disegna il rumore,
+   feDisplacementMap ci sposta sopra i pixel dell'immagine */
+var ONDA = '<svg class="nz-defs" width="0" height="0" aria-hidden="true">' +
+  '<filter id="kfm-onda" x="-12%" y="-12%" width="124%" height="124%" color-interpolation-filters="sRGB">' +
+    '<feTurbulence type="fractalNoise" baseFrequency="0.009 0.021" numOctaves="2" seed="7" result="n"/>' +
+    '<feDisplacementMap in="SourceGraphic" in2="n" scale="9" xChannelSelector="R" yChannelSelector="G"/>' +
+  '</filter></svg>';
+var CHEVRON = '<svg width="8" height="13" viewBox="0 0 8 13" fill="none" aria-hidden="true">' +
+  '<path d="M6.5 1.5 1.5 6.5l5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="square"/></svg>';
+
+function testata(occhiello, titolo, sotto){
+  return '<div class="nz-head">' +
+    '<div class="nz-eyebrow"><i class="nz-dash"></i><span>' + occhiello + '</span></div>' +
+    '<h1 class="nz-title">' + titolo + '</h1>' +
+    '<p class="nz-sub">' + sotto + '</p></div>';
+}
+function guscio(dentro){
+  return '<div class="nz-screen">' + ONDA +
+    '<div class="nz-bg" id="nz-bg"></div><div class="nz-veil"></div>' + dentro + '</div>';
+}
+
 function schermataNazioni(){
   var c = ORDINE.map(function(p){
     var l = legheDi(p); if (!l.length) return '';
     var sq = 0; l.forEach(function(x){ sq += LEAGUES[x].length; });
     var f = bandiera(p);
-    return '<div class="kfm-c" onclick="kfmPaese(\'' + esc(p) + '\')">' +
-      '<div class="kfm-b">' + (f ? '<img src="' + f + '" alt="">' : '') + '</div>' +
-      '<div class="kfm-n">' + p + '</div>' +
-      '<div class="kfm-m">' + l.length + (l.length===1?' campionato':' campionati') +
-      ' \u00b7 ' + sq + ' squadre</div></div>';
+    return '<button type="button" class="nz-card" onclick="kfmPaese(\'' + esc(p) + '\')">' +
+      (f ? '<span class="nz-flag"><img src="' + f + '" alt=""></span>' : '') +
+      '<i class="nz-mira"></i>' +
+      '<span class="nz-name">' + p + '</span>' +
+      '<span class="nz-meta">' + l.length + (l.length===1?' campionato':' campionati') +
+      ' \u00b7 ' + sq + ' squadre</span></button>';
   }).join('');
-  return '<div class="kfm-pick"><div class="kfm-head">' +
-    '<h2 class="kfm-t">In quale nazione vuoi giocare?</h2>' +
-    '<p class="kfm-s">Scegli il paese, poi il campionato.</p></div>' +
-    '<div class="kfm-grid">' + c + '</div>' +
-    '<button class="kfm-back" onclick="S.screen=\'choice\';render()">\u2039 Indietro</button></div>';
+  return guscio(
+    testata('Campionati', 'In quale nazione vuoi giocare?', 'Scegli il paese, poi il campionato.') +
+    '<div class="nz-grid" id="nz-grid">' + c + '</div>' +
+    '<div class="nz-foot"><button type="button" class="nz-back" onclick="S.screen=\'choice\';render()">' +
+      CHEVRON + 'Indietro</button></div>');
 }
 
 function schermataCampionati(paese){
@@ -92,23 +114,24 @@ function schermataCampionati(paese){
     try { crest = (typeof getLeagueLogo==='function' && getLeagueLogo(lg)) || ''; } catch(e){}
     try { fb = (typeof leagueFallbackLogo==='function' && leagueFallbackLogo(lg)) || ''; } catch(e){}
     if (!crest) crest = fb || bandiera(paese);
-    return '<div class="kfm-c" onclick="pickLeague(\'' + esc(lg) + '\')">' +
-      '<div class="kfm-b"><img src="' + crest + '"' +
-        (fb ? ' onerror="this.onerror=null;this.src=\'' + fb + '\'"' : '') + '></div>' +
-      '<div class="kfm-n">' + lg + '</div>' +
-      '<div class="kfm-m">' + LEAGUES[lg].length + ' squadre</div></div>';
+    return '<button type="button" class="nz-card is-lega" onclick="pickLeague(\'' + esc(lg) + '\')">' +
+      '<span class="nz-crest"><img src="' + crest + '" alt=""' +
+        (fb ? ' onerror="this.onerror=null;this.src=\'' + fb + '\'"' : '') + '></span>' +
+      '<i class="nz-mira"></i>' +
+      '<span class="nz-name">' + lg + '</span>' +
+      '<span class="nz-meta">' + LEAGUES[lg].length + ' squadre</span></button>';
   }).join('');
-  return '<div class="kfm-pick"><div class="kfm-head">' +
-    '<h2 class="kfm-t">' + paese + '</h2>' +
-    '<p class="kfm-s">Entrerai al posto di una squadra che sceglierai tu.</p></div>' +
-    '<div class="kfm-grid">' + c + '</div>' +
-    '<button class="kfm-back" onclick="kfmPaese(null)">\u2039 Cambia nazione</button></div>';
+  return guscio(
+    testata(paese, 'In quale campionato vuoi giocare?', 'Entrerai al posto di una squadra che sceglierai tu.') +
+    '<div class="nz-grid" id="nz-grid">' + c + '</div>' +
+    '<div class="nz-foot"><button type="button" class="nz-back" onclick="kfmPaese(null)">' +
+      CHEVRON + 'Cambia nazione</button></div>');
 }
 
 window.kfmPaese = function(p){
   window.__kfmPaese = p || null;
   if (typeof render === 'function') render();
-  try { var a=document.getElementById('app'); if(a){ var w=a.querySelector('.kfm-pick'); if(w) w.scrollTop=0; } } catch(e){}
+  try { var a=document.getElementById('app'); if(a){ var w=a.querySelector('.nz-grid'); if(w) w.scrollTop=0; } } catch(e){}
 };
 
 var vecchio = window.render;
@@ -117,7 +140,12 @@ window.render = function(){
   try {
     if (S && S.screen === 'league') {
       var app = document.getElementById('app');
-      if (app) app.innerHTML = window.__kfmPaese ? schermataCampionati(window.__kfmPaese) : schermataNazioni();
+      if (app) {
+        app.innerHTML = window.__kfmPaese ? schermataCampionati(window.__kfmPaese) : schermataNazioni();
+        /* stesso sfondo per i due passi: la nazione non e' ancora un
+           campionato, quello arriva alla scelta della squadra */
+        if (typeof tsSfondo === 'function') tsSfondo('nz-bg', 'src/assets/bg-nazioni');
+      }
     } else { window.__kfmPaese = null; }
   } catch(e){}
   return r;

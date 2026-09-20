@@ -1,0 +1,235 @@
+/* =====================================================================
+   Scelta della squadra (S.screen === "replace").
+   Stessa tipografia e stessa gerarchia della scelta nazione: cambia
+   solo lo sfondo, che qui e' quello del campionato. Nessun colore
+   d'accento: il colore arriva dagli stemmi e dallo sfondo.
+   ===================================================================== */
+
+.ts-screen{
+  --ts-ink:#fff;
+  --ts-ink-mid:rgba(255,255,255,.62);
+  --ts-ink-soft:rgba(255,255,255,.46);
+  --ts-line:rgba(255,255,255,.09);
+}
+
+/* --- la schermata: annulla il fondo scuro animato di home-style --- */
+.setup-wrap.ts-screen{
+  display:flex;
+  flex-direction:row;
+  align-items:stretch;
+  justify-content:flex-start;
+  height:100vh !important;
+  height:100dvh !important;
+  min-height:0 !important;
+  padding:32px !important;
+  overflow:hidden;
+  background:#0c1016;
+  color:#fff;
+  animation:none;
+}
+.setup-wrap.ts-screen::before{ content:none; }
+
+/* --- sfondo del campionato, ancorato a destra --- */
+.setup-wrap.ts-screen > .ts-bg{
+  position:fixed; inset:0; z-index:0;
+  background-repeat:no-repeat;
+  background-position:right center;
+  background-size:cover;
+  opacity:0;
+  transition:opacity .45s ease;
+  pointer-events:none;
+}
+.setup-wrap.ts-screen > .ts-bg.on{ opacity:1; }
+
+/* --- velatura scura: piu' densa a sinistra, dove sta il contenuto --- */
+.setup-wrap.ts-screen > .ts-veil{
+  position:fixed; inset:0; z-index:0;
+  background:linear-gradient(90deg,
+    rgba(8,10,13,.85) 0%,
+    rgba(8,10,13,.78) 38%,
+    rgba(8,10,13,.62) 72%,
+    rgba(8,10,13,.55) 100%);
+  pointer-events:none;
+}
+
+/* --- la colonna: tutto il contenuto sta nella meta' sinistra --- */
+.setup-wrap.ts-screen > .ts-col{
+  position:relative; z-index:2;
+  display:grid;
+  grid-template-rows:auto minmax(0,1fr) auto;
+  gap:32px;
+  width:clamp(320px,60vw,980px);
+  max-width:100%;
+  min-height:0;
+}
+
+/* --- occhiello: nome del campionato e linea sfumata --- */
+.ts-eyebrow{ display:flex; align-items:center; gap:16px; }
+.ts-eyebrow span{
+  font-size:11px; font-weight:700; letter-spacing:.34em;
+  text-transform:uppercase; color:rgba(255,255,255,.72); white-space:nowrap;
+}
+.ts-rule{
+  flex:1; height:1px; min-width:0; max-width:380px;
+  background:linear-gradient(90deg,rgba(255,255,255,.55),rgba(255,255,255,0));
+}
+
+.ts-title{
+  margin-top:16px;
+  font-family:'Inter',sans-serif;
+  font-weight:900;
+  /* il titolo sta su una riga: misurato a 934px con Inter 900 a 68px,
+     tenuto sotto al 94% della colonna a ogni larghezza */
+  font-size:clamp(34px,4.1vw,66px);
+  line-height:1;
+  letter-spacing:-.028em;
+  color:var(--ts-ink);
+}
+
+.ts-sub{
+  margin-top:16px;
+  font-size:13px;
+  line-height:1.85;
+  letter-spacing:.055em;
+  color:var(--ts-ink-mid);
+}
+.ts-sub b{ font-weight:700; color:var(--ts-ink); }
+
+/* --- pannello: un fondo piatto e un bordo, nient'altro --- */
+.ts-panel{
+  min-height:0;
+  display:flex; flex-direction:column;
+  background:rgba(12,17,24,.62);
+  border:1px solid rgba(255,255,255,.10);
+  border-radius:4px;
+  padding:12px;
+}
+
+/* le tre colonne valgono per l'intestazione e per ogni riga */
+.ts-head-row,
+.ts-row{
+  display:grid;
+  /* nome e budget si dividono lo spazio libero: il budget cade a meta'
+     riga invece di incollarsi alla forza */
+  grid-template-columns:auto minmax(0,1fr) minmax(0,1fr) 64px;
+  align-items:center;
+  gap:16px;
+  width:100%;
+  text-align:left;
+}
+
+/* etichette minute sopra la prima riga */
+.ts-head-row{
+  padding:0 16px 8px;
+  font-size:11px; font-weight:600; letter-spacing:.18em;
+  text-transform:uppercase; color:var(--ts-ink-soft);
+}
+/* la prima cella tiene il posto dello stemma, cosi' le colonne
+   dell'intestazione cadono sopra quelle delle righe */
+.ts-head-row .ts-h-pad{ width:clamp(26px,3.4vh,32px); }
+.ts-head-row .ts-h-budget{ text-align:center; }
+.ts-head-row .ts-h-for{ text-align:right; }
+
+/* la lista scorre dentro il pannello, senza barra visibile */
+.ts-list{
+  flex:1; min-height:0;
+  overflow-y:auto;
+  overscroll-behavior:contain;
+  -webkit-overflow-scrolling:touch;
+  scrollbar-width:none;
+}
+.ts-list::-webkit-scrollbar{ display:none; }
+
+/* --- riga --- */
+.ts-row{
+  position:relative;
+  padding:clamp(8px,1.15vh,16px) 16px;
+  border-radius:4px;
+  font-family:inherit;
+  transition:background-color .12s ease, color .12s ease;
+}
+.ts-row::before{
+  content:''; position:absolute; top:0; left:16px; right:16px;
+  height:1px; background:var(--ts-line);
+  transition:opacity .12s ease;
+}
+.ts-row:first-child::before{ content:none; }
+
+.ts-crest{
+  width:clamp(26px,3.4vh,32px);
+  height:clamp(26px,3.4vh,32px);
+  object-fit:contain;
+}
+.ts-name{
+  min-width:0;
+  font-size:16px; font-weight:500; color:var(--ts-ink);
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.ts-budget{
+  text-align:center;
+  font-size:13px; font-weight:600; letter-spacing:.02em;
+  color:var(--ts-ink-mid);
+  font-variant-numeric:tabular-nums;
+}
+.ts-for{
+  text-align:right;
+  font-size:11px; font-weight:600; letter-spacing:.16em;
+  color:var(--ts-ink-soft);
+  font-variant-numeric:tabular-nums;
+}
+
+/* la riga sotto il cursore si inverte: l'unica superficie chiara */
+.ts-row:hover,
+.ts-row:focus-visible{
+  background:rgba(255,255,255,.93);
+  outline:none;
+}
+.ts-row:hover .ts-name,
+.ts-row:focus-visible .ts-name{ color:#0b0f14; }
+.ts-row:hover .ts-budget,
+.ts-row:focus-visible .ts-budget{ color:#2c333b; }
+.ts-row:hover .ts-for,
+.ts-row:focus-visible .ts-for{ color:#5d656e; }
+/* niente separatore a ridosso della riga chiara */
+.ts-row:hover::before,
+.ts-row:focus-visible::before,
+.ts-row:hover + .ts-row::before,
+.ts-row:focus-visible + .ts-row::before{ opacity:0; }
+
+/* --- ritorno al campionato --- */
+.ts-back{
+  justify-self:start;
+  display:flex; align-items:center; gap:12px;
+  padding:8px 0;
+  font-size:11px; font-weight:600; letter-spacing:.18em;
+  text-transform:uppercase; color:var(--ts-ink-mid);
+  transition:color .12s ease;
+}
+.ts-back svg{ flex:none; }
+.ts-back:hover,
+.ts-back:focus-visible{ color:var(--ts-ink); outline:none; }
+
+@media (prefers-reduced-motion:reduce){
+  .setup-wrap.ts-screen > .ts-bg{ transition:none; }
+  .setup-wrap.ts-screen > .ts-col.view-anim{ animation:none; }
+}
+
+/* --- schermi stretti: la colonna prende tutta la larghezza --- */
+@media (max-width:860px){
+  .setup-wrap.ts-screen{ padding:24px 16px !important; }
+  .setup-wrap.ts-screen > .ts-col{ width:100%; gap:16px; }
+  .setup-wrap.ts-screen > .ts-veil{
+    background:linear-gradient(90deg,
+      rgba(8,10,13,.90) 0%,
+      rgba(8,10,13,.84) 60%,
+      rgba(8,10,13,.72) 100%);
+  }
+  .ts-title{ margin-top:12px; }
+  .ts-sub{ margin-top:12px; line-height:1.85; }
+  .ts-panel{ padding:8px; }
+  .ts-head-row,
+  .ts-row{ grid-template-columns:auto minmax(0,1fr) 68px 44px; gap:12px; }
+  .ts-head-row{ padding:0 12px 8px; }
+  .ts-row{ padding:clamp(8px,1.1vh,12px) 12px; }
+  .ts-row::before{ left:12px; right:12px; }
+}

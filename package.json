@@ -11,6 +11,6 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "motion": "^13.3.0"
+    "motion": "^13.4.0"
   }
 }
