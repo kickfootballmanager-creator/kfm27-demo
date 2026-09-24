@@ -16,6 +16,7 @@ import { Rules } from './rules.js';
 import { userPress, stagger, beat } from './defense.js';
 import { Referee } from './referee.js';
 import { unlockAudio, closeAudio } from './audio.js';
+import { SetPieces } from './setpieces.js';
 
 const KICKS = ['pass', 'through', 'cross', 'shot'];
 // Legenda: una riga per l'attacco e una per la difesa, un elemento per comando.
@@ -196,6 +197,9 @@ class Match {
     this.referee.place(0, -12);
     scene.add(this.referee.shadow, this.referee.mesh, this.referee.card);
     this.bodies = [...this.everyone, this.referee.p];
+    // calci piazzati: mira, traiettoria, barriera, telecamera
+    this.setpieces = new SetPieces(this);
+    scene.add(this.setpieces.mesh);
     this.ctrlRing = ring(PLAYER.ringInner, PLAYER.ringOuter, 0.9);
     this.targetRing = ring(PLAYER.targetRingInner, PLAYER.targetRingOuter, 0.45);
     scene.add(this.ctrlRing, this.targetRing);
@@ -314,6 +318,7 @@ class Match {
       }
       if (n === PHYSICS.maxSteps) this.acc = 0;
       const f = this.phase === 'goal' && this.cameraFocus;
+      this.camera.setPiece(this.setpieces.pose());
       this.camera.update(f ? { pos: f.pos, vel: f.vel } : this.ball, dt);
     }
     const alpha = this.paused ? 1 : this.acc / step;
@@ -322,6 +327,8 @@ class Match {
     for (const p of this.leaving) p.sync(alpha, this.paused ? 0 : dt);
     this.referee.sync(alpha, this.paused ? 0 : dt, this.camera.cam);
     this.placeHeldBall();
+    this.setpieces.render(this.ctrl);
+    this.hud.setPrompt(this.setpieces.prompt(glyph, this.controls.device, this.controls.padKind));
     this.syncMarkers(dt);
     this.renderer.render(this.scene, this.camera.cam);
     this.adaptResolution(dt);
@@ -409,6 +416,13 @@ class Match {
   }
 
   nearestMate(p, x, z) { return this.nearestTo(this.teams[p.team].players, x, z, p); }
+
+  // Ripresa degli avversari: anche il giocatore dell'utente lo sistema l'IA
+  // (barriera, distanza), come in PES.
+  opponentsSetPiece() {
+    const s = this.rules.set;
+    return this.phase === 'restart' && !!s && s.side !== this.userSide;
+  }
 
   // A palla libera i pulsanti restano quelli d'attacco: un tiro al volo e' sempre possibile.
   userAttacking() {
@@ -686,7 +700,7 @@ class Match {
       if (p.action) this.stepAction(dt, p, p === me ? inp : null);
       else if (setting && p !== taker && !p.down) {
         if (p.keeper) this.teams[p.team].keeperAI.position(dt);
-        else if (p === me) this.userMove(dt, p, inp, false);
+        else if (p === me && !this.opponentsSetPiece()) this.userMove(dt, p, inp, false);
         else this.teams[p.team].ai.steer(dt, p);
       } else if (p.down) p.drive(dt, 0, 0, 0, {});
       else if (!live) this.settle(dt, p);
@@ -715,6 +729,7 @@ class Match {
     } else if (this.owner && this.owner.dropping) b.step(dt);   // rinvio al volo: cade dalla mano
     else if (this.owner && !this.rules.waitingTaker(this.owner)) this.dribble(dt);
     else b.step(dt);
+    this.setpieces.tick(dt);
     if (!this.owner && b.live && live) {
       // parate: solo se la palla tocca mani o corpo veri del portiere
       if (!this.teams.home.keeperAI.touch()) this.teams.away.keeperAI.touch();
@@ -1145,6 +1160,7 @@ class Match {
     this.hud.destroy();
     for (const p of [...this.everyone, ...this.leaving, this.referee.p]) p.avatar.dispose();
     closeAudio();
+    this.setpieces.dispose();
     disposeScene(this.scene);
     this.renderer.dispose();
     this.renderer.forceContextLoss();

@@ -279,7 +279,7 @@ export const AI = {
   run: { every: [2.5, 5], depth: 12, max: 2, onside: 0.8 },  // inserimenti: ogni quanto, quanto oltre, quanti insieme; onside: m prima della linea del fuorigioco
   press: { max: 1, maxOwnThird: 2, contain: 1.4, tight: 0.85, delay: [0.45, 0.12] },   // delay: [difficulty 0, 1]; tight: m dalla palla quando stringe
   mark: { radius: 14, goalSide: 1.8 },
-  wall: { maxDist: 32, size: [2, 5], gap: 0.62, postAim: 1.6 },  // barriera: da 2 a 5 uomini, piu' vicini alla porta piu' sono
+  wall: { maxDist: 32, gap: 0.7, postAim: 1.6 },  // barriera: uomini a 0,7 m (piu' dell'ingombro di due giocatori), mirata al palo vicino
   back: { dist: 16 },     // rientro: oltre questa distanza dalla posizione si corre indietro
   carrier: {
     think: [0.7, 0.3],    // secondi fra due decisioni del portatore [difficulty 0, 1]
@@ -567,7 +567,43 @@ export const CAMERA = {
   lead: 0.35,             // anticipo in secondi nella direzione della palla
   limitX: 44,
   rate: 2.6,              // velocita' dello smorzamento (1/s)
-  fovRate: 1.2
+  fovRate: 1.2,
+  setPieceBlend: 0.9      // secondi della transizione fra partita e calcio piazzato
+};
+
+// Punizioni come in PES e DLS. Vicino alla porta: diretta con barriera,
+// telecamera bassa dietro a chi calcia, mira con la levetta, potenza con la
+// barra, effetto con la levetta destra (o con la levetta durante la rincorsa,
+// come in PES) e la traiettoria iniziale disegnata. Piu' lontano: telecamera
+// alta e le scelte della punizione indiretta (passaggio, cross, filtrante).
+export const FK = {
+  directMax: 30,          // entro tanti metri dalla porta: punizione diretta con barriera e mira
+  back: 2.05,             // chi tira parte da qui dietro la palla: la rincorsa della clip
+  clip: 'penalty', contact: 0.717, end: 1.3,   // calcio di palla ferma con rincorsa
+  side: 0.5,              // chi tira sta un po' di lato, verso il piede d'appoggio
+  aimSpeed: [5, 2.2],     // m/s della mira con la levetta: in larghezza, in altezza
+  aimOut: 1.5,            // si puo' mirare fin oltre il palo di tanto
+  aimY: [0.2, 3.4],       // altezza sulla linea di porta: da rasoterra a sopra la traversa
+  aimY0: 1.5,
+  speed: [15, 30],        // m/s a potenza zero e piena (il massimo lo limita il tiro del giocatore)
+  overPower: 0.85,        // oltre, la palla si alza come nei tiri
+  overHeight: 1.6,
+  spinMax: 7,             // effetto massimo
+  curlRate: 3.5,          // 1/s: la levetta durante la rincorsa porta l'effetto verso il suo valore
+  error: 0.5,             // frazione dell'errore di tiro del giocatore
+  guidePower: 0.55,       // la guida disegna il calcio a questa potenza, finche' non si carica
+  guideTime: 0.55,        // secondi di volo disegnati: solo la traiettoria iniziale, come in PES
+  guideDots: 22,
+  cam: { back: 6.5, height: 2.3, look: 0.8, lookY: 1.2, fov: 34 },
+  camFar: { back: 12, height: 8, look: 0.3, lookY: 0, fov: 44 },
+  camHold: 1.1,           // dopo il calcio la telecamera resta tanti secondi, poi torna alla partita
+  wallJump: { clip: 'header_jump', from: 0.7, apex: 1.133, end: 1.75 },
+  wallRadius: 0.28,       // ingombro di un uomo in barriera (m)
+  wallHeight: 1.85,
+  wallRest: 0.3,          // velocita' che resta alla palla respinta dalla barriera
+  wallSize: [2, 5],       // uomini in barriera: da lontano e defilata a vicina e centrale
+  keeperFar: 1.1,         // il portiere si mette dalla parte opposta alla barriera
+  userWait: 25            // l'utente mira con calma: dopo tanti secondi batte l'IA
 };
 
 // Regole e tempi della partita. Falli, fuorigioco e rigori non ci sono ancora.

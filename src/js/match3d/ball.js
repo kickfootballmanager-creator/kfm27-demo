@@ -74,6 +74,21 @@ function forces(p, v, dt) {
   }
 }
 
+// Effetto: spinta laterale perpendicolare alla corsa orizzontale, che si
+// spegne nel tempo. Restituisce lo spin rimasto.
+function curl(v, spin, dt) {
+  if (spin === 0) return 0;
+  const hs = Math.hypot(v.x, v.z);
+  if (hs > 0.5) {
+    const a = BALL.spinForce * spin * dt;
+    const px = -v.z / hs, pz = v.x / hs;
+    v.x += px * a;
+    v.z += pz * a;
+  }
+  const s = spin * Math.exp(-BALL.spinDecay * dt);
+  return Math.abs(s) < 0.01 ? 0 : s;
+}
+
 function move(p, v, dt) {
   p.addScaledVector(v, dt);
   if (p.y < BALL.radius) {
@@ -145,6 +160,23 @@ export function loftFor(y0, speed, dist, h) {
     if (heightAt(y0, speed, mid, dist) < h) lo = mid; else hi = mid;
   }
   return (lo + hi) / 2;
+}
+
+// Volo di un calcio con l'effetto, senza pali ne' reti (guida della
+// traiettoria nei calci piazzati): `out` riceve n punti {x, y, z} ogni dt.
+const _fp = new THREE.Vector3(), _fv = new THREE.Vector3();
+export function flight(p0, v0, spin, dt, n, out) {
+  const p = _fp.copy(p0), v = _fv.copy(v0);
+  let s = spin;
+  for (let i = 0; i < n; i++) {
+    forces(p, v, dt);
+    s = curl(v, s, dt);
+    move(p, v, dt);
+    const o = out[i] || (out[i] = { x: 0, y: 0, z: 0 });
+    o.x = p.x; o.y = p.y; o.z = p.z;
+  }
+  out.length = n;
+  return out;
 }
 
 // Distanza orizzontale del primo rimbalzo, partendo da terra all'altezza y.
@@ -275,20 +307,7 @@ export class Ball {
     const p = this.pos, v = this.vel;
     this.prev.copy(p);
     forces(p, v, dt);
-
-    if (this.spin !== 0) {
-      // Forza laterale perpendicolare alla corsa orizzontale.
-      const hs = Math.hypot(v.x, v.z);
-      if (hs > 0.5) {
-        const a = BALL.spinForce * this.spin * dt;
-        const px = -v.z / hs, pz = v.x / hs;
-        v.x += px * a;
-        v.z += pz * a;
-      }
-      this.spin *= Math.exp(-BALL.spinDecay * dt);
-      if (Math.abs(this.spin) < 0.01) this.spin = 0;
-    }
-
+    this.spin = curl(v, this.spin, dt);
     move(p, v, dt);
 
     for (const [a, b] of this.frame) hitSegment(p, v, a, b, GOAL.postRadius);

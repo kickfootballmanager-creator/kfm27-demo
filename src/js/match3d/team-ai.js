@@ -76,7 +76,7 @@ export class TeamAI {
 
   // Giocatori che l'IA muove: non il portiere, non chi comanda l'utente,
   // non chi e' a terra o dentro un gesto.
-  free(p) { return !p.keeper && p !== this.m.ctrl && !p.down && !p.action; }
+  free(p) { return !p.keeper && (p !== this.m.ctrl || this.m.opponentsSetPiece()) && !p.down && !p.action; }
 
   think(dt) {
     const m = this.m, phase = this.phase();
@@ -92,7 +92,7 @@ export class TeamAI {
         const dx = p.aiTarget.x - s.x, dz = p.aiTarget.z - s.z, d = Math.hypot(dx, dz);
         if (d < RULES.wall) { const k = RULES.wall / Math.max(d, 0.1); p.aiTarget = { x: s.x + dx * k, z: clamp(s.z + dz * k, -HW + 1, HW - 1) }; }
       }
-      if (set.type === 'freekick' && set.direct) this.wall(field, s);
+      if (set.type === 'freekick' && set.fk && set.fk.mode === 'direct') this.wall(field, s);
     }
     // rigore: tutti fuori dall'area e dalla lunetta, tranne chi tira
     if (set && set.type === 'penalty') {
@@ -112,13 +112,20 @@ export class TeamAI {
   // Barriera sulle punizioni dirette vicine alla propria porta: i piu' vicini
   // in fila a 9,15 m dalla palla, sulla linea verso il palo vicino.
   wall(field, s) {
-    const W = AI.wall, goal = this.world(-HL, 0);
+    const m = this.m, W = AI.wall, goal = this.world(-HL, 0);
     const post = { x: goal.x, z: (Math.sign(s.z) || 1) * W.postAim };
     if (Math.hypot(goal.x - s.x, goal.z - s.z) > W.maxDist) return;
     const ux = post.x - s.x, uz = post.z - s.z, ul = Math.hypot(ux, uz) || 1;
     const cx = s.x + ux / ul * RULES.wall, cz = s.z + uz / ul * RULES.wall;
-    const n = Math.min(field.length, Math.round(W.size[0] + (W.size[1] - W.size[0]) * (1 - Math.min(1, ul / W.maxDist))));
-    const men = field.filter((p) => this.free(p)).sort((a, b) => dist2(a, { pos: { x: cx, z: cz } }) - dist2(b, { pos: { x: cx, z: cz } })).slice(0, n);
+    const n = Math.min(field.length, m.setpieces.wallSize(s, this.dir));
+    // gli uomini si scelgono una volta sola (i piu' vicini) e prendono il posto
+    // nell'ordine in cui stanno da sinistra a destra: nessuno si scambia
+    const set = m.rules.set;
+    if (!set.wallMen || set.wallMen.some((p) => !this.free(p))) {
+      set.wallMen = field.filter((p) => this.free(p)).sort((a, b) => dist2(a, { pos: { x: cx, z: cz } }) - dist2(b, { pos: { x: cx, z: cz } })).slice(0, n);
+    }
+    const lx = -uz / ul, lz = ux / ul;
+    const men = [...set.wallMen].sort((a, b) => (a.pos.x * lx + a.pos.z * lz) - (b.pos.x * lx + b.pos.z * lz));
     men.forEach((p, i) => {
       const off = (i - (n - 1) / 2) * W.gap;
       p.aiTarget = { x: cx - uz / ul * off, z: cz + ux / ul * off };

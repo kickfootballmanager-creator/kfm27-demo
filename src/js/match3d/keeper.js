@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { KEEPER, PITCH, GOAL, BALL, ATTR, PLAYER, RULES } from './config.js';
+import { KEEPER, PITCH, GOAL, BALL, ATTR, PLAYER, RULES, FK } from './config.js';
 import { rootAt, clipDuration } from './avatar.js';
 import { freeness } from './player.js';
 import { palm } from './rig.js';
@@ -90,6 +90,12 @@ export class KeeperAI {
     const set = m.rules.set;
     if (m.phase === 'restart' && set && set.type === 'penalty' && set.side !== this.side) {
       this.moveTo(dt, this.goalX + this.dir * 0.3, 0, false);
+      return;
+    }
+    // punizione diretta contro: la barriera copre il palo vicino alla palla,
+    // il portiere si mette verso l'altro
+    if (m.phase === 'restart' && set && set.fk && set.fk.mode === 'direct' && set.side !== this.side) {
+      this.moveTo(dt, this.goalX + this.dir * 0.6, -(Math.sign(set.spot.z) || 1) * FK.keeperFar, false);
       return;
     }
     const gx = this.goalX;

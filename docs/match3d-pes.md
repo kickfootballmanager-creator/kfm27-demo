@@ -127,6 +127,28 @@ distanza e angolo lo permettono. L'esito (palla recuperata, il portatore la
 passa prima, il portatore salta l'uomo, fallo) dipende da difesa del
 difensore, dribbling del portatore, tempismo e difficolta'.
 
+## Punizioni
+
+- In PES la punizione vicina alla porta si batte con la telecamera dietro al
+  tiratore: la levetta destra sposta la direzione, la levetta sinistra da'
+  effetto e traiettoria (anche durante la rincorsa), Quadrato riempie la
+  barra della potenza. Le guide consigliano da meta' a due terzi della barra:
+  con troppa potenza la palla va alta. Una linea tratteggiata mostra il primo
+  tratto della traiettoria; R1 la toglie. La barriera salta con Triangolo.
+
+Da noi (`setpieces.js`, numeri in `FK`): sotto i 30 m dalla porta la
+punizione diretta ha la barriera a 9,15 m, da 2 a 5 uomini secondo distanza
+e angolo, messa sul palo vicino mentre il portiere copre l'altro; al calcio la
+barriera salta (clip header_jump, il punto piu' alto quando la palla le
+arriva) e se la palla la tocca rimbalza. Telecamera bassa dietro al tiratore,
+con transizione dalla visuale di gioco e ritorno un secondo dopo il calcio.
+Come chiede la skill la levetta sinistra muove la mira (a destra e sinistra e
+in altezza sulla linea di porta) e la levetta destra da' l'effetto; come in
+PES la levetta sinistra durante la rincorsa aggiunge effetto e R1 mostra o
+nasconde la traiettoria, disegnata per il primo mezzo secondo di volo alla
+potenza caricata. Oltre i 30 m: telecamera alta e le scelte della punizione
+indiretta (passaggio, cross, filtrante).
+
 ## Arbitro, falli, cartellini, rigori, fuorigioco
 
 - L'arbitro di PES 2020/2021 e' noto per fischiare molto, anche falli leggeri

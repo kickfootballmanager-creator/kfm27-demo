@@ -1,4 +1,4 @@
-import { RULES, PITCH, BALL, CONTROL, PASS, FOUL, ADVANTAGE, GOAL, SHOT } from './config.js';
+import { RULES, PITCH, BALL, CONTROL, PASS, FOUL, ADVANTAGE, GOAL, SHOT, FK } from './config.js';
 import { headingOf, choosePass, freeness } from './player.js';
 import { rootAction, standFall } from './gestures.js';
 import { loftFor } from './ball.js';
@@ -158,10 +158,11 @@ export class Rules {
     return (m.phase === 'restart' || m.phase === 'kickoff') && !!s && s.side === m.userSide && s.taker === m.ctrl && !s.taker.action;
   }
 
-  // Chi batte sta ancora arrivando sulla palla: la palla resta ferma sul punto.
+  // Fino al calcio della ripresa la palla resta ferma sul punto: chi batte ci
+  // arriva, prende la rincorsa e la calcia dove sta.
   waitingTaker(p) {
     const m = this.m, s = this.set;
-    return (m.phase === 'kickoff' || m.phase === 'restart') && !!s && s.taker === p && !p.action && !p.holding;
+    return (m.phase === 'kickoff' || m.phase === 'restart') && !!s && s.taker === p && !p.holding;
   }
 
   // Tutti al loro posto: chi batte, chi torna a centrocampo, la barriera, e
@@ -217,8 +218,10 @@ export class Rules {
       m.gain(p, s.type === 'kickoff' ? "calcio d'inizio" : s.type === 'penalty' ? 'rigore' : 'punizione');
     }
     const user = s.side === m.userSide && p === m.ctrl;
+    const aiming = s.fk && s.fk.mode === 'direct';
+    if (user && aiming) m.setpieces.aim(dt, inp);
     if (user && m.charging) return;
-    if (this.t > (user ? RULES.userWait : RULES.aiTake)) this.take('auto', 0.2 + Math.random() * 0.75, null);
+    if (this.t > (user ? (aiming ? FK.userWait : RULES.userWait) : RULES.aiTake)) this.take('auto', 0.2 + Math.random() * 0.75, null);
   }
 
   // `btn`: pulsante dell'utente (pass, through, cross, shot) o 'auto' per l'IA.
@@ -443,10 +446,12 @@ export class Rules {
     const back = type === 'penalty' ? RULES.penalty.back : 0.55;
     taker.action = null;
     taker.down = false;
-    // chi batte va sulla palla camminando; gli altri si sistemano da soli (IA)
-    taker.homeTarget = { x: sp.x - Math.sin(h) * back, z: sp.z - Math.cos(h) * back, h };
     m.gain(taker, type === 'penalty' ? 'rigore' : 'punizione');
     this.set = { type, side, taker, spot: sp, direct: direct !== false, ready: false };
+    // diretta vicina, da lontano o rigore: mira, telecamera e posto di chi batte
+    m.setpieces.prepare(this.set);
+    // chi batte va sulla palla camminando; gli altri si sistemano da soli (IA)
+    taker.homeTarget = type === 'penalty' ? { x: sp.x - Math.sin(h) * back, z: sp.z - Math.cos(h) * back, h } : m.setpieces.takerSpot(this.set);
     if (side === m.userSide && !taker.keeper) m.setControlled(taker);
     else if (!m.ctrl || m.ctrl === taker || m.ctrl.team !== m.userSide || m.ctrl.keeper || m.ctrl.sentOff) m.setControlled(m.nearestTo(m.squad.players, sp.x, sp.z));
     if (type === 'freekick') m.hud.toast(direct === false ? 'Punizione indiretta' : 'Punizione');
@@ -458,18 +463,27 @@ export class Rules {
   freeKickTake(p, btn, power, inp) {
     const m = this.m, s = this.set, d = m.dirOf(p.team);
     const gx = d * HL - s.spot.x, gz = -s.spot.z, gd = Math.hypot(gx, gz) || 1;
+    // diretta vicina: tiro con mira, effetto e rincorsa (setpieces.js)
+    if (s.fk && s.fk.mode === 'direct' && (btn === 'shot' || (btn === 'auto' && gd < RULES.freeKickShoot))) {
+      m.setpieces.directShot(p, btn === 'auto' ? 0.45 + Math.random() * 0.2 : power, btn === 'auto');
+      return;
+    }
     let kind = btn, pw = power, dir = inp && inp.mag > 0 ? inp : null;
     if (btn === 'auto') {
-      if (s.direct && gd < RULES.freeKickShoot) {
-        kind = 'shot';
-        pw = 0.55 + Math.random() * 0.27;
-        dir = { mag: 1, x: d * 0.5, z: (Math.random() < 0.5 ? -1 : 1) * 0.85 };
-      } else if (s.spot.x * d > 18 && Math.abs(s.spot.z) > 12) { kind = 'cross'; pw = 0.2 + Math.random() * 0.7; }
+      if (s.spot.x * d > 18 && Math.abs(s.spot.z) > 12) { kind = 'cross'; pw = 0.2 + Math.random() * 0.7; }
       else { kind = 'pass'; pw = 0.35; }
     }
     if (!dir) dir = { mag: 1, x: gx / gd, z: gz / gd };
     if (!s.direct) m.pendingIndirect = p;
-    m.startKick(p, kind === 'auto' ? 'pass' : kind, pw, dir);
+    const go = () => m.startKick(p, kind === 'auto' ? 'pass' : kind, pw, dir);
+    // da qualche passo dietro la palla: prima ci si avvicina camminando
+    const b = m.ball.pos, bd = Math.hypot(b.x - p.pos.x, b.z - p.pos.z);
+    if (bd < 1) { go(); return; }
+    const h = headingOf(b.x - p.pos.x, b.z - p.pos.z);
+    const tx = b.x - Math.sin(h) * 0.55, tz = b.z - Math.cos(h) * 0.55;
+    p.action = { t: 0, rate: 1, end: 3, moves: true, tick: (a, dt) => {
+      if (p.goTo(dt, tx, tz, h) || a.t > 2.5) { p.action = null; m.gain(p, 'punizione'); go(); }
+    } };
   }
 
   // Rigore con la clip penalty: la levetta sceglie il lato, la potenza
