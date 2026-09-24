@@ -370,7 +370,8 @@ export const MODEL = {
   centerWidth: 0.08,
   sashWidth: 0.07,
   sleeveX: 0.2,           // oltre questa distanza dal centro comincia la manica
-  roughness: 0.8
+  roughness: 0.8,
+  holdGap: 0.02           // palla in mano: dalla superficie della palla al centro del palmo
 };
 
 // Animazioni. `natural`: velocita' (m/s, modello alto 1,80) a cui la clip non
@@ -447,7 +448,10 @@ export const RULES = {
   halfPause: 3,
   celebration: { clip: 'celebration', from: 0, hold: 4.6 },
   kickoff: { clip: 'kickoff', from: 0, contact: 0.517, end: 0.567, arrive: 7 },
-  throwIn: { clip: 'throw_in', from: 0.8, release: 1.55, end: 2.3, outside: 1.7, shortApex: 0.9, longApex: 3.2, shortMax: 16, longMax: 30 },
+  // Rimessa: in attesa si resta fermi nel primo fotogramma (palla in mano),
+  // poi la clip riparte da li'; la rincorsa della radice (2,07 m fino al
+  // rilascio) riporta il battitore sulla linea.
+  throwIn: { clip: 'throw_in', from: 0, release: 1.55, end: 2.3, rate: 1.25, outside: 2.3, shortApex: 0.9, longApex: 3.2, shortMax: 16, longMax: 30 },
   goalKick: { x: 5.5, z: 5 },  // metri dalla linea di porta, dal centro della porta
   cornerInset: 0.4
 };

@@ -112,6 +112,8 @@ export class Rules {
     }
     m.gain(taker, { throw: 'rimessa', corner: "calcio d'angolo", goalkick: 'rinvio' }[type]);
     taker.holding = type === 'throw';
+    // in attesa: fermo nel primo fotogramma della rimessa, palla in mano
+    if (type === 'throw') taker.avatar.playOnce(RULES.throwIn.clip, RULES.throwIn.from, Infinity, 0);
     this.set = { type, side, taker, spot };
     if (side === m.userSide && !taker.keeper) m.setControlled(taker);
     else if (m.ctrl === taker || m.ctrl.team !== m.userSide || m.ctrl.keeper) m.setControlled(m.nearestTo(m.squad.players, spot.x, spot.z));
@@ -188,12 +190,15 @@ export class Rules {
       let best = -1;
       for (const q of mates) { if (q === p || q.keeper) continue; const f = freeness(q.pos.x, q.pos.z, opp) - Math.hypot(q.pos.x - p.pos.x, q.pos.z - p.pos.z) / 40; if (f > best) { best = f; to = q; } }
     }
-    p.avatar.playOnce(T.clip, T.from, T.end - T.from);
-    p.action = rootAction(m, p, T.clip, T.from, T.end, 1, {
+    // la clip riparte dal fotogramma in cui aspettava: nessun salto di posa
+    const hold = (T.end - T.from) / T.rate;
+    if (!p.avatar.resume(T.clip, T.rate, hold)) p.avatar.playOnce(T.clip, T.from, hold, T.rate);
+    p.action = rootAction(m, p, T.clip, T.from, T.end, T.rate, {
       events: [{ at: T.release - T.from, fn: () => {
-        const b = m.ball, hands = p.avatar.bonePosition('lh', b.prev.clone());
+        // la palla lascia le mani dove l'ha tenuta l'ultimo disegno
+        const b = m.ball, h = p.avatar.heldAt;
         p.holding = false;
-        b.hold(hands.x, Math.max(1.2, hands.y), hands.z);
+        b.hold(h.x, Math.max(1.2, h.y), h.z);
         if (to) b.lobTo(to.pos.x + to.vel.x * 0.6, to.pos.z + to.vel.z * 0.6, Math.max(b.pos.y, 1.8) + (kind === 'long' ? T.longApex : T.shortApex));
         else b.kick(p.dirX * 10, 3, p.dirZ * 10);
         m.poss.fly('rimessa', p, to || null);

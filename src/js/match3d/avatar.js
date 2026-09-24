@@ -3,6 +3,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { MODEL, ANIM } from './config.js';
+import { boneMap, solveTwoBone, palm } from './rig.js';
 
 const GLB_URL = new URL('../../assets/match3d/player.glb', import.meta.url).href;
 // Spostamento della radice e fotogrammi chiave misurati sugli FBX originali
@@ -237,18 +238,23 @@ function numberTexture(number, shirt) {
 
 const wrapPhase = (x) => x - Math.floor(x);
 
+const _hl = new THREE.Vector3(), _hr = new THREE.Vector3(), _lat = new THREE.Vector3();
+const _tl = new THREE.Vector3(), _tr = new THREE.Vector3();
+
 // Un calciatore in scena: copia dello scheletro, clip condivise, fusione
 // delle corse in base alla velocita' reale e gesti (passaggio, tiro) sopra.
 export class Avatar {
   constructor(tpl, material, number, shirtColor) {
     this.object = cloneSkinned(tpl.holder);
     let body = null, bone = null;
-    this.bones = {};
-    const want = { LeftHand: 'lh', RightHand: 'rh', Head: 'head', RightToeBase: 'rf', LeftToeBase: 'lf' };
+    // I nomi nel GLB sono 'mixamorig5LeftHand': boneMap li pulisce.
+    this.rig = boneMap(this.object);
+    const r = this.rig;
+    this.bones = { lh: r.LeftHand, rh: r.RightHand, head: r.Head, rf: r.RightToeBase, lf: r.LeftToeBase };
+    this.heldAt = new THREE.Vector3();
     this.object.traverse((o) => {
       if (o.isSkinnedMesh) body = o;
       if (o.isBone && o.name === tpl.plate.bone) bone = o;
-      if (o.isBone) { const k = want[o.name.split(':').pop()]; if (k) this.bones[k] = o; }
     });
     body.material = material;
     // Il volume di legatura non segue le animazioni: niente sparizioni ai bordi.
@@ -330,6 +336,36 @@ export class Avatar {
   // Ferma il gesto in corso: sfuma subito verso la corsa.
   endGesture() {
     if (this.one) this.one.hold = Math.min(this.one.hold, this.one.t);
+  }
+
+  // Riprende un gesto fermato con playOnce(..., rate 0) dallo stesso
+  // fotogramma: nessun salto di posa. false se il gesto in corso e' un altro.
+  resume(name, rate, hold) {
+    const o = this.one;
+    if (!o || o.a.getClip() !== this.tpl.clips[name]) return false;
+    o.a.timeScale = rate;
+    o.hold = o.t + hold;
+    return true;
+  }
+
+  // Palla fra le due mani: il centro sta a meta' fra i palmi dell'animazione,
+  // poi l'IK sulle braccia porta ogni palmo sulla superficie della palla.
+  // Da chiamare dopo update(); scrive il centro in `out` e in heldAt.
+  holdBall(out, radius) {
+    const r = this.rig;
+    this.object.updateMatrixWorld(true);
+    const L = palm(r, 'Left', _hl), R = palm(r, 'Right', _hr);
+    out.addVectors(L, R).multiplyScalar(0.5);
+    const lat = _lat.subVectors(R, L);
+    const n = lat.length();
+    if (n > 1e-4) lat.divideScalar(n); else lat.set(-Math.cos(this.object.rotation.y), 0, Math.sin(this.object.rotation.y));
+    const g = radius + MODEL.holdGap;
+    _tl.copy(out).addScaledVector(lat, -g);
+    _tr.copy(out).addScaledVector(lat, g);
+    solveTwoBone(r.LeftArm, r.LeftForeArm, (o) => palm(r, 'Left', o), _tl);
+    solveTwoBone(r.RightArm, r.RightForeArm, (o) => palm(r, 'Right', o), _tr);
+    this.heldAt.copy(out);
+    return out;
   }
 
   get busy() { return !!this.one; }

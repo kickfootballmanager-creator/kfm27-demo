@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { PHYSICS, RENDER, RULES, PLAYER, CONTROL, DRIBBLE, SHOT, PASS, KIT, RECEIVE, FIRST_TOUCH, ANIM, POWER, THROUGH, FEINT, AI, AERIAL, SHAPE, PITCH, SLIDE } from './config.js';
+import { PHYSICS, RENDER, RULES, PLAYER, CONTROL, DRIBBLE, SHOT, PASS, KIT, RECEIVE, FIRST_TOUCH, ANIM, POWER, FEINT, AI, AERIAL, SHAPE, PITCH, SLIDE, BALL } from './config.js';
 import { buildPitch } from './pitch.js';
 import { Ball, shadowTexture } from './ball.js';
 import { BroadcastCamera } from './camera.js';
@@ -297,15 +297,13 @@ class Match {
     }
   }
 
-  // Palla in mano: fra le due mani vere, dopo che l'animazione e' stata applicata.
+  // Palla in mano: fra i due palmi veri (IK sulle braccia), dopo che
+  // l'animazione e' stata applicata. La fisica la ritrova in avatar.heldAt.
   placeHeldBall() {
     const o = this.owner;
     if (!o || !o.holding) return;
-    const a = o.avatar, v = this._hand || (this._hand = new THREE.Vector3()), w = this._hand2 || (this._hand2 = new THREE.Vector3());
-    o.mesh.updateMatrixWorld(true);
-    a.bonePosition('lh', v);
-    a.bonePosition('rh', w);
-    v.add(w).multiplyScalar(0.5);
+    const v = this._hand || (this._hand = new THREE.Vector3());
+    o.avatar.holdBall(v, BALL.radius);
     this.ball.mesh.position.copy(v);
     this.ball.shadow.position.set(v.x, 0.012, v.z);
   }
@@ -511,8 +509,10 @@ class Match {
 
     const wasLive = b.live;
     if (this.owner && this.owner.holding) {
-      const k = this.owner;
-      b.hold(k.pos.x + k.dirX * 0.3, HELD_Y, k.pos.z + k.dirZ * 0.3);
+      // dove l'ha messa l'ultimo disegno; prima del primo disegno, davanti al petto
+      const k = this.owner, h = k.avatar.heldAt;
+      if (h.y > 0.3 && Math.hypot(h.x - k.pos.x, h.z - k.pos.z) < 1.5) b.hold(h.x, h.y, h.z);
+      else b.hold(k.pos.x + k.dirX * 0.3, HELD_Y, k.pos.z + k.dirZ * 0.3);
     } else if (this.owner) this.dribble(dt);
     else b.step(dt);
     if (!this.owner && b.live && live) this.contacts(inp);
