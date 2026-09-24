@@ -232,9 +232,13 @@ export class KeeperAI {
     }
   }
 
+  // Dopo il gol: si dispera, finito l'eventuale tuffo.
   concede() {
     const k = this.p, C = KEEPER.clips.concede;
-    if (!k.action) k.avatar.playOnce(C.clip, C.from, C.end);
+    const play = () => k.avatar.playOnce(C.clip, C.from, C.end);
+    if (!k.action) { play(); return; }
+    const prev = k.action.onEnd;
+    k.action.onEnd = () => { if (prev) prev(); play(); };
   }
 }
 

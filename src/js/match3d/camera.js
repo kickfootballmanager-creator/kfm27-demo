@@ -33,7 +33,9 @@ export class BroadcastCamera {
 
   _place() {
     const c = this.cam;
-    c.position.set(this.target.x, CAMERA.height, CAMERA.sideDistance);
+    // palla verso la tribuna: la telecamera arretra, cosi' la linea laterale vicina resta in quadro
+    const back = Math.max(0, this.target.z - CAMERA.aimZ) * CAMERA.nearBack;
+    c.position.set(this.target.x, CAMERA.height, CAMERA.sideDistance + back);
     c.lookAt(this.target);
     // Schermi stretti (telefono in verticale): si allarga il campo visivo.
     const f = c.aspect < 1.2 ? Math.min(CAMERA.maxFov, this.fov * 1.2 / Math.max(0.5, c.aspect)) : this.fov;

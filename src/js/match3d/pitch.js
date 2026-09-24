@@ -198,7 +198,8 @@ function boards() {
   add(hl * 2, 0, hw, Math.PI);
   add(hw * 2, -hl, 0, Math.PI / 2);
   add(hw * 2, hl, 0, -Math.PI / 2);
-  const mesh = new THREE.Mesh(mergeGeometries(parts), new THREE.MeshLambertMaterial({ map: boardTexture(), side: THREE.DoubleSide }));
+  // solo la faccia verso il campo: da dietro (telecamera sulla tribuna) i cartelloni vicini non si vedono
+  const mesh = new THREE.Mesh(mergeGeometries(parts), new THREE.MeshLambertMaterial({ map: boardTexture(), side: THREE.FrontSide }));
   mesh.userData.depth = d;
   return mesh;
 }

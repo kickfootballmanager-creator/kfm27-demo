@@ -1,4 +1,4 @@
-import { SHAPE, AI, PITCH, GOAL, TACKLE, CROSS } from './config.js';
+import { SHAPE, AI, PITCH, GOAL, TACKLE, CROSS, RULES } from './config.js';
 import { freeness } from './player.js';
 
 // IA di squadra. Decide a AI.hz volte al secondo; il movimento (steer) va a 60 Hz.
@@ -84,6 +84,14 @@ export class TeamAI {
     const field = this.players.filter((p) => !p.keeper);
     for (const p of field) { p.aiTarget = this.shapeTarget(p, block); p.aiState = 'SUPPORTO'; p.aiSprint = false; p.aiFace = null; }
 
+    // Alle riprese degli avversari si sta a RULES.wall metri dalla palla.
+    if (m.phase === 'restart' && m.rules.set && m.rules.set.side !== this.side) {
+      const s = m.rules.set.spot;
+      for (const p of field) {
+        const dx = p.aiTarget.x - s.x, dz = p.aiTarget.z - s.z, d = Math.hypot(dx, dz);
+        if (d < RULES.wall) { const k = RULES.wall / Math.max(d, 0.1); p.aiTarget = { x: s.x + dx * k, z: clamp(s.z + dz * k, -HW + 1, HW - 1) }; }
+      }
+    }
     if (m.phase !== 'play') return;
     if (phase === 'attack') this.attack(field, dt);
     else if (phase === 'defend') this.defend(field, dt);

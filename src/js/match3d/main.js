@@ -12,6 +12,7 @@ import { Debug } from './debug.js';
 import { TeamAI } from './team-ai.js';
 import { KeeperAI, HELD_Y } from './keeper.js';
 import { startTackle, startSlide, tryAerial, startKeeperGesture } from './gestures.js';
+import { Rules } from './rules.js';
 
 const KICKS = ['pass', 'through', 'cross', 'shot'];
 
@@ -90,7 +91,6 @@ class Match {
     this.goals = { home: 0, away: 0 };
     this.scorers = [];
     this.paused = false;
-    this.pauseTimer = 0;       // attesa dopo gol o palla fuori
     this.acc = 0;
     this.last = 0;
     this.raf = 0;
@@ -182,7 +182,8 @@ class Match {
     this.controls = new Controls(root, this.hud.layer);
     this.debug = new Debug(root, this);
 
-    this.kickoff();
+    this.rules = new Rules(this, this.opts.durationMinutes);
+    this.rules.kickoff(this.userSide);
     this.camera = new BroadcastCamera(window.innerWidth / window.innerHeight);
     this.camera.snap(this.ball);
     this.ball.sync(1, 0);
@@ -247,6 +248,7 @@ class Match {
   openExit() { this.paused = true; this.stopInput(); this.hud.openExit(); }
 
   closeExit() {
+    if (this.phase === 'end') return;
     this.hud.closeExit();
     this.paused = false;
     this.last = performance.now();
@@ -268,7 +270,8 @@ class Match {
         n++;
       }
       if (n === PHYSICS.maxSteps) this.acc = 0;
-      this.camera.update(this.ball, dt);
+      const f = this.phase === 'goal' && this.cameraFocus;
+      this.camera.update(f ? { pos: f.pos, vel: f.vel } : this.ball, dt);
     }
     const alpha = this.paused ? 1 : this.acc / step;
     this.ball.sync(alpha, this.paused ? 0 : dt);
@@ -334,13 +337,7 @@ class Match {
     return fw[0];
   }
 
-  // Calcio d'inizio semplice: la palla al piede di chi batte.
-  kickoff(side = this.userSide) {
-    const p = this.placeKickoff(side);
-    if (!this.poss.free) this.poss.loose('fischio');
-    this.gain(p, "calcio d'inizio");
-    this.setControlled(side === this.userSide ? p : this.nearestTo(this.squad.players, 0, 0));
-  }
+  kickoff(side = this.userSide) { this.rules.kickoff(side); }
 
   // Il giocatore di movimento di `list` piu' vicino a (x, z).
   nearestTo(list, x, z, skip) {
@@ -484,16 +481,24 @@ class Match {
     // Rete di sicurezza: un pallone che nessuno raggiunge torna libero.
     if (this.poss.flying && this.poss.age > RECEIVE.timeout) this.poss.loose('nessuno la raggiunge');
 
+    this.rules.update(dt, inp);
+
     // Movimento. Chi sta facendo un gesto lo finisce; il ricevente di un
     // passaggio va sulla palla qualunque cosa dica il joystick, fino al
-    // primo tocco; gli altri finiscono la corsa rallentando.
+    // primo tocco. Alle riprese tutti si sistemano, chi batte resta fermo.
     const live = this.phase === 'play';
-    if (live) { this.teams.home.ai.update(dt); this.teams.away.ai.update(dt); }
+    const setting = this.phase === 'restart';
+    const taker = setting ? this.rules.set.taker : null;
+    if (live || setting) { this.teams.home.ai.update(dt); this.teams.away.ai.update(dt); }
     const withBall = this.owner === me;
     for (const p of this.everyone) {
       p.sideSpeed = 0;
       if (p.action) this.stepAction(dt, p, p === me ? inp : null);
-      else if (p.down || !live) p.drive(dt, 0, 0, 0, {});
+      else if (setting && p !== taker && !p.down) {
+        if (p.keeper) this.teams[p.team].keeperAI.position(dt);
+        else if (p === me) this.userMove(dt, p, inp, false);
+        else this.teams[p.team].ai.steer(dt, p);
+      } else if (p.down || !live) p.drive(dt, 0, 0, 0, {});
       else if (p.keeper && p !== me) this.teams[p.team].keeperAI.update(dt);
       else if (this.receiver === p) { this.aerial(p, inp); if (!p.action) this.runToBall(dt, p); }
       else if (p !== me) { this.aerial(p, null); if (!p.action) this.teams[p.team].ai.steer(dt, p); }
@@ -523,19 +528,19 @@ class Match {
     }
 
     if (wasLive && b.scored) this.onGoal(b.scored);
-    else if (wasLive && b.out) { this.poss.loose('fuori'); this.pauseTimer = RULES.outPause; }
+    else if (wasLive && b.out) this.rules.out();
     if (!b.live) {
       if (!this.poss.free) this.poss.loose(b.scored ? 'gol' : 'fuori');
       for (const p of this.everyone) if (p.action && p.action.kick) p.action = null;
     }
+  }
 
-    if (!b.live && this.pauseTimer > 0) {
-      this.pauseTimer -= dt;
-      if (this.pauseTimer <= 0) {
-        this.hud.hideGoal();
-        this.kickoff(this.nextKickoff || this.userSide);
-      }
-    }
+  clockText() { return this.rules.clockText() + ' ' + this.rules.half + 'T'; }
+
+  // Fine partita: stessa scelta del pulsante Esci, con il risultato in vista.
+  onFullTime() {
+    this.stopInput();
+    this.hud.openEnd(this.goals.home, this.goals.away);
   }
 
   // Si tiene premuto per la potenza; il comando rilasciato senza palla vicina
@@ -680,7 +685,8 @@ class Match {
       this.poss.fly('tiro', p, null);
     }
     this.release(p, CONTROL.kickLock);
-    if (a.target && p === this.ctrl) this.switchTo(a.target);
+    if (a.target && (p === this.ctrl || (p.team === this.userSide && a.target.team === this.userSide))) this.switchTo(a.target);
+    if (this.phase !== 'play') this.rules.go('play');
   }
 
   // Punto d'intercetto: il primo punto della traiettoria prevista, a
@@ -809,12 +815,11 @@ class Match {
     const home = team === 'home';
     if (home) this.goals.home++; else this.goals.away++;
     const last = this.lastTouch;
-    const scorer = last && last.team === team ? last.id : null;
-    this.scorers.push({ team, playerId: scorer, minute: null });
+    const scorer = last && last.team === team ? last : null;
+    this.scorers.push({ team, playerId: scorer ? scorer.id : null, minute: this.rules.minute() });
     this.hud.setScore(this.goals.home, this.goals.away);
-    this.hud.showGoal((home ? this.home : this.away).name);
-    this.pauseTimer = RULES.goalPause;
-    this.nextKickoff = this.otherSide(team);
+    this.hud.showGoal((home ? this.home : this.away).name, scorer ? scorer.name : '');
+    this.rules.goal(team, scorer);
     this.teams[this.otherSide(team)].keeperAI.concede();
   }
 

@@ -37,6 +37,22 @@ html.m3d-test #kfm-intro, html.m3d-test #kfm-esc{display:none!important}
   font-family:Anton,Impact,sans-serif; font-size:22px; line-height:1; font-variant-numeric:tabular-nums;
 }
 .m3d-sep{color:var(--m3d-ink-2)}
+.m3d-time{
+  display:flex; align-items:baseline; gap:8px; padding-left:12px; border-left:1px solid var(--m3d-line);
+  font-variant-numeric:tabular-nums;
+}
+.m3d-clock{font-family:Anton,Impact,sans-serif; font-size:16px; line-height:1}
+.m3d-half{font-size:11px; color:var(--m3d-ink-2); text-transform:uppercase; letter-spacing:.04em}
+
+/* Riprese: avviso breve in alto al centro. */
+.m3d-toast{
+  position:absolute; left:50%; top:calc(64px + env(safe-area-inset-top)); transform:translateX(-50%);
+  padding:8px 16px; border-radius:16px; background:var(--m3d-panel); border:1px solid var(--m3d-line);
+  font-size:13px; white-space:nowrap;
+}
+.m3d-toast[hidden]{display:none}
+.m3d-final{margin:0; font-family:Anton,Impact,sans-serif; font-size:22px; line-height:1.1; text-transform:uppercase}
+.m3d-final[hidden], .m3d-resume[hidden]{display:none}
 
 .m3d-exit{
   position:absolute;

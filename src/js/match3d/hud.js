@@ -37,7 +37,11 @@ export class Hud {
     this.ag = el('span', 'm3d-g', '0');
     const goals = el('div', 'm3d-goals');
     goals.append(this.hg, el('span', 'm3d-sep', '-'), this.ag);
-    score.append(team(home, 'home'), goals, team(away, 'away'));
+    this.clock = el('span', 'm3d-clock', '00:00');
+    this.halfTag = el('span', 'm3d-half', '1T');
+    const clock = el('div', 'm3d-time');
+    clock.append(this.clock, this.halfTag);
+    score.append(team(home, 'home'), goals, team(away, 'away'), clock);
 
     const exit = el('button', 'm3d-exit');
     exit.type = 'button';
@@ -47,8 +51,13 @@ export class Hud {
 
     this.banner = el('div', 'm3d-banner');
     this.banner.hidden = true;
+    this.bannerTitle = el('span', 'm3d-banner-t', 'Gol');
     this.bannerTeam = el('span', 'm3d-banner-team');
-    this.banner.append(el('span', 'm3d-banner-t', 'Gol'), this.bannerTeam);
+    this.banner.append(this.bannerTitle, this.bannerTeam);
+
+    // avviso breve per le riprese: rimessa, angolo, rinvio
+    this.toastEl = el('div', 'm3d-toast');
+    this.toastEl.hidden = true;
 
     this.hint = el('div', 'm3d-hint', 'WASD muovi · J passa/cambio · I filtrante/pressing · U cross/scivolata · K tiro/contrasto · L scatto · O finta');
 
@@ -76,7 +85,7 @@ export class Hud {
     rotate.innerHTML = ICON_ROTATE;
     rotate.appendChild(el('span', null, 'Gira il telefono in orizzontale'));
 
-    hud.append(score, this.tag, exit, this.layer, this.power, this.banner, this.hint, this.dialog, rotate);
+    hud.append(score, this.tag, exit, this.layer, this.power, this.banner, this.toastEl, this.hint, this.dialog, rotate);
     root.appendChild(hud);
     this.node = hud;
   }
@@ -90,6 +99,10 @@ export class Hud {
     title.id = 'm3d-exit-title';
     wrap.setAttribute('aria-labelledby', title.id);
     panel.appendChild(title);
+    this.dialogTitle = title;
+    this.finalScore = el('p', 'm3d-final');
+    this.finalScore.hidden = true;
+    panel.appendChild(this.finalScore);
 
     const choice = (label, note, cls, fn) => {
       const b = el('button', 'm3d-choice ' + cls);
@@ -113,6 +126,7 @@ export class Hud {
     resume.type = 'button';
     resume.addEventListener('click', () => this.on.resume());
     panel.appendChild(resume);
+    this.resumeBtn = resume;
     wrap.appendChild(panel);
     return wrap;
   }
@@ -122,12 +136,40 @@ export class Hud {
     this.ag.textContent = String(a);
   }
 
-  showGoal(name) {
-    this.bannerTeam.textContent = name;
+  showGoal(name, scorer) {
+    this.showBanner('Gol', scorer ? scorer + ' · ' + name : name);
+  }
+
+  showBanner(title, sub) {
+    this.bannerTitle.textContent = title;
+    this.bannerTeam.textContent = sub || '';
     this.banner.hidden = false;
   }
 
   hideGoal() { this.banner.hidden = true; }
+
+  toast(text) {
+    this.toastEl.textContent = text;
+    this.toastEl.hidden = false;
+    clearTimeout(this.toastT);
+    this.toastT = setTimeout(() => { this.toastEl.hidden = true; }, 1800);
+  }
+
+  // mm:ss di gioco e tempo (1T, 2T)
+  setClock(text, half) {
+    if (text !== this.lastClock) { this.clock.textContent = text; this.lastClock = text; }
+    if (half !== this.lastHalf) { this.halfTag.textContent = half + 'T'; this.lastHalf = half; }
+  }
+
+  // Fine partita: la finestra di uscita con il risultato e senza "Riprendi".
+  openEnd(hg, ag) {
+    this.banner.hidden = true;
+    this.dialogTitle.textContent = 'Fine partita';
+    this.finalScore.textContent = this.home.name + ' ' + hg + ' - ' + ag + ' ' + this.away.name;
+    this.finalScore.hidden = false;
+    this.resumeBtn.hidden = true;
+    this.openExit();
+  }
 
   hideHint() { this.hint.classList.add('off'); }
 
@@ -155,5 +197,5 @@ export class Hud {
 
   closeExit() { this.dialog.hidden = true; }
 
-  destroy() { this.node.remove(); }
+  destroy() { clearTimeout(this.toastT); this.node.remove(); }
 }

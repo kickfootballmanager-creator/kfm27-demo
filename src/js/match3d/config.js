@@ -406,6 +406,7 @@ export const CAMERA = {
   followX: 1,             // quanto segue la palla lungo il campo
   followZ: 0.8,
   aimZ: 1.5,              // mira spostata verso la tribuna: la linea laterale vicina resta in quadro
+  nearBack: 1,            // metri di arretramento per metro di palla verso la tribuna
   maxFov: 75,
   lead: 0.35,             // anticipo in secondi nella direzione della palla
   limitX: 44,
@@ -413,9 +414,26 @@ export const CAMERA = {
   fovRate: 1.2
 };
 
+// Regole e tempi della partita. Falli, fuorigioco e rigori non ci sono ancora.
 export const RULES = {
-  goalPause: 2.6,         // secondi fra gol e ripresa
-  outPause: 1.4
+  fouls: false,
+  offside: false,
+  penalties: false,
+  durationMinutes: 6,     // minuti reali per 90' di gioco
+  shotGrace: 3,           // a tempo scaduto si aspetta la fine di un tiro in volo, al massimo cosi'
+  outPause: 0.9,          // palla fuori: attesa prima di sistemare la ripresa
+  restartReady: 0.7,      // da qui chi batte (utente) puo' calciare
+  aiTake: 1.8,            // l'IA batte dopo tanti secondi
+  userWait: 6,            // l'utente non batte: dopo tanti secondi batte l'IA per lui
+  wall: 9.15,             // distanza degli avversari dalla palla alle riprese
+  goalPause: 5.5,         // esultanza, poi calcio d'inizio
+  goalSkip: 1.5,          // da qui un pulsante salta l'esultanza
+  halfPause: 3,
+  celebration: { clip: 'celebration', from: 0, hold: 4.6 },
+  kickoff: { clip: 'kickoff', from: 0, contact: 0.517, end: 0.567, arrive: 7 },
+  throwIn: { clip: 'throw_in', from: 0.8, release: 1.55, end: 2.3, outside: 1.7, shortApex: 0.9, longApex: 3.2, shortMax: 16, longMax: 30 },
+  goalKick: { x: 5.5, z: 5 },  // metri dalla linea di porta, dal centro della porta
+  cornerInset: 0.4
 };
 
 export const RENDER = {
