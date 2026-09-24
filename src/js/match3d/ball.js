@@ -104,6 +104,19 @@ function rollSpeedFor(d, arrive = 0) {
   return hi;
 }
 
+// Distanza orizzontale del primo rimbalzo, partendo da terra all'altezza y.
+const _lp = new THREE.Vector3(), _lv = new THREE.Vector3();
+function landDistance(y, vh, vy) {
+  const p = _lp.set(0, y, 0), v = _lv.set(vh, vy, 0), dt = 1 / 60;
+  for (let i = 0; i < 600; i++) {
+    v.y -= BALL.gravity * dt;
+    v.multiplyScalar(Math.max(0, 1 - BALL.airDrag * v.length() * dt));
+    p.addScaledVector(v, dt);
+    if (p.y <= BALL.radius && v.y < 0) return p.x;
+  }
+  return p.x;
+}
+
 export class Ball {
   constructor() {
     this.pos = new THREE.Vector3(0, BALL.radius, 0);
@@ -115,7 +128,7 @@ export class Ball {
     this.frame = this._frame();
 
     this.mesh = new THREE.Mesh(
-      new THREE.IcosahedronGeometry(BALL.radius * BALL.visualScale, 3),
+      new THREE.IcosahedronGeometry(BALL.radius, 3),
       new THREE.MeshStandardMaterial({ map: ballTexture(), roughness: 0.45, metalness: 0 })
     );
     this.shadow = new THREE.Mesh(
@@ -150,31 +163,35 @@ export class Ball {
 
   get live() { return !this.scored && !this.out; }
 
-  // Passaggio verso un punto a terra: rasoterra da vicino, a parabola da
-  // lontano, con una stima che compensa la resistenza. `speedMul` e' l'errore
-  // di forza di chi calcia. Restituisce true se la palla parte alta.
-  passTo(tx, tz, arrive, speedMul = 1) {
+  // Rasoterra, a qualunque distanza: arriva con velocita' `arrive` entro
+  // KICK.groundMin..groundMax; `speedMul` e' l'errore di forza di chi calcia.
+  rollTo(tx, tz, arrive, speedMul = 1) {
     const dx = tx - this.pos.x, dz = tz - this.pos.z;
     const dist = Math.hypot(dx, dz);
-    if (dist < 0.3) return false;
+    if (dist < 0.3) return;
+    const speed = Math.min(KICK.groundMax, Math.max(KICK.groundMin, rollSpeedFor(dist, arrive) * speedMul));
+    this.pos.y = BALL.radius;
+    this.kick(dx / dist * speed, 0, dz / dist * speed);
+  }
+
+  // Parabola alta `apex` m che atterra su (tx, tz): la velocita' orizzontale si
+  // corregge simulando il volo, perche' l'aria lo accorcia.
+  lobTo(tx, tz, apex) {
+    const dx = tx - this.pos.x, dz = tz - this.pos.z;
+    const dist = Math.hypot(dx, dz);
+    if (dist < 0.3) return;
     const ux = dx / dist, uz = dz / dist;
-    let speed, vy = 0;
-    const lofted = dist > KICK.groundPassMax;
-    if (!lofted) {
-      speed = Math.min(KICK.groundMax, Math.max(KICK.groundMin, rollSpeedFor(dist, arrive)));
-    } else {
-      const k = Math.min(1, (dist - KICK.groundPassMax) / (KICK.loftDistance - KICK.groundPassMax));
-      const ang = KICK.minLoft + (KICK.maxLoft - KICK.minLoft) * k;
-      const v = Math.sqrt(dist * BALL.gravity / Math.sin(2 * ang)) * (1 + KICK.dragComp * dist);
-      speed = v * Math.cos(ang);
-      vy = v * Math.sin(ang);
+    const h = Math.max(0.5, apex - (this.pos.y - BALL.radius));
+    const vy = Math.sqrt(2 * BALL.gravity * h);
+    let vh = dist / (2 * vy / BALL.gravity);
+    for (let i = 0; i < 4; i++) {
+      const land = landDistance(this.pos.y, vh, vy);
+      if (land < 0.1) break;
+      vh *= dist / land;
     }
-    speed *= speedMul;
-    vy *= speedMul;
-    const total = Math.hypot(speed, vy);
-    if (total > KICK.maxSpeed) { const f = KICK.maxSpeed / total; speed *= f; vy *= f; }
-    this.kick(ux * speed, vy, uz * speed);
-    return lofted;
+    const total = Math.hypot(vh, vy);
+    const f = total > KICK.maxSpeed ? KICK.maxSpeed / total : 1;
+    this.kick(ux * vh * f, vy * f, uz * vh * f);
   }
 
   kick(vx, vy, vz, spin = 0) {
@@ -287,13 +304,10 @@ export class Ball {
     const hs = Math.hypot(this.vel.x, this.vel.z);
     if (hs > 0.01) {
       this._axis.set(this.vel.z, 0, -this.vel.x).normalize();
-      m.rotateOnWorldAxis(this._axis, hs * dt / (BALL.radius * BALL.visualScale));
+      m.rotateOnWorldAxis(this._axis, hs * dt / BALL.radius);
     }
-    // La sfera disegnata e' piu' grande di quella fisica: la si alza per
-    // non farla affondare nel prato.
-    m.position.y += BALL.radius * (BALL.visualScale - 1);
     const h = Math.max(0, this.pos.y - BALL.radius);
-    const s = 0.34 * BALL.visualScale + h * 0.06;
+    const s = 0.5 + h * 0.06;
     this.shadow.position.set(m.position.x, 0.012, m.position.z);
     this.shadow.scale.set(s, s, 1);
     this.shadow.material.opacity = Math.max(0.15, 1 - h * 0.12);

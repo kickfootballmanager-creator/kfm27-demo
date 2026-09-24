@@ -50,7 +50,7 @@ export class Hud {
     this.bannerTeam = el('span', 'm3d-banner-team');
     this.banner.append(el('span', 'm3d-banner-t', 'Gol'), this.bannerTeam);
 
-    this.hint = el('div', 'm3d-hint', 'WASD muovi · J passa · K tira, tieni premuto per la potenza · L scatto');
+    this.hint = el('div', 'm3d-hint', 'WASD muovi · J passa · I filtrante · U cross · K tiro · L scatto · O finta · tieni premuto per la potenza');
 
     this.tag = el('div', 'm3d-tag');
     this.tagNum = el('span', 'm3d-tag-n');

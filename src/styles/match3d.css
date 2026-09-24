@@ -113,8 +113,10 @@ html.m3d-test #kfm-intro, html.m3d-test #kfm-esc{display:none!important}
   position:absolute; left:50%; top:50%; width:48px; height:48px; border-radius:50%;
   transform:translate(-50%,-50%); background:rgba(242,244,245,.88);
 }
+/* Sei pulsanti come in PES: Tiro grande sotto il pollice, Passa a sinistra,
+   Filtrante sopra, Cross in diagonale, Scatto e Finta verso il centro. */
 .m3d-buttons{
-  position:absolute; width:184px; height:176px;
+  position:absolute; width:232px; height:152px;
   right:calc(24px + env(safe-area-inset-right)); bottom:calc(24px + env(safe-area-inset-bottom));
 }
 .m3d-hud .m3d-btn{
@@ -122,11 +124,17 @@ html.m3d-test #kfm-intro, html.m3d-test #kfm-esc{display:none!important}
   border-radius:50%; border:1px solid var(--m3d-line-2); background:var(--m3d-panel); color:var(--m3d-ink);
   touch-action:none; padding:0;
 }
+.m3d-hud .m3d-btn[hidden]{display:none}
 .m3d-btn.on{background:var(--m3d-ink); color:#0a111c; border-color:var(--m3d-ink)}
+.m3d-btn-i{display:grid; place-items:center; line-height:0}
 .m3d-btn-l{font-size:11px; line-height:1.2; text-transform:uppercase; letter-spacing:.04em}
 .m3d-btn.shot{right:0; bottom:0; width:80px; height:80px}
 .m3d-btn.pass{right:96px; bottom:8px; width:64px; height:64px}
-.m3d-btn.sprint{right:12px; bottom:96px; width:56px; height:56px}
+.m3d-btn.through{right:8px; bottom:96px; width:64px; height:64px}
+.m3d-btn.cross{right:88px; bottom:88px; width:64px; height:64px}
+.m3d-btn.sprint{right:176px; bottom:8px; width:56px; height:56px}
+.m3d-btn.feint{right:168px; bottom:88px; width:64px; height:64px}
+.m3d-btn.through .m3d-btn-l, .m3d-btn.cross .m3d-btn-l, .m3d-btn.feint .m3d-btn-l, .m3d-btn.sprint .m3d-btn-l{font-size:11px; letter-spacing:0}
 
 .m3d-dialog{
   position:absolute; inset:0; display:grid; place-items:center; padding:16px;
@@ -158,6 +166,14 @@ html.m3d-test #kfm-intro, html.m3d-test #kfm-esc{display:none!important}
   background:var(--m3d-bg); font-size:16px; text-align:center; padding:24px; pointer-events:auto;
 }
 @media (orientation:portrait) and (max-width:820px){ .m3d-rotate{display:flex} }
+
+.m3d-debug{
+  position:absolute; left:calc(12px + env(safe-area-inset-left)); top:calc(112px + env(safe-area-inset-top));
+  margin:0; padding:8px 12px; max-width:min(560px,70vw); border-radius:16px;
+  background:rgba(10,17,28,.86); border:1px solid var(--m3d-line);
+  font:11px/1.45 ui-monospace,Consolas,monospace; color:#3fe08f; white-space:pre-wrap; pointer-events:none;
+}
+.m3d-debug[hidden]{display:none}
 
 @media (prefers-reduced-motion:reduce){
   .m3d-banner{animation:none}

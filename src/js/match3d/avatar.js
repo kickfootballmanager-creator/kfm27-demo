@@ -2,9 +2,12 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { MODEL, ANIM, PLAYER } from './config.js';
+import { MODEL, ANIM } from './config.js';
 
 const GLB_URL = new URL('../../assets/match3d/player.glb', import.meta.url).href;
+// Spostamento della radice e fotogrammi chiave misurati sugli FBX originali
+// (tools/match3d/measure_clips.py): nel GLB le clip sono ferme sul posto.
+const MOTION_URL = new URL('../../assets/match3d/player.motion.json', import.meta.url).href;
 
 // Materiali di player.glb nell'ordine dei colori passati allo shader;
 // l'ultimo colore (6) e' il secondo colore della maglia.
@@ -15,8 +18,39 @@ let cache = null;
 
 // Un solo caricamento per sessione: le partite successive riusano il modello.
 export function loadPlayerModel() {
-  if (!cache) cache = new GLTFLoader().loadAsync(GLB_URL).then(buildTemplate).catch((e) => { cache = null; throw e; });
+  if (!cache) {
+    cache = Promise.all([
+      new GLTFLoader().loadAsync(GLB_URL),
+      fetch(MOTION_URL).then((r) => (r.ok ? r.json() : { clips: {} })).catch(() => ({ clips: {} }))
+    ]).then(([gltf, motion]) => {
+      const tpl = buildTemplate(gltf);
+      tpl.motion = motion.clips || {};
+      return tpl;
+    }).catch((e) => { cache = null; throw e; });
+  }
   return cache;
+}
+
+// Spostamento della radice della clip al tempo t: { a: avanti, s: a destra },
+// nel riferimento del giocatore all'inizio del gesto. Zero se la clip non si muove.
+export function rootAt(tpl, clip, t) {
+  const m = tpl.motion[clip];
+  if (!m || !m.root.length) return { a: 0, s: 0 };
+  const r = m.root;
+  if (t <= r[0][0]) return { a: r[0][1], s: r[0][2] };
+  for (let i = 1; i < r.length; i++) {
+    if (t <= r[i][0]) {
+      const k = (t - r[i - 1][0]) / (r[i][0] - r[i - 1][0]);
+      return { a: r[i - 1][1] + (r[i][1] - r[i - 1][1]) * k, s: r[i - 1][2] + (r[i][2] - r[i - 1][2]) * k };
+    }
+  }
+  const e = r[r.length - 1];
+  return { a: e[1], s: e[2] };
+}
+
+export function clipDuration(tpl, clip) {
+  const c = tpl.clips[clip];
+  return c ? c.duration : 0;
 }
 
 // Le sei mesh diventano una sola SkinnedMesh (una draw call per giocatore):
@@ -209,9 +243,12 @@ export class Avatar {
   constructor(tpl, material, number, shirtColor) {
     this.object = cloneSkinned(tpl.holder);
     let body = null, bone = null;
+    this.bones = {};
+    const want = { LeftHand: 'lh', RightHand: 'rh', Head: 'head', RightToeBase: 'rf', LeftToeBase: 'lf' };
     this.object.traverse((o) => {
       if (o.isSkinnedMesh) body = o;
       if (o.isBone && o.name === tpl.plate.bone) bone = o;
+      if (o.isBone) { const k = want[o.name.split(':').pop()]; if (k) this.bones[k] = o; }
     });
     body.material = material;
     // Il volume di legatura non segue le animazioni: niente sparizioni ai bordi.
@@ -252,37 +289,77 @@ export class Avatar {
     this.tpl = tpl;
     this.phase = 0;
     this.one = null;
+    this.prevOne = null;       // gesto precedente che sfuma sotto quello nuovo
     this.target = new Array(this.loco.length).fill(0);
+    // corsa laterale del portiere al posto delle corse normali
+    this.keeperStep = act('gk_sidestep');
+    if (this.keeperStep) this.keeperStep.timeScale = 0;
+    this.sideW = 0;
+    this.side = 0;
   }
 
-  // Gesto a tutto corpo sopra la corsa: parte da `from`, dopo `hold`
-  // secondi comincia a sfumare verso la corsa.
-  playOnce(name, from, hold) {
+  // Gesto sopra la corsa da `from`; dopo `hold` secondi sfuma verso la corsa.
+  // Un gesto gia' in corso sfuma sotto il nuovo: niente pose in piedi fra due gesti a terra.
+  playOnce(name, from, hold, rate = 1) {
     const clip = this.tpl.clips[name];
     if (!clip) return;
-    if (this.one) this.one.a.stop();
+    if (this.prevOne) { this.prevOne.a.stop(); this.prevOne = null; }
+    let chained = false;
+    if (this.one) {
+      const w = this.one.a.getEffectiveWeight();
+      if (w > 0.05 && this.one.a.getClip() !== clip) { this.prevOne = { a: this.one.a, w, t: 0 }; chained = true; }
+      else this.one.a.stop();
+    }
     const a = this.mixer.clipAction(clip);
     a.reset();
     a.setLoop(THREE.LoopOnce, 1);
     a.clampWhenFinished = true;
     a.time = from;
-    a.timeScale = 1;
+    a.timeScale = rate;
     a.setEffectiveWeight(0);
     a.play();
-    this.one = { a, t: 0, hold };
+    this.one = { a, t: 0, hold, fade: chained ? ANIM.chainFade : ANIM.fadeIn };
+  }
+
+  // Gesto in ciclo (a terra, in attesa) finche' non se ne chiede un altro.
+  playLoop(name) {
+    this.playOnce(name, 0, Infinity);
+    if (this.one && this.one.a.getClip() === this.tpl.clips[name]) this.one.a.setLoop(THREE.LoopRepeat, Infinity);
+  }
+
+  // Ferma il gesto in corso: sfuma subito verso la corsa.
+  endGesture() {
+    if (this.one) this.one.hold = Math.min(this.one.hold, this.one.t);
   }
 
   get busy() { return !!this.one; }
 
+  gestureName() { return this.one ? this.one.a.getClip().name : null; }
+
+  // Posizione nel mondo di un osso (lh, rh, head, rf, lf) all'ultimo disegno.
+  bonePosition(key, out) {
+    const b = this.bones[key];
+    if (!b) return out.copy(this.object.position);
+    return b.getWorldPosition(out);
+  }
+
   // speed in m/s del mondo, turn = angolo fra direzione di corsa e busto.
-  update(dt, speed, turn) {
+  // side: velocita' laterale del portiere (m/s, + a destra), 0 per gli altri.
+  update(dt, speed, turn, side = 0) {
     let oneW = 0;
     if (this.one) {
       const o = this.one;
       o.t += dt;
-      oneW = o.t < o.hold ? Math.min(1, o.t / ANIM.fadeIn) : Math.max(0, 1 - (o.t - o.hold) / ANIM.fadeOut);
+      oneW = o.t < o.hold ? Math.min(1, o.t / o.fade) : Math.max(0, 1 - (o.t - o.hold) / ANIM.fadeOut);
       if (o.t >= o.hold && oneW <= 0) { o.a.stop(); this.one = null; }
       else o.a.setEffectiveWeight(oneW);
+    }
+    if (this.prevOne) {
+      const p = this.prevOne;
+      p.t += dt;
+      const w = p.w * Math.max(0, 1 - p.t / ANIM.chainFade);
+      if (w <= 0 || !this.one) { p.a.stop(); this.prevOne = null; }
+      else { p.a.setEffectiveWeight(w); oneW = Math.min(1, oneW + w); }
     }
 
     // Pesi obiettivo delle corse in avanti, a tratti lineari fra le velocita' di riferimento.
@@ -306,16 +383,20 @@ export class Avatar {
     const dirTarget = dir ? 1 - target[0] : 0;
     if (dir) for (let i = 1; i < n; i++) target[i] = 0;
 
+    // Portiere che si sposta di lato: passo laterale al posto della corsa.
     const k = 1 - Math.exp(-ANIM.blend * dt);
+    const sideTarget = this.keeperStep && Math.abs(side) > ANIM.keeperSideMin ? Math.min(1, Math.abs(side) / ANIM.keeperSideFull) : 0;
+    this.sideW += (sideTarget - this.sideW) * k;
+    if (sideTarget > 0) for (let i = 0; i < n; i++) target[i] *= 1 - sideTarget;
+
     for (let i = 0; i < n; i++) L[i].w += (target[i] - L[i].w) * k;
     for (const e of this.dirs) e.w += ((e === dir ? dirTarget : 0) - e.w) * k;
 
     // Una sola fase per tutte le corse: avanza con la media pesata dei ritmi.
-    const scale = PLAYER.visualScale;
     let wsum = 0, rate = 0;
     for (const e of this.all) {
       if (!e.d.natural || e.w <= 1e-3) continue;
-      const r = Math.min(ANIM.maxRate, Math.max(ANIM.minRate, speed / (e.d.natural * scale)));
+      const r = Math.min(ANIM.maxRate, Math.max(ANIM.minRate, speed / e.d.natural));
       rate += e.w * r / e.dur;
       wsum += e.w;
     }
@@ -323,6 +404,13 @@ export class Avatar {
     for (const e of this.all) {
       if (e.d.natural) e.a.time = wrapPhase(this.phase + e.d.phase) * e.dur;
       e.a.setEffectiveWeight(e.w * (1 - oneW));
+    }
+    if (this.keeperStep) {
+      // la clip va verso destra: all'indietro per andare a sinistra
+      const d = this.keeperStep.getClip().duration;
+      if (Math.abs(side) > 1e-3) this.side = wrapPhase(this.side + dt * Math.sign(side) * Math.min(ANIM.maxRate, Math.abs(side) / ANIM.keeperStepNatural) / d);
+      this.keeperStep.time = this.side * d;
+      this.keeperStep.setEffectiveWeight(this.sideW * (1 - oneW));
     }
     this.mixer.update(dt);
   }

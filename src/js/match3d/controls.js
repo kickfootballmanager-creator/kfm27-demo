@@ -6,14 +6,41 @@ import { CONTROL } from './config.js';
 
 const JOY_RADIUS = 56;
 
-const ICON_PASS = '<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><circle cx="6" cy="17" r="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M9 14.5L18.5 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M13 5.5h6v6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-const ICON_SHOT = '<svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true"><path d="M2.5 19V5.5h19V19" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M6.5 9.5h11M6.5 13.5h11M10 5.5V19M14 5.5V19" fill="none" stroke="currentColor" stroke-width="1" opacity=".45"/><circle cx="12" cy="16" r="3" fill="currentColor"/></svg>';
-const ICON_SPRINT = '<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M5 6l6 6-6 6M12 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const S = 'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"';
+const svg = (size, body) => `<svg viewBox="0 0 24 24" width="${size}" height="${size}" aria-hidden="true">${body}</svg>`;
 
+// In attacco e in difesa gli stessi pulsanti fanno cose diverse: etichetta e
+// icona cambiano col possesso. Scatto resta Scatto, Finta esiste solo in attacco.
+const ICONS = {
+  pass: svg(24, `<circle cx="6" cy="17" r="3" ${S}/><path d="M9 14.5L18.5 6" ${S}/><path d="M13 5.5h6v6" ${S}/>`),
+  through: svg(24, `<path d="M9 4v6M15 4v6M9 14v6M15 14v6" ${S} opacity=".5"/><path d="M3 12h17" ${S}/><path d="M16 8l4 4-4 4" ${S}/>`),
+  cross: svg(24, `<path d="M4 18C6 8 14 4 20 9" ${S}/><path d="M20 4v5h-5" ${S}/><circle cx="5" cy="19.5" r="1.5" fill="currentColor"/>`),
+  shot: svg(28, `<path d="M2.5 19V5.5h19V19" ${S}/><path d="M6.5 9.5h11M6.5 13.5h11M10 5.5V19M14 5.5V19" fill="none" stroke="currentColor" stroke-width="1" opacity=".45"/><circle cx="12" cy="16" r="3" fill="currentColor"/>`),
+  sprint: svg(24, `<path d="M5 6l6 6-6 6M12 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>`),
+  feint: svg(24, `<path d="M19 12a7 7 0 1 1-2.1-5" ${S}/><path d="M17.5 3v4.5H13" ${S}/><circle cx="12" cy="12" r="2" fill="currentColor"/>`),
+  swap: svg(24, `<path d="M4 8h14M14 4l4 4-4 4" ${S}/><path d="M20 16H6M10 12l-4 4 4 4" ${S}/>`),
+  press: svg(24, `<circle cx="12" cy="12" r="3" fill="currentColor"/><path d="M12 2v5M12 17v5M2 12h5M17 12h5" ${S}/>`),
+  slide: svg(24, `<path d="M3 20h18" ${S}/><path d="M5 16l7-2 8 1" ${S}/><circle cx="7" cy="9" r="2" ${S}/><circle cx="20" cy="12.5" r="1.5" fill="currentColor"/>`),
+  tackle: svg(28, `<path d="M6 6l12 12M18 6L6 18" ${S}/><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".45"/>`)
+};
+
+// Pulsante -> [comando in attacco, comando in difesa]
+const BUTTONS = {
+  pass: { attack: ['pass', 'Passa'], defense: ['swap', 'Cambio'] },
+  through: { attack: ['through', 'Filtrante'], defense: ['press', 'Pressing'] },
+  cross: { attack: ['cross', 'Cross'], defense: ['slide', 'Scivolata'] },
+  shot: { attack: ['shot', 'Tiro'], defense: ['tackle', 'Contrasto'] },
+  sprint: { attack: ['sprint', 'Scatto'], defense: ['sprint', 'Scatto'] },
+  feint: { attack: ['feint', 'Finta'], defense: null }
+};
+const HOLD = ['pass', 'through', 'cross', 'shot', 'sprint', 'feint'];
+
+// Tastiera: WASD/frecce, J passa/cambio, I filtrante/pressing, U cross/scivolata,
+// K tiro/contrasto, L scatto, O finta.
 const KEYS = {
   up: ['KeyW', 'ArrowUp'], down: ['KeyS', 'ArrowDown'],
   left: ['KeyA', 'ArrowLeft'], right: ['KeyD', 'ArrowRight'],
-  pass: ['KeyJ'], shoot: ['KeyK'], sprint: ['KeyL', 'ShiftLeft', 'ShiftRight'], swap: ['Space']
+  pass: ['KeyJ'], through: ['KeyI'], cross: ['KeyU'], shot: ['KeyK'], sprint: ['KeyL'], feint: ['KeyO']
 };
 const ALL_KEYS = new Set(Object.values(KEYS).flat());
 
@@ -28,8 +55,11 @@ export class Controls {
     this.root = root;
     this.keys = new Set();
     this.joy = { id: null, ox: 0, oy: 0, x: 0, y: 0 };
-    this.btn = { sprint: false, shoot: false };
-    this.edges = { pass: 0, shootDown: 0, shootUp: 0, swap: 0 };
+    this.btn = {};             // pulsanti touch tenuti premuti
+    this.downs = {};           // pressioni dall'ultima lettura
+    this.ups = {};             // rilasci dall'ultima lettura
+    for (const k of HOLD) { this.btn[k] = false; this.downs[k] = 0; this.ups[k] = 0; }
+    this.mode = 'attack';
     this.handlers = [];
     this.touch = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
 
@@ -41,10 +71,14 @@ export class Controls {
     zone.appendChild(base);
 
     const buttons = el('div', 'm3d-buttons');
-    this.bShot = this._button('shot', 'Tira', ICON_SHOT);
-    this.bPass = this._button('pass', 'Passa', ICON_PASS);
-    this.bSprint = this._button('sprint', 'Scatto', ICON_SPRINT);
-    buttons.append(this.bSprint, this.bPass, this.bShot);
+    this.buttons = {};
+    for (const k of HOLD) {
+      const b = this._button(k);
+      this.buttons[k] = b;
+      buttons.appendChild(b);
+      this._hold(b, () => { this.btn[k] = true; this.downs[k]++; }, () => { if (this.btn[k]) { this.btn[k] = false; this.ups[k]++; } });
+    }
+    this.setMode('attack');
     pad.append(zone, buttons);
     layer.appendChild(pad);
     this.pad = pad;
@@ -56,10 +90,6 @@ export class Controls {
     this._on(zone, 'pointerdown', (e) => this._joyDown(e));
     this._on(zone, 'pointermove', (e) => this._joyMove(e));
     for (const t of ['pointerup', 'pointercancel', 'lostpointercapture']) this._on(zone, t, (e) => this._joyUp(e));
-
-    this._hold(this.bPass, () => { this.edges.pass++; }, null);
-    this._hold(this.bShot, () => { this.btn.shoot = true; this.edges.shootDown++; }, () => { if (this.btn.shoot) { this.btn.shoot = false; this.edges.shootUp++; } });
-    this._hold(this.bSprint, () => { this.btn.sprint = true; }, () => { this.btn.sprint = false; });
 
     // Il primo tocco sullo schermo mostra i comandi anche su un PC con touch.
     this._on(root, 'pointerdown', (e) => {
@@ -74,16 +104,29 @@ export class Controls {
     this.handlers.push([t, type, fn, cap]);
   }
 
-  _button(kind, label, icon) {
+  _button(kind) {
     const b = el('button', 'm3d-btn ' + kind);
     b.type = 'button';
     b.tabIndex = -1;
-    b.setAttribute('aria-label', label);
-    b.innerHTML = icon;
-    const t = el('span', 'm3d-btn-l');
-    t.textContent = label;
-    b.appendChild(t);
+    b._icon = el('span', 'm3d-btn-i');
+    b._label = el('span', 'm3d-btn-l');
+    b.append(b._icon, b._label);
     return b;
+  }
+
+  // 'attack' o 'defense': etichette e icone seguono il possesso.
+  setMode(mode) {
+    if (mode === this.mode && this._modeSet) return;
+    this._modeSet = true;
+    this.mode = mode;
+    for (const k of HOLD) {
+      const b = this.buttons[k], d = BUTTONS[k][mode];
+      b.hidden = !d;
+      if (!d) { b._release(); this.btn[k] = false; continue; }
+      b.setAttribute('aria-label', d[1]);
+      b._icon.innerHTML = ICONS[d[0]];
+      b._label.textContent = d[1];
+    }
   }
 
   _hold(b, down, up) {
@@ -160,12 +203,10 @@ export class Controls {
     if (down) {
       if (e.repeat) return true;
       this.keys.add(e.code);
-      if (KEYS.pass.includes(e.code)) this.edges.pass++;
-      if (KEYS.shoot.includes(e.code)) this.edges.shootDown++;
-      if (KEYS.swap.includes(e.code)) this.edges.swap++;
+      for (const k of HOLD) if (KEYS[k].includes(e.code)) this.downs[k]++;
     } else {
       this.keys.delete(e.code);
-      if (KEYS.shoot.includes(e.code) && !this.btn.shoot) this.edges.shootUp++;
+      for (const k of HOLD) if (KEYS[k].includes(e.code) && !this.btn[k]) this.ups[k]++;
     }
     return true;
   }
@@ -187,25 +228,21 @@ export class Controls {
         x = this.joy.x / l; y = this.joy.y / l;
       }
     }
-    const out = {
-      x, z: y, mag,
-      sprint: this.btn.sprint || this._k(KEYS.sprint),
-      shootHeld: this.btn.shoot || this._k(KEYS.shoot),
-      pass: this.edges.pass > 0,
-      shootDown: this.edges.shootDown > 0,
-      shootUp: this.edges.shootUp > 0,
-      swap: this.edges.swap > 0
-    };
-    this.edges.pass = this.edges.shootDown = this.edges.shootUp = this.edges.swap = 0;
-    return out;
+    // Comandi per nome del pulsante: held (tenuto), down/up (dall'ultima lettura).
+    const held = {}, down = {}, up = {};
+    for (const k of HOLD) {
+      held[k] = this.btn[k] || this._k(KEYS[k]);
+      down[k] = this.downs[k] > 0;
+      up[k] = this.ups[k] > 0;
+      this.downs[k] = this.ups[k] = 0;
+    }
+    return { x, z: y, mag, sprint: held.sprint, held, down, up, any: HOLD.some((k) => down[k]) };
   }
 
   // Pausa, finestra di uscita o finestra che perde il fuoco: niente tasti "incollati".
   reset() {
     this.keys.clear();
-    this.btn.sprint = this.btn.shoot = false;
-    this.edges.pass = this.edges.shootDown = this.edges.shootUp = this.edges.swap = 0;
-    for (const b of [this.bPass, this.bShot, this.bSprint]) b._release();
+    for (const k of HOLD) { this.btn[k] = false; this.downs[k] = this.ups[k] = 0; this.buttons[k]._release(); }
     this._joyUp({ pointerId: this.joy.id });
   }
 

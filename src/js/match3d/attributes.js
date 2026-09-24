@@ -28,7 +28,6 @@ export function playerParams(p) {
     turnRate: lerp(ATTR.turnRate, dri * 0.5 + pac * 0.5),
     turnRateBall: lerp(ATTR.turnRateBall, dri),
     dribbleSpeed: lerp(ATTR.dribbleSpeed, dri),
-    knock: lerp(ATTR.knock, dri),
     passError: lerp(ATTR.passError, pas),
     shotSpeed: lerp(ATTR.shotSpeed, sho * 0.8 + phy * 0.2),
     shotError: lerp(ATTR.shotError, sho),

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { PLAYER, PITCH, GOAL, PRACTICE, PASS, SHOT, ATTR, KIT } from './config.js';
+import { PLAYER, PITCH, GOAL, PRACTICE, PASS, SHOT, ATTR, KIT, THROUGH, CROSS } from './config.js';
 import { playerParams } from './attributes.js';
 import { Avatar } from './avatar.js';
 
@@ -45,16 +45,21 @@ export class Player {
     this.touchPhase = 0;
     this.knockTimer = 0;
 
+    this.team = null;          // 'home' | 'away'
+    this.role = String(data.role || '').toUpperCase();
+    this.keeper = false;
+    this.action = null;        // gesto in corso (main.js): calcio, finta, contrasto...
+    this.sideSpeed = 0;        // portiere: velocita' laterale per il passo laterale
+
     this.avatar = new Avatar(tpl, material, data.number, kit.primary);
     this.mesh = this.avatar.object;
-    this.mesh.scale.multiplyScalar(PLAYER.visualScale);
     this.shadow = new THREE.Mesh(
       new THREE.PlaneGeometry(1, 1),
       new THREE.MeshBasicMaterial({ map: shadowTex, transparent: true, depthWrite: false })
     );
     this.shadow.rotation.x = -Math.PI / 2;
     this.shadow.renderOrder = 2;
-    const s = PLAYER.radius * PLAYER.visualScale * 3.2;
+    const s = PLAYER.radius * 3.2;
     this.shadow.scale.set(s, s, 1);
   }
 
@@ -122,8 +127,26 @@ export class Player {
     m.position.lerpVectors(this.prev, this.pos, alpha);
     m.rotation.y = this.prevHeading + wrap(this.heading - this.prevHeading) * alpha;
     this.shadow.position.set(m.position.x, 0.011, m.position.z);
-    this.avatar.update(dt, this.speed, wrap(this.moveHeading - this.heading));
+    this.avatar.update(dt, this.speed, wrap(this.moveHeading - this.heading), this.sideSpeed);
   }
+
+  // Sposta il giocatore senza passare dalla corsa (radice di una clip,
+  // riposizionamento): la velocita' resta coerente per le animazioni.
+  moveTo(x, z, dt) {
+    this.prev.copy(this.pos);
+    this.prevHeading = this.heading;
+    const dx = x - this.pos.x, dz = z - this.pos.z;
+    this.pos.x = x; this.pos.z = z;
+    if (dt > 0) {
+      this.vel.set(dx / dt, 0, dz / dt);
+      this.speed = Math.hypot(dx, dz) / dt;
+      if (this.speed > 0.05) this.moveHeading = headingOf(dx, dz);
+    }
+  }
+
+  // Direzione a destra del busto, nel piano del campo.
+  get rightX() { return -Math.cos(this.heading); }
+  get rightZ() { return Math.sin(this.heading); }
 }
 
 // Due giocatori non si compenetrano; chi e' fermo non viene spostato.
@@ -185,24 +208,123 @@ export function kickoffPlacement(squad) {
 
 // Passaggio assistito: il compagno nel cono della direzione con il
 // punteggio piu' basso (angolo, distanza, marcatura).
-export function choosePass(from, dirX, dirZ, mates, opponents, cone = PASS.cone) {
+// `power` (0..1, pressione prolungata) preferisce i compagni piu' lontani.
+export function choosePass(from, dirX, dirZ, mates, opponents, cone = PASS.cone, power = 0) {
   const dl = Math.hypot(dirX, dirZ) || 1;
   const ux = dirX / dl, uz = dirZ / dl;
   let best = null, bestScore = Infinity;
   for (const m of mates) {
-    if (m === from) continue;
+    if (m === from || !available(m)) continue;
     const dx = m.pos.x - from.pos.x, dz = m.pos.z - from.pos.z;
     const d = Math.hypot(dx, dz);
     if (d < PASS.minDist || d > PASS.maxDist) continue;
     const ang = Math.acos(clamp((dx * ux + dz * uz) / d, -1, 1));
     if (ang > cone) continue;
-    let near = Infinity;
-    for (const o of opponents) near = Math.min(near, Math.hypot(o.pos.x - m.pos.x, o.pos.z - m.pos.z));
-    const free = Math.min(1, near / PASS.freeRadius);
-    const score = PASS.wAngle * (ang / cone) + PASS.wDist * (d / PASS.maxDist) - PASS.wFree * free;
+    const free = freeness(m.pos.x, m.pos.z, opponents);
+    const want = PASS.minDist + (PASS.maxDist * 0.6 - PASS.minDist) * power;
+    const score = PASS.wAngle * (ang / cone) + PASS.wDist * (d / PASS.maxDist) - PASS.wFree * free +
+      PASS.wPower * power * Math.abs(d - want) / PASS.maxDist;
     if (score < bestScore) { bestScore = score; best = m; }
   }
   return best;
+}
+
+// Chi e' a terra o impegnato in un tuffo non riceve passaggi.
+function available(m) { return !m.down && !m.keeperBusy; }
+
+// 0 marcato stretto, 1 nessun avversario entro PASS.freeRadius.
+export function freeness(x, z, opponents) {
+  let near = Infinity;
+  for (const o of opponents) near = Math.min(near, Math.hypot(o.pos.x - x, o.pos.z - z));
+  return Math.min(1, near / PASS.freeRadius);
+}
+
+// Filtrante: il compagno nel cono con piu' spazio davanti. La palla va dove
+// arrivera' correndo, non ai suoi piedi.
+export function chooseThrough(from, dirX, dirZ, mates, opponents, power) {
+  const dl = Math.hypot(dirX, dirZ) || 1;
+  const ux = dirX / dl, uz = dirZ / dl;
+  const lead = THROUGH.minLead + (THROUGH.maxLead - THROUGH.minLead) * power;
+  let best = null, bestScore = Infinity;
+  for (const m of mates) {
+    if (m === from || !available(m) || m.keeper) continue;
+    const dx = m.pos.x - from.pos.x, dz = m.pos.z - from.pos.z;
+    const d = Math.hypot(dx, dz);
+    if (d < PASS.minDist || d > PASS.maxDist) continue;
+    const ang = Math.acos(clamp((dx * ux + dz * uz) / d, -1, 1));
+    if (ang > THROUGH.cone) continue;
+    const run = runDirection(m);
+    const tx = m.pos.x + run.x * lead, tz = clampZ(m.pos.z + run.z * lead);
+    const space = freeness(tx, tz, opponents);
+    const score = PASS.wAngle * (ang / THROUGH.cone) + PASS.wDist * (d / PASS.maxDist) - THROUGH.wSpace * space;
+    if (score < bestScore) { bestScore = score; best = { mate: m, tx, tz }; }
+  }
+  if (best) return best;
+  return { mate: null, tx: from.pos.x + ux * (PASS.blindDist + lead), tz: clampZ(from.pos.z + uz * (PASS.blindDist + lead)) };
+}
+
+// Dove corre il compagno: la sua corsa se si muove, altrimenti verso la
+// porta avversaria.
+function runDirection(m) {
+  const s = Math.hypot(m.vel.x, m.vel.z);
+  if (s > 2) return { x: m.vel.x / s, z: m.vel.z / s };
+  return { x: m.attackDir, z: 0 };
+}
+
+const clampZ = (z) => clamp(z, -HW + 1, HW - 1);
+
+// Cross dalla fascia nell'ultimo terzo, lancio lungo altrove. Restituisce
+// punto d'arrivo, altezza della parabola, tipo e destinatario.
+export function chooseCross(from, dirX, dirZ, mates, opponents, power) {
+  const d = from.attackDir;
+  const ax = from.pos.x * d;
+  if (Math.abs(from.pos.z) > CROSS.wingZ && ax > CROSS.finalThird) {
+    const side = Math.sign(from.pos.z) || 1;
+    let best = null, bestN = -1;
+    for (const t of CROSS.targets) {
+      const tx = d * (HL - t.back), tz = -side * t.z;
+      let n = 0;
+      for (const m of mates) if (m !== from && !m.keeper && Math.hypot(m.pos.x - tx, m.pos.z - tz) < CROSS.mateRadius) n += 1 - Math.hypot(m.pos.x - tx, m.pos.z - tz) / CROSS.mateRadius;
+      if (n > bestN) { bestN = n; best = { tx, tz }; }
+    }
+    return { kind: 'cross', tx: best.tx, tz: best.tz, apex: CROSS.apexMin + (CROSS.apexMax - CROSS.apexMin) * power, mate: nearestMate(best.tx, best.tz, from, mates) };
+  }
+  const dl = Math.hypot(dirX, dirZ) || 1;
+  const ux = dirX / dl, uz = dirZ / dl;
+  let best = null, bestScore = Infinity;
+  for (const m of mates) {
+    if (m === from || !available(m) || m.keeper) continue;
+    const dx = m.pos.x - from.pos.x, dz = m.pos.z - from.pos.z;
+    const dist = Math.hypot(dx, dz);
+    if (dist < CROSS.longMin || dist > PASS.maxDist + 15) continue;
+    const ang = Math.acos(clamp((dx * ux + dz * uz) / dist, -1, 1));
+    if (ang > CROSS.cone) continue;
+    const score = ang / CROSS.cone - PASS.wFree * freeness(m.pos.x, m.pos.z, opponents) - 0.3 * power * dist / PASS.maxDist;
+    if (score < bestScore) { bestScore = score; best = m; }
+  }
+  const apex = CROSS.apexLong * (0.8 + 0.4 * power);
+  if (best) {
+    const run = runDirection(best);
+    return { kind: 'lancio', tx: best.pos.x + run.x * 3, tz: clampZ(best.pos.z + run.z * 3), apex, mate: best };
+  }
+  const reach = CROSS.longSpace * (0.7 + 0.5 * power);
+  return { kind: 'lancio', tx: clamp(from.pos.x + ux * reach, -HL + 2, HL - 2), tz: clampZ(from.pos.z + uz * reach), apex, mate: null };
+}
+
+function nearestMate(x, z, from, mates) {
+  let best = null, bd = Infinity;
+  for (const m of mates) {
+    if (m === from || m.keeper || !available(m)) continue;
+    const d = Math.hypot(m.pos.x - x, m.pos.z - z);
+    if (d < bd) { bd = d; best = m; }
+  }
+  return best;
+}
+
+// Errore sul punto d'arrivo di un pallone alto, scalato dal passaggio.
+export function loftError(from) {
+  const s = from.params.passError / ATTR.passError[0];
+  return { x: gauss() * CROSS.error * s, z: gauss() * CROSS.error * s };
 }
 
 // Pressione su un giocatore, 0..1: quanto e' vicino l'avversario piu' vicino.
@@ -213,10 +335,14 @@ export function pressure(p, opponents) {
 }
 
 // Punto d'arrivo del passaggio con l'errore di chi calcia.
+// Ai piedi del compagno, anticipando un po' la sua corsa.
 export function passAim(from, ball, target, dirX, dirZ) {
   let tx, tz;
-  if (target) { tx = target.pos.x; tz = target.pos.z; }
-  else {
+  if (target) {
+    const t = Math.hypot(target.pos.x - ball.pos.x, target.pos.z - ball.pos.z) / 16;
+    tx = target.pos.x + target.vel.x * t * PASS.lead;
+    tz = target.pos.z + target.vel.z * t * PASS.lead;
+  } else {
     const dl = Math.hypot(dirX, dirZ) || 1;
     tx = ball.pos.x + dirX / dl * PASS.blindDist;
     tz = ball.pos.z + dirZ / dl * PASS.blindDist;
