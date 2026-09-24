@@ -1,0 +1,1140 @@
+{
+ "source": "Calciatore.fbx + Mixamo",
+ "unit": "metri",
+ "height": 1.804,
+ "bonePrefix": "mixamorig5:",
+ "rootBone": "mixamorig5:Hips",
+ "triangles": 3600,
+ "meshes": [
+  {
+   "mesh": "Ch38_Body",
+   "trisBefore": 18600,
+   "trisAfter": 1400,
+   "material": "skin"
+  },
+  {
+   "mesh": "Ch38_Shirt",
+   "trisBefore": 7554,
+   "trisAfter": 700,
+   "material": "kit_shirt"
+  },
+  {
+   "mesh": "Ch38_Shorts",
+   "trisBefore": 7024,
+   "trisAfter": 500,
+   "material": "kit_shorts"
+  },
+  {
+   "mesh": "Ch38_Socks",
+   "trisBefore": 1000,
+   "trisAfter": 250,
+   "material": "kit_socks"
+  },
+  {
+   "mesh": "Ch38_Shoes",
+   "trisBefore": 3480,
+   "trisAfter": 350,
+   "material": "boots"
+  },
+  {
+   "mesh": "Ch38_Hair",
+   "trisBefore": 9528,
+   "trisAfter": 400,
+   "material": "hair"
+  }
+ ],
+ "rootMotion": "spostamento orizzontale rimosso da tutte le clip, saliscendi verticale conservato. rootTravel sono i metri dell'originale Mixamo, da riprodurre via codice; residual e' la verifica dopo la correzione.",
+ "skipped": [
+  {
+   "source": "Animazioni per tiri/Header.fbx",
+   "reason": "doppione di header"
+  },
+  {
+   "source": "Animazioni per falli/Soccer Tackle.fbx",
+   "reason": "doppione di slide_tackle"
+  },
+  {
+   "source": "Animazionia per ricevi palla/Jog Backward Diagonal Palla che arriva dall'alto da un cross 2.fbx",
+   "reason": "versione non in-place di jog_diag_back"
+  },
+  {
+   "source": "Animazioni goalkeeper/Goalkeeper Placing Ball.fbx",
+   "reason": "filmato, non gameplay"
+  },
+  {
+   "source": "Animazioni goalkeeper/Goalkeeper Placing Ball 2.fbx",
+   "reason": "filmato, non gameplay"
+  }
+ ],
+ "aliases": {
+  "cross": "pass"
+ },
+ "clips": [
+  {
+   "name": "run",
+   "source": "Slow Run.fbx",
+   "mirrored": false,
+   "side": null,
+   "frames": [
+    1,
+    23
+   ],
+   "fps": 30,
+   "duration": 0.733,
+   "rootTravel": {
+    "x": 0.0271,
+    "y": 0.0727,
+    "up": 0.1177,
+    "net": 0.0
+   },
+   "residual": {
+    "x": 0.0,
+    "y": 0.0,
+    "up": 0.1177,
+    "net": 0.0
+   },
+   "naturalSpeed": 2.74,
+   "loop": true
+  },
+  {
+   "name": "sprint",
+   "source": "Fast Run.fbx",
+   "mirrored": false,
+   "side": null,
+   "frames": [
+    1,
+    17
+   ],
+   "fps": 30,
+   "duration": 0.533,
+   "rootTravel": {
+    "x": 0.0297,
+    "y": 0.0491,
+    "up": 0.0356,
+    "net": 0.0
+   },
+   "residual": {
+    "x": 0.0,
+    "y": 0.0,
+    "up": 0.0356,
+    "net": 0.0
+   },
+   "naturalSpeed": 5.02,
+   "loop": true
+  },
+  {
+   "name": "walk",
+   "source": "Camminata.fbx",
+   "mirrored": false,
+   "side": null,
+   "frames": [
+    1,
+    26
+   ],
+   "fps": 30,
+   "duration": 0.833,
+   "rootTravel": {
+    "x": 0.0096,
+    "y": 1.9305,
+    "up": 0.0852,
+    "net": 1.9305
+   },
+   "residual": {
+    "x": 0.0,
+    "y": 0.0,
+    "up": 0.0852,
+    "net": 0.0
+   },
+   "naturalSpeed": 2.32,
+   "loop": true
+  },
+  {
+   "name": "idle",
+   "source": "Animazioni che aspettano il calcio di inizio in formazione.fbx",
+   "mirrored": false,
+   "side": null,
+   "frames": [
+    1,
+    318
+   ],
+   "fps": 30,
+   "duration": 10.567,
+   "rootTravel": {
+    "x": 0.3643,
+    "y": 0.1659,
+    "up": 0.0328,
+    "net": 0.0
+   },
+   "residual": {
+    "x": 0.0,
+    "y": 0.0,
+    "up": 0.0328,
+    "net": 0.0
+   },
+   "naturalSpeed": null,
+   "loop": true
+  },
+  {
+   "name": "kickoff",
+   "source": "Calcio Di Inizio.fbx",
+   "mirrored": false,
+   "side": null,
+   "frames": [
+    1,
+    18
+   ],
+   "fps": 30,
+   "duration": 0.567,
+   "rootTravel": {
+    "x": 0.0098,
+    "y": 0.0423,
+    "up": 0.0649,
+    "net": 0.0
+   },
+   "residual": {
+    "x": 0.0,
+    "y": 0.0,
+    "up": 0.0649,
+    "net": 0.0
+   },
+   "naturalSpeed": null,
+   "loop": false
+  },
+  {
+   "name": "celebration",
+   "source": "Celebration.fbx",
+   "mirrored": false,
+   "side": null,
+   "frames": [
+    1,
+    257
+   ],
+   "fps": 30,
+   "duration": 8.533,
+   "rootTravel": {
+    "x": 0.044,
+    "y": 0.0518,
+    "up": 0.0142,
+    "net": 0.0
+   },
+   "residual": {
+    "x": 0.0,
+    "y": 0.0,
+    "up": 0.0142,
+    "net": 0.0
+   },
+   "naturalSpeed": null,
+   "loop": false
+  },
+  {
+   "name": "throw_in",
+   "source": "Throw In.fbx",
+   "mirrored": false,
+   "side": null,
+   "frames": [
+    1,
+    84
+   ],
+   "fps": 30,
+   "duration": 2.767,
+   "rootTravel": {
+    "x": 0.4665,
+    "y": 2.9368,
+    "up": 0.1917,
+    "net": 2.9601
+   },
+   "residual": {
+    "x": 0.0,
+    "y": 0.0,
+    "up": 0.1917,
+    "net": 0.0
+   },
+   "naturalSpeed": null,
+   "loop": false
+  },
+  {
+   "name": "jog_diag_fwd_left",
+   "source": "Animazionia per ricevi palla/Jog Forward Diagonall Palla che arriva dall'alto da un cross filtrante.fbx",
+   "mirrored": false,
+   "side": "left",
+   "frames": [
+    1,
+    26
+   ],
+   "fps": 30,
+   "duration": 0.833,
+   "rootTravel": {
+    "x": 0.0425,
+    "y": 0.0511,
+    "up": 0.0907,
+    "net": 0.0
+   },
+   "residual": {
+    "x": 0.0,
+    "y": 0.0,
+    "up": 0.0907,
+    "net": 0.0
+   },
+   "naturalSpeed": 2.38,
+   "loop": true
+  },
+  {
+   "name": "jog_diag_fwd_right",
+   "source": "Animazionia per ricevi palla/Jog Forward Diagonall Palla che arriva dall'alto da un cross filtrante.fbx",
+   "mirrored": true,
+   "side": "right",
+   "frames": [
+    1,
+    26
+   ],
+   "fps": 30,
+   "duration": 0.833,
+   "rootTravel": {
+    "x": 0.0425,
+    "y": 0.0511,
+    "up": 0.0907,
+    "net": 0.0
+   },
+   "residual": {
+    "x": 0.0,
+    "y": 0.0,
+    "up": 0.0907,
+    "net": 0.0
+   },
+   "naturalSpeed": 2.38,
+   "loop": true
+  },
+  {
+   "name": "jog_diag_back_right",
+   "source": "Animazionia per ricevi palla/Jog Backward Diagonal Palla che arriva dall'alto da un cross.fbx",
+   "mirrored": false,
+   "side": "right",
+   "frames": [
+    1,
+    23
+   ],
+   "fps": 30,
+   "duration": 0.733,
+   "rootTravel": {
+    "x": 0.0481,
+    "y": 0.0392,
+    "up": 0.0967,
+    "net": 0.0
+   },
+   "residual": {
+    "x": 0.0,
+    "y": 0.0,
+    "up": 0.0967,
+    "net": 0.0
+   },
+   "naturalSpeed": 2.03,
+   "loop": true
+  },
+  {
+   "name": "jog_diag_back_left",
+   "source": "Animazionia per ricevi palla/Jog Backward Diagonal Palla che arriva dall'alto da un cross.fbx",
+   "mirrored": true,
+   "side": "left",
+   "frames": [
+    1,
+    23
+   ],
+   "fps": 30,
+   "duration": 0.733,
+   "rootTravel": {
+    "x": 0.0481,
+    "y": 0.0392,
+    "up": 0.0967,
+    "net": 0.0
+   },
+   "residual": {
+    "x": 0.0,
+    "y": 0.0,
+    "up": 0.0967,
+    "net": 0.0
+   },
+   "naturalSpeed": 2.03,
+   "loop": true
+  },
+  {
+   "name": "strafe_left",
+   "source": "Animazionia per ricevi palla/Jog Strafe Left Palla che arriva dall'alto da un cross.fbx",
+   "mirrored": false,
+   "side": null,
+   "frames": [
+    1,
+    22
+   ],
+   "fps": 30,
+   "duration": 0.7,
+   "rootTravel": {
+    "x": 1.8878,
+    "y": 0.0453,
+    "up": 0.0569,
+    "net": 1.8878
+   },
+   "residual": {
+    "x": 0.0,
+    "y": 0.0,
+    "up": 0.0569,
+    "net": 0.0
+   },
+   "naturalSpeed": 2.7,
+   "loop": true
+  },
+  {
+   "name": "strafe_right",
+   "source": "Animazionia per ricevi palla/Jog Strafe Right Palla che arriva dall'alto da un cross.fbx",
+   "mirrored": false,
+   "side": null,
+   "frames": [
+    1,
+    23
+   ],
+   "fps": 30,
+   "duration": 0.733,
+   "rootTravel": {
+    "x": 1.576,
+    "y": 0.0608,
+    "up": 0.0505,
+    "net": 1.576
+   },
+   "residual": {
+    "x": 0.0,
+    "y": 0.0,
+    "up": 0.0505,
+    "net": 0.0
+   },
+   "naturalSpeed": 2.15,
+   "loop": true
+  },
+  {
+   "name": "receive",
+   "source": "Animazionia per ricevi palla/Receive.fbx",
+   "mirrored": false,
+   "side": null,
+   "frames": [
+    1,
+    43
+   ],
+   "fps": 30,
+   "duration": 1.4,
+   "rootTravel": {
+    "x": 0.1824,
+    "y": 0.1038,
+    "up": 0.1906,
+    "net": 0.0
+   },
+   "residual": {
+    "x": 0.0,
+    "y": 0.0,
+    "up": 0.1906,
+    "net": 0.0
+   },
+   "naturalSpeed": null,
+   "loop": false
+  },
+  {
+   "name": "pass",
+   "source": "Passaggi/Soccer Pass.fbx",
+   "mirrored": false,
+   "side": null,
+   "frames": [
+    1,
+    49
+   ],
+   "fps": 30,
+   "duration": 1.6,
+   "rootTravel": {
+    "x": 0.1982,
+    "y": 0.2297,
+    "up": 0.0589,
+    "net": 0.0
+   },
+   "residual": {
+    "x": 0.0,
+    "y": 0.0,
+    "up": 0.0589,
+    "net": 0.0
+   },
+   "naturalSpeed": null,
+   "loop": false
+  },
+  {
+   "name": "shot",
+   "source": "Animazioni per tiri/Strike Foward Jog.fbx",
+   "mirrored": false,
+   "side": null,
+   "frames": [
+    1,
+    40
+   ],
+   "fps": 30,
+   "duration": 1.3,
+   "rootTravel": {
+    "x": 0.1682,
+    "y": 0.2826,
+    "up": 0.2815,
+    "net": 0.0
+   },
+   "residual": {
+    "x": 0.0,
+    "y": 0.0,
+    "up": 0.2815,
+    "net": 0.0
+   },
+   "naturalSpeed": null,
+   "loop": false
+  },
+  {
+   "name": "penalty",
+   "source": "Animazioni per tiri/Soccer Penalty Kick.fbx",
+   "mirrored": false,
+   "side": null,
+   "frames": [
+    1,
+    46
+   ],
+   "fps": 30,
+   "duration": 1.5,
+   "rootTravel": {
+    "x": 0.7221,
+    "y": 2.6952,
+    "up": 0.1271,
+    "net": 2.7902
+   },
+   "residual": {
+    "x": 0.0,
+    "y": 0.0,
+    "up": 0.1271,
+    "net": 0.0
+   },
+   "naturalSpeed": null,
+   "loop": false
+  },
+  {
+   "name": "bicycle_kick",
+   "source": "Animazioni per tiri/Tiro Rovesciata.fbx",
+   "mirrored": false,
+   "side": null,
+   "frames": [
+    1,
+    84
+   ],
+   "fps": 30,
+   "duration": 2.767,
+   "rootTravel": {
+    "x": 0.4846,
+    "y": 0.2723,
+    "up": 0.9343,
+    "net": 0.2865
+   },
+   "residual": {
+    "x": 0.0,
+    "y": 0.0,
+    "up": 0.9343,
+    "net": 0.0
+   },
+   "naturalSpeed": null,
+   "loop": false
+  },
+  {
+   "name": "header_jump",
+   "source": "Animazioni per tiri/Soccer Header.fbx",
+   "mirrored": false,
+   "side": null,
+   "frames": [
+    1,
+    72
+   ],
+   "fps": 30,
+   "duration": 2.367,
+   "rootTravel": {
+    "x": 0.0261,
+    "y": 0.1428,
+    "up": 0.4763,
+    "net": 0.0
+   },
+   "residual": {
+    "x": 0.0,
+    "y": 0.0,
+    "up": 0.4763,
+    "net": 0.0
+   },
+   "naturalSpeed": null,
+   "loop": false
+  },
+  {
+   "name": "header",
+   "source": "Animazioni per tiri/Header Soccerball.fbx",
+   "mirrored": false,
+   "side": null,
+   "frames": [
+    1,
+    58
+   ],
+   "fps": 30,
+   "duration": 1.9,
+   "rootTravel": {
+    "x": 0.0503,
+    "y": 0.0953,
+    "up": 0.1049,
+    "net": 0.0
+   },
+   "residual": {
+    "x": 0.0,
+    "y": 0.0,
+    "up": 0.1049,
+    "net": 0.0
+   },
+   "naturalSpeed": null,
+   "loop": false
+  },
+  {
+   "name": "skill_spin_right",
+   "source": "Animazioni Skill/Soccer Spin.fbx",
+   "mirrored": false,
+   "side": "right",
+   "frames": [
+    1,
+    39
+   ],
+   "fps": 30,
+   "duration": 1.267,
+   "rootTravel": {
+    "x": 0.1542,
+    "y": 3.3837,
+    "up": 0.207,
+    "net": 3.3837
+   },
+   "residual": {
+    "x": 0.0,
+    "y": 0.0,
+    "up": 0.207,
+    "net": 0.0
+   },
+   "naturalSpeed": null,
+   "loop": false
+  },
+  {
+   "name": "skill_spin_left",
+   "source": "Animazioni Skill/Soccer Spin.fbx",
+   "mirrored": true,
+   "side": "left",
+   "frames": [
+    1,
+    39
+   ],
+   "fps": 30,
+   "duration": 1.267,
+   "rootTravel": {
+    "x": 0.1542,
+    "y": 3.3837,
+    "up": 0.207,
+    "net": 3.3837
+   },
+   "residual": {
+    "x": 0.0,
+    "y": 0.0,
+    "up": 0.207,
+    "net": 0.0
+   },
+   "naturalSpeed": null,
+   "loop": false
+  },
+  {
+   "name": "tackle",
+   "source": "Animazioni per falli/Soccer Tackle 2.fbx",
+   "mirrored": false,
+   "side": null,
+   "frames": [
+    1,
+    70
+   ],
+   "fps": 30,
+   "duration": 2.3,
+   "rootTravel": {
+    "x": 0.5826,
+    "y": 0.3454,
+    "up": 0.8733,
+    "net": 0.0
+   },
+   "residual": {
+    "x": 0.0,
+    "y": 0.0,
+    "up": 0.8733,
+    "net": 0.0
+   },
+   "naturalSpeed": null,
+   "loop": false
+  },
+  {
+   "name": "slide_tackle_right",
+   "source": "Animazioni per difesa/Scivolata.fbx",
+   "mirrored": false,
+   "side": "right",
+   "frames": [
+    1,
+    54
+   ],
+   "fps": 30,
+   "duration": 1.767,
+   "rootTravel": {
+    "x": 0.2452,
+    "y": 4.1316,
+    "up": 0.666,
+    "net": 4.1317
+   },
+   "residual": {
+    "x": 0.0,
+    "y": 0.0,
+    "up": 0.666,
+    "net": 0.0
+   },
+   "naturalSpeed": null,
+   "loop": false
+  },
+  {
+   "name": "slide_tackle_left",
+   "source": "Animazioni per difesa/Scivolata.fbx",
+   "mirrored": true,
+   "side": "left",
+   "frames": [
+    1,
+    54
+   ],
+   "fps": 30,
+   "duration": 1.767,
+   "rootTravel": {
+    "x": 0.2452,
+    "y": 4.1316,
+    "up": 0.666,
+    "net": 4.1317
+   },
+   "residual": {
+    "x": 0.0,
+    "y": 0.0,
+    "up": 0.666,
+    "net": 0.0
+   },
+   "naturalSpeed": null,
+   "loop": false
+  },
+  {
+   "name": "tripped",
+   "source": "Animazioni per falli/Soccer Trip.fbx",
+   "mirrored": false,
+   "side": null,
+   "frames": [
+    1,
+    49
+   ],
+   "fps": 30,
+   "duration": 1.6,
+   "rootTravel": {
+    "x": 1.1107,
+    "y": 3.6518,
+    "up": 0.7224,
+    "net": 3.8087
+   },
+   "residual": {
+    "x": 0.0,
+    "y": 0.0,
+    "up": 0.7224,
+    "net": 0.0
+   },
+   "naturalSpeed": null,
+   "loop": false
+  },
+  {
+   "name": "down_idle",
+   "source": "Animazioni per falli/Fallen Idle.fbx",
+   "mirrored": false,
+   "side": null,
+   "frames": [
+    1,
+    46
+   ],
+   "fps": 30,
+   "duration": 1.5,
+   "rootTravel": {
+    "x": 0.004,
+    "y": 0.011,
+    "up": 0.0061,
+    "net": 0.0
+   },
+   "residual": {
+    "x": 0.0,
+    "y": 0.0,
+    "up": 0.0061,
+    "net": 0.0
+   },
+   "naturalSpeed": null,
+   "loop": true
+  },
+  {
+   "name": "gk_sidestep",
+   "source": "Animazioni goalkeeper/Goalkeeper Sidestep.fbx",
+   "mirrored": false,
+   "side": null,
+   "frames": [
+    1,
+    17
+   ],
+   "fps": 30,
+   "duration": 0.533,
+   "rootTravel": {
+    "x": 1.1248,
+    "y": 0.0296,
+    "up": 0.0892,
+    "net": 1.1248
+   },
+   "residual": {
+    "x": 0.0,
+    "y": 0.0,
+    "up": 0.0892,
+    "net": 0.0
+   },
+   "naturalSpeed": 2.11,
+   "loop": true
+  },
+  {
+   "name": "gk_catch",
+   "source": "Animazioni goalkeeper/Goalkeeper Catch.fbx",
+   "mirrored": false,
+   "side": null,
+   "frames": [
+    1,
+    39
+   ],
+   "fps": 30,
+   "duration": 1.267,
+   "rootTravel": {
+    "x": 0.367,
+    "y": 0.4819,
+    "up": 0.0929,
+    "net": 0.6054
+   },
+   "residual": {
+    "x": 0.0,
+    "y": 0.0,
+    "up": 0.0929,
+    "net": 0.0
+   },
+   "naturalSpeed": null,
+   "loop": false
+  },
+  {
+   "name": "gk_catch_high",
+   "source": "Animazioni goalkeeper/Goalkeeper Catch 2.fbx",
+   "mirrored": false,
+   "side": null,
+   "frames": [
+    1,
+    83
+   ],
+   "fps": 30,
+   "duration": 2.733,
+   "rootTravel": {
+    "x": 0.5789,
+    "y": 0.5141,
+    "up": 0.6801,
+    "net": 0.5137
+   },
+   "residual": {
+    "x": 0.0,
+    "y": 0.0,
+    "up": 0.6801,
+    "net": 0.0
+   },
+   "naturalSpeed": null,
+   "loop": false
+  },
+  {
+   "name": "gk_catch_run_left",
+   "source": "Animazioni goalkeeper/Goalkeeper Catch 3.fbx",
+   "mirrored": false,
+   "side": "left",
+   "frames": [
+    1,
+    82
+   ],
+   "fps": 30,
+   "duration": 2.7,
+   "rootTravel": {
+    "x": 0.7026,
+    "y": 3.8077,
+    "up": 0.6918,
+    "net": 3.8665
+   },
+   "residual": {
+    "x": 0.0,
+    "y": 0.0,
+    "up": 0.6918,
+    "net": 0.0
+   },
+   "naturalSpeed": null,
+   "loop": false
+  },
+  {
+   "name": "gk_catch_run_right",
+   "source": "Animazioni goalkeeper/Goalkeeper Catch 3.fbx",
+   "mirrored": true,
+   "side": "right",
+   "frames": [
+    1,
+    82
+   ],
+   "fps": 30,
+   "duration": 2.7,
+   "rootTravel": {
+    "x": 0.7026,
+    "y": 3.8077,
+    "up": 0.6918,
+    "net": 3.8665
+   },
+   "residual": {
+    "x": 0.0,
+    "y": 0.0,
+    "up": 0.6918,
+    "net": 0.0
+   },
+   "naturalSpeed": null,
+   "loop": false
+  },
+  {
+   "name": "gk_dive_right",
+   "source": "Animazioni goalkeeper/Goalkeeper Diving Save.fbx",
+   "mirrored": false,
+   "side": "right",
+   "frames": [
+    1,
+    98
+   ],
+   "fps": 30,
+   "duration": 3.233,
+   "rootTravel": {
+    "x": 3.0999,
+    "y": 0.9551,
+    "up": 0.7792,
+    "net": 2.6886
+   },
+   "residual": {
+    "x": 0.0,
+    "y": 0.0,
+    "up": 0.7792,
+    "net": 0.0
+   },
+   "naturalSpeed": null,
+   "loop": false
+  },
+  {
+   "name": "gk_dive_left",
+   "source": "Animazioni goalkeeper/Goalkeeper Diving Save.fbx",
+   "mirrored": true,
+   "side": "left",
+   "frames": [
+    1,
+    98
+   ],
+   "fps": 30,
+   "duration": 3.233,
+   "rootTravel": {
+    "x": 3.0999,
+    "y": 0.9551,
+    "up": 0.7792,
+    "net": 2.6886
+   },
+   "residual": {
+    "x": 0.0,
+    "y": 0.0,
+    "up": 0.7792,
+    "net": 0.0
+   },
+   "naturalSpeed": null,
+   "loop": false
+  },
+  {
+   "name": "gk_block_left",
+   "source": "Animazioni goalkeeper/Goalkeeper Body Block ha preso palla con la mano.fbx",
+   "mirrored": false,
+   "side": "left",
+   "frames": [
+    1,
+    104
+   ],
+   "fps": 30,
+   "duration": 3.433,
+   "rootTravel": {
+    "x": 1.3453,
+    "y": 0.4463,
+    "up": 0.6839,
+    "net": 0.777
+   },
+   "residual": {
+    "x": 0.0,
+    "y": 0.0,
+    "up": 0.6839,
+    "net": 0.0
+   },
+   "naturalSpeed": null,
+   "loop": false
+  },
+  {
+   "name": "gk_block_right",
+   "source": "Animazioni goalkeeper/Goalkeeper Body Block ha preso palla con la mano.fbx",
+   "mirrored": true,
+   "side": "right",
+   "frames": [
+    1,
+    104
+   ],
+   "fps": 30,
+   "duration": 3.433,
+   "rootTravel": {
+    "x": 1.3453,
+    "y": 0.4463,
+    "up": 0.6839,
+    "net": 0.777
+   },
+   "residual": {
+    "x": 0.0,
+    "y": 0.0,
+    "up": 0.6839,
+    "net": 0.0
+   },
+   "naturalSpeed": null,
+   "loop": false
+  },
+  {
+   "name": "gk_scoop_right",
+   "source": "Animazioni goalkeeper/Goalkeeper Scoop.fbx",
+   "mirrored": false,
+   "side": "right",
+   "frames": [
+    1,
+    79
+   ],
+   "fps": 30,
+   "duration": 2.6,
+   "rootTravel": {
+    "x": 0.69,
+    "y": 3.6456,
+    "up": 0.2121,
+    "net": 3.6747
+   },
+   "residual": {
+    "x": 0.0,
+    "y": 0.0,
+    "up": 0.2121,
+    "net": 0.0
+   },
+   "naturalSpeed": null,
+   "loop": false
+  },
+  {
+   "name": "gk_scoop_left",
+   "source": "Animazioni goalkeeper/Goalkeeper Scoop.fbx",
+   "mirrored": true,
+   "side": "left",
+   "frames": [
+    1,
+    79
+   ],
+   "fps": 30,
+   "duration": 2.6,
+   "rootTravel": {
+    "x": 0.69,
+    "y": 3.6456,
+    "up": 0.2121,
+    "net": 3.6747
+   },
+   "residual": {
+    "x": 0.0,
+    "y": 0.0,
+    "up": 0.2121,
+    "net": 0.0
+   },
+   "naturalSpeed": null,
+   "loop": false
+  },
+  {
+   "name": "gk_dropkick",
+   "source": "Animazioni goalkeeper/Goalkeeper Drop Kick.fbx",
+   "mirrored": false,
+   "side": null,
+   "frames": [
+    1,
+    118
+   ],
+   "fps": 30,
+   "duration": 3.9,
+   "rootTravel": {
+    "x": 0.638,
+    "y": 3.1023,
+    "up": 0.3092,
+    "net": 3.1093
+   },
+   "residual": {
+    "x": 0.0,
+    "y": 0.0,
+    "up": 0.3092,
+    "net": 0.0
+   },
+   "naturalSpeed": null,
+   "loop": false
+  },
+  {
+   "name": "gk_throw",
+   "source": "Animazioni goalkeeper/Goalie Throw Con Palla alle mani.fbx",
+   "mirrored": false,
+   "side": null,
+   "frames": [
+    1,
+    116
+   ],
+   "fps": 30,
+   "duration": 3.833,
+   "rootTravel": {
+    "x": 0.1794,
+    "y": 1.5132,
+    "up": 0.1828,
+    "net": 1.0731
+   },
+   "residual": {
+    "x": 0.0,
+    "y": 0.0,
+    "up": 0.1828,
+    "net": 0.0
+   },
+   "naturalSpeed": null,
+   "loop": false
+  },
+  {
+   "name": "gk_concede",
+   "source": "Animazioni goalkeeper/Goalkeeper Miss Dopo Aver preso goal.fbx",
+   "mirrored": false,
+   "side": null,
+   "frames": [
+    1,
+    89
+   ],
+   "fps": 30,
+   "duration": 2.933,
+   "rootTravel": {
+    "x": 0.4762,
+    "y": 0.5514,
+    "up": 0.6545,
+    "net": 0.7101
+   },
+   "residual": {
+    "x": 0.0,
+    "y": 0.0,
+    "up": 0.6545,
+    "net": 0.0
+   },
+   "naturalSpeed": null,
+   "loop": false
+  }
+ ]
+}

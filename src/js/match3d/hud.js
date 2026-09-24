@@ -24,10 +24,11 @@ function team(t, side) {
 }
 
 export class Hud {
-  constructor(root, { home, away, exitMode }, on) {
+  constructor(root, { home, away, exitMode, overPower }, on) {
     this.on = on;
     this.home = home;
     this.away = away;
+    this.overPower = overPower;
 
     const hud = el('div', 'm3d-hud');
     const score = el('div', 'm3d-score');
@@ -49,7 +50,24 @@ export class Hud {
     this.bannerTeam = el('span', 'm3d-banner-team');
     this.banner.append(el('span', 'm3d-banner-t', 'Gol'), this.bannerTeam);
 
-    this.hint = el('div', 'm3d-hint', 'Tocca un punto del campo: la palla ci va');
+    this.hint = el('div', 'm3d-hint', 'WASD muovi · J passa · K tira, tieni premuto per la potenza · L scatto');
+
+    this.tag = el('div', 'm3d-tag');
+    this.tagNum = el('span', 'm3d-tag-n');
+    this.tagName = el('span', 'm3d-tag-name');
+    this.tag.append(this.tagNum, this.tagName);
+
+    this.power = el('div', 'm3d-power');
+    this.power.hidden = true;
+    this.power.setAttribute('aria-hidden', 'true');
+    this.powerFill = el('div', 'm3d-power-fill');
+    const track = el('div', 'm3d-power-track');
+    const mark = el('div', 'm3d-power-mark');
+    mark.style.left = (overPower * 100) + '%';
+    track.append(this.powerFill, mark);
+    this.power.append(el('span', 'm3d-power-l', 'Potenza'), track);
+
+    this.layer = el('div', 'm3d-controls');
 
     this.dialog = this._dialog(exitMode);
     this.dialog.hidden = true;
@@ -58,7 +76,7 @@ export class Hud {
     rotate.innerHTML = ICON_ROTATE;
     rotate.appendChild(el('span', null, 'Gira il telefono in orizzontale'));
 
-    hud.append(score, exit, this.banner, this.hint, this.dialog, rotate);
+    hud.append(score, this.tag, exit, this.layer, this.power, this.banner, this.hint, this.dialog, rotate);
     root.appendChild(hud);
     this.node = hud;
   }
@@ -112,6 +130,20 @@ export class Hud {
   hideGoal() { this.banner.hidden = true; }
 
   hideHint() { this.hint.classList.add('off'); }
+
+  setPlayer(number, name) {
+    this.tagNum.textContent = number ? String(number) : '';
+    this.tagName.textContent = name || '';
+    this.tag.hidden = !number && !name;
+  }
+
+  // Barra del tiro: p in 0..1, null la nasconde.
+  setPower(p) {
+    if (p == null) { this.power.hidden = true; return; }
+    this.power.hidden = false;
+    this.powerFill.style.transform = `scaleX(${p})`;
+    this.power.classList.toggle('over', p > this.overPower);
+  }
 
   get exitOpen() { return !this.dialog.hidden; }
 

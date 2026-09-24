@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { BALL, GOAL, PITCH, TEST_KICK } from './config.js';
+import { BALL, GOAL, PITCH, KICK } from './config.js';
 
 const HL = PITCH.length / 2;
 const HW = PITCH.width / 2;
@@ -29,7 +29,7 @@ function ballTexture() {
   return t;
 }
 
-function shadowTexture() {
+export function shadowTexture() {
   const c = document.createElement('canvas');
   c.width = c.height = 64;
   const g = c.getContext('2d');
@@ -57,15 +57,49 @@ function hitSegment(pos, vel, a, b, radius) {
   return true;
 }
 
+// Attrito a terra o gravita' e aria in volo: usato dalla fisica e dalla previsione.
+function forces(p, v, dt) {
+  const onGround = p.y <= BALL.radius + 1e-3 && Math.abs(v.y) < 1e-3;
+  if (onGround) {
+    const hs = Math.hypot(v.x, v.z);
+    if (hs > 0) {
+      const ns = Math.max(0, hs - (BALL.rollFriction + BALL.rollDrag * hs) * dt);
+      const f = ns < BALL.stopSpeed ? 0 : ns / hs;
+      v.x *= f; v.z *= f;
+    }
+  } else {
+    v.y -= BALL.gravity * dt;
+    const sp = v.length();
+    v.multiplyScalar(Math.max(0, 1 - BALL.airDrag * sp * dt));
+  }
+}
+
+function move(p, v, dt) {
+  p.addScaledVector(v, dt);
+  if (p.y < BALL.radius) {
+    p.y = BALL.radius;
+    if (v.y < -BALL.minBounce) {
+      v.y = -v.y * BALL.restitution;
+      v.x *= BALL.bounceKeep;
+      v.z *= BALL.bounceKeep;
+    } else {
+      v.y = 0;
+    }
+  }
+}
+
+const _pp = new THREE.Vector3(), _pv = new THREE.Vector3();
+
 // Con dv/dt = -(f + c v) la palla si ferma dopo v/c - f/c^2 ln(1 + c v / f):
-// si cerca per bisezione la velocita' che la ferma a distanza d.
-function rollSpeedFor(d) {
+// si cerca per bisezione la velocita' che arriva a distanza d con velocita' `arrive`.
+function rollSpeedFor(d, arrive = 0) {
   const f = BALL.rollFriction, c = BALL.rollDrag;
   const stop = (v) => v / c - (f / (c * c)) * Math.log(1 + c * v / f);
-  let lo = 0, hi = TEST_KICK.maxSpeed;
+  const need = d + stop(arrive);
+  let lo = 0, hi = KICK.maxSpeed;
   for (let i = 0; i < 30; i++) {
     const mid = (lo + hi) / 2;
-    if (stop(mid) < d) lo = mid; else hi = mid;
+    if (stop(mid) < need) lo = mid; else hi = mid;
   }
   return hi;
 }
@@ -116,47 +150,53 @@ export class Ball {
 
   get live() { return !this.scored && !this.out; }
 
-  // Calcio di prova verso un punto a terra: rasoterra da vicino, a
-  // parabola da lontano, con una stima che compensa la resistenza.
-  kickTowards(tx, tz) {
+  // Passaggio verso un punto a terra: rasoterra da vicino, a parabola da
+  // lontano, con una stima che compensa la resistenza. `speedMul` e' l'errore
+  // di forza di chi calcia. Restituisce true se la palla parte alta.
+  passTo(tx, tz, arrive, speedMul = 1) {
     const dx = tx - this.pos.x, dz = tz - this.pos.z;
     const dist = Math.hypot(dx, dz);
-    if (dist < 0.3) return;
+    if (dist < 0.3) return false;
     const ux = dx / dist, uz = dz / dist;
     let speed, vy = 0;
-    if (dist <= TEST_KICK.groundPassMax) {
-      speed = rollSpeedFor(dist);
+    const lofted = dist > KICK.groundPassMax;
+    if (!lofted) {
+      speed = Math.min(KICK.groundMax, Math.max(KICK.groundMin, rollSpeedFor(dist, arrive)));
     } else {
-      const k = Math.min(1, (dist - TEST_KICK.groundPassMax) / (TEST_KICK.loftDistance - TEST_KICK.groundPassMax));
-      const ang = TEST_KICK.minLoft + (TEST_KICK.maxLoft - TEST_KICK.minLoft) * k;
-      const v = Math.sqrt(dist * BALL.gravity / Math.sin(2 * ang)) * (1 + TEST_KICK.dragComp * dist);
+      const k = Math.min(1, (dist - KICK.groundPassMax) / (KICK.loftDistance - KICK.groundPassMax));
+      const ang = KICK.minLoft + (KICK.maxLoft - KICK.minLoft) * k;
+      const v = Math.sqrt(dist * BALL.gravity / Math.sin(2 * ang)) * (1 + KICK.dragComp * dist);
       speed = v * Math.cos(ang);
       vy = v * Math.sin(ang);
     }
+    speed *= speedMul;
+    vy *= speedMul;
     const total = Math.hypot(speed, vy);
-    if (total > TEST_KICK.maxSpeed) { const f = TEST_KICK.maxSpeed / total; speed *= f; vy *= f; }
-    this.vel.set(ux * speed, vy, uz * speed);
-    this.spin = TEST_KICK.spin;
+    if (total > KICK.maxSpeed) { const f = KICK.maxSpeed / total; speed *= f; vy *= f; }
+    this.kick(ux * speed, vy, uz * speed);
+    return lofted;
+  }
+
+  kick(vx, vy, vz, spin = 0) {
+    this.vel.set(vx, vy, vz);
+    this.spin = spin;
+  }
+
+  // Palla al piede: la posizione la decide il giocatore, la fisica si
+  // limita a gol, fuori e cartelloni.
+  carry(x, z, vx, vz) {
+    this.prev.copy(this.pos);
+    this.pos.set(x, BALL.radius, z);
+    this.vel.set(vx, 0, vz);
+    this.spin = 0;
+    this._boards();
+    this._rules();
   }
 
   step(dt) {
-    const p = this.pos, v = this.vel, r = BALL.radius;
+    const p = this.pos, v = this.vel;
     this.prev.copy(p);
-    const onGround = p.y <= r + 1e-3 && Math.abs(v.y) < 1e-3;
-
-    if (onGround) {
-      const hs = Math.hypot(v.x, v.z);
-      if (hs > 0) {
-        const ns = Math.max(0, hs - (BALL.rollFriction + BALL.rollDrag * hs) * dt);
-        const f = ns < BALL.stopSpeed ? 0 : ns / hs;
-        v.x *= f; v.z *= f;
-      }
-    } else {
-      v.y -= BALL.gravity * dt;
-      const sp = v.length();
-      const drag = Math.max(0, 1 - BALL.airDrag * sp * dt);
-      v.multiplyScalar(drag);
-    }
+    forces(p, v, dt);
 
     if (this.spin !== 0) {
       // Forza laterale perpendicolare alla corsa orizzontale.
@@ -171,23 +211,27 @@ export class Ball {
       if (Math.abs(this.spin) < 0.01) this.spin = 0;
     }
 
-    p.addScaledVector(v, dt);
-
-    if (p.y < r) {
-      p.y = r;
-      if (v.y < -BALL.minBounce) {
-        v.y = -v.y * BALL.restitution;
-        v.x *= BALL.bounceKeep;
-        v.z *= BALL.bounceKeep;
-      } else {
-        v.y = 0;
-      }
-    }
+    move(p, v, dt);
 
     for (const [a, b] of this.frame) hitSegment(p, v, a, b, GOAL.postRadius);
     this._nets(dt);
     this._boards();
     this._rules();
+  }
+
+  // Traiettoria futura senza pali, reti ne' effetto: `out` riceve un punto
+  // ogni `dt` secondi ({x, y, z, t}), riusando gli oggetti gia' presenti.
+  predict(out, dt, horizon) {
+    const p = _pp.copy(this.pos), v = _pv.copy(this.vel);
+    const n = Math.ceil(horizon / dt);
+    for (let i = 0; i < n; i++) {
+      forces(p, v, dt);
+      move(p, v, dt);
+      const s = out[i] || (out[i] = { x: 0, y: 0, z: 0, t: 0 });
+      s.x = p.x; s.y = p.y; s.z = p.z; s.t = (i + 1) * dt;
+    }
+    out.length = n;
+    return out;
   }
 
   // Ogni porta e' una scatola dietro la linea: dall'interno la rete

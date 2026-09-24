@@ -50,6 +50,22 @@ function squadraAvversaria(match){
   return { id: nome, name: nome, colors: null, crest: match.logo || null, formation: '4-3-3', players: out };
 }
 
+/* Le stesse maglie della partita in tempo reale: la squadra in trasferta
+   cambia divisa se i colori si confondono con quelli di casa. */
+function colori(k){
+  if (!k || !k.s) return null;
+  return { primary: k.s, secondary: k.s2 || null, shorts: k.sh || null, pattern: k.p || 'solid' };
+}
+function vesti(home, away){
+  if (typeof window.kfmKitFor !== 'function') return;
+  try {
+    var kh = window.kfmKitFor(home.name, null);
+    var ka = window.kfmKitFor(away.name, kh);
+    home.colors = colori(kh);
+    away.colors = colori(ka);
+  } catch (e) {}
+}
+
 function ridisegna(){ try { if (typeof window.render === 'function') window.render(); } catch (e) {} }
 
 window.playMatch3D = function(){
@@ -60,6 +76,7 @@ window.playMatch3D = function(){
   if (!giocabile(st, match)) { window.runSim(); return; }
 
   var utente = squadraUtente(st), avv = squadraAvversaria(match);
+  if (match.home) vesti(utente, avv); else vesti(avv, utente);
   avvio = true;
   window.kfmLoadMatch3d()
     .then(function(m){

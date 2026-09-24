@@ -65,6 +65,68 @@ html.m3d-test #kfm-intro, html.m3d-test #kfm-esc{display:none!important}
   color:var(--m3d-ink-2); white-space:nowrap; transition:opacity .4s;
 }
 .m3d-hint.off{opacity:0}
+.m3d.touch .m3d-hint{display:none}
+
+/* Giocatore comandato: numero e nome sotto il punteggio. */
+.m3d-tag{
+  position:absolute;
+  top:calc(64px + env(safe-area-inset-top)); left:calc(12px + env(safe-area-inset-left));
+  display:flex; align-items:center; gap:8px;
+  padding:8px 12px; border-radius:16px;
+  background:var(--m3d-panel); border:1px solid var(--m3d-line);
+}
+.m3d-tag[hidden]{display:none}
+.m3d-tag-n{font-family:Anton,Impact,sans-serif; font-size:16px; line-height:1; font-variant-numeric:tabular-nums}
+.m3d-tag-name{font-size:13px; color:var(--m3d-ink-2); max-width:32vw; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.m3d-tag-n:empty, .m3d-tag-name:empty{display:none}
+
+/* Barra del tiro: la tacca segna da dove la mira peggiora. */
+.m3d-power{
+  position:absolute; left:50%; bottom:calc(32px + env(safe-area-inset-bottom)); transform:translateX(-50%);
+  width:min(240px,36vw); display:flex; flex-direction:column; gap:8px;
+  padding:8px 12px; border-radius:16px; background:var(--m3d-panel); border:1px solid var(--m3d-line);
+}
+.m3d-power[hidden]{display:none}
+.m3d-power-l{font-size:11px; color:var(--m3d-ink-2); text-transform:uppercase; letter-spacing:.04em}
+.m3d-power-track{position:relative; height:8px; border-radius:8px; background:rgba(255,255,255,.12); overflow:hidden}
+.m3d-power-fill{position:absolute; inset:0; background:var(--m3d-ink); transform-origin:left center; transform:scaleX(0)}
+.m3d-power.over .m3d-power-fill{background:#ff6b5a}
+.m3d-power-mark{position:absolute; top:0; bottom:0; width:2px; margin-left:-1px; background:rgba(10,17,28,.8)}
+
+/* Comandi touch: visibili solo con un puntatore "grosso" o dopo il primo tocco. */
+.m3d-controls{position:absolute; inset:0; pointer-events:none}
+.m3d-pad{position:absolute; inset:0; display:none}
+.m3d.touch .m3d-pad{display:block}
+.m3d-joyzone{
+  position:absolute; left:0; bottom:0; top:calc(112px + env(safe-area-inset-top)); width:50%;
+  pointer-events:auto; touch-action:none;
+}
+.m3d-joy{
+  position:absolute; width:112px; height:112px; border-radius:50%;
+  left:calc(96px + env(safe-area-inset-left)); top:calc(100% - 96px - env(safe-area-inset-bottom));
+  transform:translate(-50%,-50%);
+  background:rgba(10,17,28,.32); border:1px solid var(--m3d-line-2);
+  opacity:.5; pointer-events:none;
+}
+.m3d-joy.on{opacity:1}
+.m3d-knob{
+  position:absolute; left:50%; top:50%; width:48px; height:48px; border-radius:50%;
+  transform:translate(-50%,-50%); background:rgba(242,244,245,.88);
+}
+.m3d-buttons{
+  position:absolute; width:184px; height:176px;
+  right:calc(24px + env(safe-area-inset-right)); bottom:calc(24px + env(safe-area-inset-bottom));
+}
+.m3d-hud .m3d-btn{
+  position:absolute; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:0;
+  border-radius:50%; border:1px solid var(--m3d-line-2); background:var(--m3d-panel); color:var(--m3d-ink);
+  touch-action:none; padding:0;
+}
+.m3d-btn.on{background:var(--m3d-ink); color:#0a111c; border-color:var(--m3d-ink)}
+.m3d-btn-l{font-size:11px; line-height:1.2; text-transform:uppercase; letter-spacing:.04em}
+.m3d-btn.shot{right:0; bottom:0; width:80px; height:80px}
+.m3d-btn.pass{right:96px; bottom:8px; width:64px; height:64px}
+.m3d-btn.sprint{right:12px; bottom:96px; width:56px; height:56px}
 
 .m3d-dialog{
   position:absolute; inset:0; display:grid; place-items:center; padding:16px;

@@ -98,6 +98,8 @@ function kitFor(name, avoid){
   }
   return k;
 }
+/* Anche la partita 3D veste le squadre con queste maglie (057-match3d-hook.js). */
+window.kfmKitFor = kitFor;
 
 /* ---------- audio (sintetizzato, sicuro) ---------- */
 var AC=null;
