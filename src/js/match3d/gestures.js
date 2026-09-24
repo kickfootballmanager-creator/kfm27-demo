@@ -1,7 +1,7 @@
 import { TACKLE, SLIDE, DOWN, AERIAL, KEEPER, PITCH, GOAL, CONTROL, ATTR, MOVES, DUEL } from './config.js';
 import { rootAt, clipDuration } from './avatar.js';
 import { headingOf } from './player.js';
-import { StandTackle } from './moves.js';
+import { StandTackle, KeeperReach } from './moves.js';
 import { duel, stagger, beat, passFirstChance, defUnit } from './defense.js';
 
 // Contrasto, scivolata, caduta, colpo di testa, rovesciata, portiere: azioni (p.action)
@@ -220,43 +220,69 @@ function resolveAerial(m, p, intent, bicycle) {
   if (p === m.ctrl && m.poss.to) m.switchTo(m.poss.to);
 }
 
-// --- gesti del portiere: parata (presa o respinta), uscita, rinvio
+// --- gesti del portiere: parata, uscita, rinvio. La clip porta il corpo, l'IK
+// sulle braccia (moves.KeeperReach) porta i palmi sulla palla attorno al
+// contatto; se la palla si ferma lo decide la collisione (KeeperAI.touch).
+// o.catch: parata che trattiene; o.dive: tuffo; o.point: punto previsto;
+// o.release: rinvio ('throw' | 'kick') con o.spec = KEEPER.clips.throw o dropkick.
 export function startKeeperGesture(m, k, clip, from, contact, end, rate, o) {
-  k.avatar.playOnce(clip, from, (end - from) / rate, rate);
+  const hold = (end - from) / rate;
+  if (!(o.resume && k.avatar.resume(clip, rate, hold))) k.avatar.playOnce(clip, from, hold, rate);
   k.keeperBusy = !o.release;
   const tc = contact - from;
+  const I = KEEPER.ik;
+  const reach = o.release ? null : new KeeperReach(I.gap);
+  if (reach) { reach.target.copy(o.point || m.ball.pos); k.avatar.playProc(reach); }
   k.action = rootAction(m, k, clip, from, end, rate, {
-    keeper: true, scaleA: o.scaleA, scaleS: o.scaleS,
+    keeper: true, scaleA: o.scaleA, scaleS: o.scaleS, catchable: !!o.catch, dive: !!o.dive,
     tick: (a) => {
+      if (o.release) { releaseTick(m, k, a, o, from, tc); return; }
+      // peso dell'IK: sale prima del contatto, resta un attimo, poi sfuma
+      const tr = (a.t - tc) / rate;
+      const w = tr < -I.lead ? 0 : tr < 0 ? smooth((tr + I.lead) / I.lead) : tr < I.hold ? 1 : Math.max(0, 1 - (tr - I.hold) / I.fade);
+      // le mani vanno sul punto previsto; con la palla vicina seguono quella vera
       const b = m.ball;
-      if (o.release) {
-        if (!a.done && a.t >= tc) { a.done = true; release(m, k, o); }
-        return;
-      }
-      if (!o.save || a.done || a.t < tc - 0.22 || a.t > tc + 0.3 || !b.live || m.poss.owned) return;
-      const hy = o.pickup ? 0.3 : 1.1;
-      if (Math.hypot(b.pos.x - k.pos.x, b.pos.z - k.pos.z) > (o.pickup ? 1.5 : 1.9) || Math.abs(b.pos.y - hy) > 1.6) return;
-      a.done = true;
-      if (o.catchIt) {
-        m.gain(k, 'parata');
-        k.holding = true;
-      } else {
-        // respinta verso l'esterno e in alto, lontano dal centro dell'area
-        const d = m.dirOf(k.team);
-        const sp = Math.max(6, Math.hypot(b.vel.x, b.vel.z) * KEEPER.parry);
-        const side = Math.sign(b.pos.z) || (Math.random() < 0.5 ? -1 : 1);
-        b.kick(d * sp * 0.3, 3.5 + Math.random() * 2.5, side * sp);
-        m.poss.loose('parata', k);
-        m.kickLock = { p: k, t: 0.6 };
-      }
+      if (b.live && !m.poss.owned && b.pos.distanceTo(o.point || reach.target) < I.track) reach.target.copy(b.pos);
+      reach.weight = m.owner === k ? 0 : w;
+      reach.ttl = 0.25;
     },
-    onEnd: () => { k.keeperBusy = false; }
+    onEnd: () => {
+      k.keeperBusy = false;
+      if (reach) reach.done = true;
+      if (k.holding && m.owner === k) holdPose(k);
+    }
   });
+}
+
+// Palla in mano fra un gesto e il rinvio: fermo nella posa della rimessa con
+// le mani al petto.
+export function holdPose(k) {
+  const T = KEEPER.clips.throw;
+  k.avatar.playOnce(T.clip, T.hold, Infinity, 0);
+}
+
+// Rinvio: la palla passa a una mano sola, poi (al volo) cade dalla mano con
+// la velocita' che aveva, infine parte al fotogramma del contatto.
+function releaseTick(m, k, a, o, from, tc) {
+  const C = o.spec, clipT = from + a.t;
+  if (C.oneHand && clipT >= C.oneHand.at) k.holdHand = C.oneHand.hand;
+  if (C.drop && !a.dropped && clipT >= C.drop && m.owner === k && k.holding) {
+    a.dropped = true;
+    k.holding = false;
+    k.dropping = true;
+    const b = m.ball;
+    b.pos.copy(k.avatar.heldAt);
+    b.prev.copy(b.pos);
+    b.vel.copy(k.avatar.heldVel);
+  }
+  if (!a.done && a.t >= tc) { a.done = true; release(m, k, o); }
 }
 
 function release(m, k, o) {
   const b = m.ball, t = o.target;
   k.holding = false;
+  k.dropping = false;
+  k.holdHand = null;
   if (m.owner !== k) return;
   const d = m.dirOf(k.team);
   if (o.release === 'throw' && t) {

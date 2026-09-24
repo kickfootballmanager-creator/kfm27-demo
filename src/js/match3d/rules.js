@@ -96,7 +96,7 @@ export class Rules {
 
   restart({ type, side, spot }) {
     const m = this.m, b = m.ball, team = m.teams[side];
-    for (const p of m.everyone) { p.action = null; p.holding = false; }
+    for (const p of m.everyone) { p.action = null; p.holding = false; p.dropping = false; p.holdHand = null; }
     let taker;
     if (type === 'goalkick') taker = team.keeper;
     else taker = m.nearestTo(team.players, spot.x, spot.z);

@@ -304,7 +304,7 @@ class Match {
     const o = this.owner;
     if (!o || !o.holding) return;
     const v = this._hand || (this._hand = new THREE.Vector3());
-    o.avatar.holdBall(v, BALL.radius);
+    o.avatar.holdBall(v, BALL.radius, o.holdHand);
     this.ball.mesh.position.copy(v);
     this.ball.shadow.position.set(v.x, 0.012, v.z);
   }
@@ -315,7 +315,7 @@ class Match {
       const d = this.dirOf(t.side);
       const block = { line: SHAPE.kickoff.line, len: SHAPE.kickoff.len, width: SHAPE.kickoff.width, ballZ: 0 };
       for (const p of t.players) {
-        p.action = null; p.down = false; p.holding = false; p.keeperBusy = false;
+        p.action = null; p.down = false; p.holding = false; p.keeperBusy = false; p.dropping = false; p.holdHand = null;
         if (p.keeper) { p.place(-d * (PITCH.length / 2 - 1.5), 0, headingOf(d, 0)); continue; }
         const s = t.ai.shapeTarget(p, block);
         // nessuno dentro il cerchio di centrocampo, tranne chi batte
@@ -455,6 +455,8 @@ class Match {
     this.poss.own(p, cause);
     p.holding = false;
     p.shield = 0;
+    p.holdHand = null;
+    p.dropping = false;
     const b = this.ball;
     p.ballAngle = Math.atan2(b.pos.x - p.pos.x, b.pos.z - p.pos.z);
     p.ballDist = Math.min(CONTROL.receiveRadius, Math.max(DRIBBLE.rest, Math.hypot(b.pos.x - p.pos.x, b.pos.z - p.pos.z)));
@@ -522,11 +524,16 @@ class Match {
     if (this.owner && this.owner.holding) {
       // dove l'ha messa l'ultimo disegno; prima del primo disegno, davanti al petto
       const k = this.owner, h = k.avatar.heldAt;
-      if (h.y > 0.3 && Math.hypot(h.x - k.pos.x, h.z - k.pos.z) < 1.5) b.hold(h.x, h.y, h.z);
+      if (h.y > 0.2 && Math.hypot(h.x - k.pos.x, h.z - k.pos.z) < 2.5) b.hold(h.x, h.y, h.z);
       else b.hold(k.pos.x + k.dirX * 0.3, HELD_Y, k.pos.z + k.dirZ * 0.3);
-    } else if (this.owner) this.dribble(dt);
+    } else if (this.owner && this.owner.dropping) b.step(dt);   // rinvio al volo: cade dalla mano
+    else if (this.owner) this.dribble(dt);
     else b.step(dt);
-    if (!this.owner && b.live && live) this.contacts(inp);
+    if (!this.owner && b.live && live) {
+      // parate: solo se la palla tocca mani o corpo veri del portiere
+      if (!this.teams.home.keeperAI.touch()) this.teams.away.keeperAI.touch();
+      if (!this.owner) this.contacts(inp);
+    }
     this.autoSwitch();
     this.controls.setMode(this.userAttacking() ? 'attack' : 'defense');
 
@@ -797,6 +804,8 @@ class Match {
     for (const p of this.everyone) {
       if (locked(p) || p.down || (p.action && p.action.root)) continue;
       if (to && p.team === poss.team) continue;
+      // il portiere nella sua area la prende solo con le mani (KeeperAI.touch)
+      if (p.keeper && this.teams[p.team].keeperAI.handsOnly()) continue;
       const d = Math.hypot(b.pos.x - p.pos.x, b.pos.z - p.pos.z);
       if (d > bestD) continue;
       if (Math.hypot(b.vel.x - p.vel.x, b.vel.z - p.vel.z) > CONTROL.trapSpeed) continue;

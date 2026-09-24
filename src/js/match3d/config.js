@@ -260,7 +260,7 @@ export const AI = {
   sprintDist: 9,          // oltre questa distanza dalla posizione si scatta
   space: { samples: 8, radius: 6, wOpp: 1.4, wLane: 1.2, wHome: 0.08 },
   run: { every: [2.5, 5], depth: 12, max: 2 },        // inserimenti: ogni quanto, quanto oltre, quanti insieme
-  press: { max: 1, maxOwnThird: 2, contain: 1.4, delay: [0.45, 0.12] },   // delay: [difficulty 0, 1]
+  press: { max: 1, maxOwnThird: 2, contain: 1.4, tight: 0.85, delay: [0.45, 0.12] },   // delay: [difficulty 0, 1]; tight: m dalla palla quando stringe
   mark: { radius: 14, goalSide: 1.8 },
   back: { dist: 16 },     // rientro: oltre questa distanza dalla posizione si corre indietro
   carrier: {
@@ -393,24 +393,69 @@ export const KEEPER = {
   depthRange: [45, 12],   // distanza della palla a cui si passa da un valore all'altro
   maxZ: 3.2,              // non si sposta oltre questa distanza dal centro della porta
   react: [0.28, 0.12],    // secondi di reazione a un tiro [difficulty 0, 1]
-  reach: [2.6, 3.6],      // portata laterale del tuffo [attributo basso, alto]
-  save: [0.62, 0.9],      // probabilita' di arrivarci se e' in portata [difficulty 0, 1]
-  catchSpeed: 24,         // sotto questa velocita' blocca, sopra respinge
-  parry: 0.45,            // frazione della velocita' dopo la respinta
+  aim: [0.3, 0.06],       // errore (m) sul punto d'intercetto previsto [attributo basso, alto]
   claimDist: 7,           // cross che cade entro questa distanza dalla porta: esce
   rushDist: 16,           // palla libera entro questa distanza: esce a prenderla
   holdTime: 1.4,          // secondi con la palla in mano prima del rinvio
   throwMax: 28,           // compagno libero entro questa distanza: rimessa con le mani
-  // clip: contatto (secondi della clip), fine, spostamento laterale della radice alla parata
+  // Parate. Per ogni tiro il portiere cerca, lungo la traiettoria, il punto,
+  // la clip e il fotogramma (dentro `window`) in cui i suoi palmi arrivano
+  // sulla palla, deformando la clip nel tempo e nello spostamento della
+  // radice (scaleA avanti, scaleS di lato); l'IK sulle braccia chiude il resto.
+  saves: [
+    { name: 'presa', clip: 'gk_catch', from: 0.05, window: [0.25, 0.65], end: 1.2, scaleA: [0, 1.2], scaleS: [0, 1.6], catch: true, bias: 0 },
+    { name: 'presa alta', clip: 'gk_catch_high', from: 0.35, window: [0.55, 1.0], end: 2.7, scaleA: [0, 1], scaleS: [0, 2], catch: true, bias: 0.05 },
+    { name: 'presa bassa', clip: 'gk_scoop_', from: 0.3, window: [0.55, 0.85], end: 2.5, scaleA: [0, 0.8], scaleS: [0, 1.5], catch: true, bias: 0.05 },
+    { name: 'tuffo basso', clip: 'gk_block_', from: 0.3, window: [0.7, 1.4], end: 3.4, scaleA: [0, 1.2], scaleS: [0.5, 1.3], catch: false, bias: 0.1 },
+    { name: 'tuffo', clip: 'gk_dive_', from: 0.35, window: [0.6, 1.2], end: 3.2, scaleA: [0, 1.2], scaleS: [0.5, 1.3], catch: false, bias: 0.12 }
+  ],
+  plan: {
+    step: 2,              // punti della traiettoria provati: uno ogni tanti passi di fisica
+    horizon: 2,           // secondi di traiettoria
+    ahead: 2.2,           // metri davanti al portiere in cui si cerca l'intercetto
+    behind: 0.8,          // metri dietro (verso la porta)
+    maxY: 3.2,            // punti piu' alti di cosi' non si provano
+    rateMax: 1.8,         // la clip si accelera al massimo di tanto
+    rateCost: 0.08,       // costo di una clip accelerata o rallentata
+    maxResidual: 0.6,     // oltre questo scarto le mani non arrivano: non si prova
+    wide: 0.5             // tiro fuori dallo specchio di tanto: si lascia andare
+  },
+  // Uscite sui palloni alti: presa alta sul posto o in corsa, presa al petto.
+  claims: [
+    { name: 'uscita alta', clip: 'gk_catch_high', from: 0.35, window: [0.55, 1.0], end: 2.7, scaleA: [0, 1.6], scaleS: [0, 2.2], catch: true, bias: 0 },
+    { name: 'uscita in corsa', clip: 'gk_catch_run_', from: 0.9, window: [1.35, 1.75], end: 2.7, scaleA: [0.2, 1.6], scaleS: [0, 3], catch: true, bias: 0.05 },
+    { name: 'presa', clip: 'gk_catch', from: 0.05, window: [0.25, 0.65], end: 1.2, scaleA: [0, 1.4], scaleS: [0, 1.8], catch: true, bias: 0.05 }
+  ],
+  claimPlan: { step: 2, horizon: 3, ahead: 5, behind: 1.5, maxY: 2.5, rateMax: 1.6, rateCost: 0.08, every: 0.12, accept: 0.5 },
+  ik: { lead: 0.3, hold: 0.12, fade: 0.25, gap: 0.02, track: 1.6 },   // secondi attorno al contatto; track: m entro cui le mani seguono la palla vera
+  catchSpeed: 24,         // presa: sotto questa velocita' la palla resta in mano
+  diveCatchSpeed: 15,     // in tuffo si blocca solo sotto questa velocita'
+  diveCatch: [0.5, 0.9],  // e con questa probabilita' [attributo basso, alto]
+  parryRest: 0.42,        // respinta di mano: velocita' restituita lungo la normale
+  bodyRest: 0.25,         // palla sul corpo
+  parryLift: [1.5, 3.5],  // m/s verso l'alto dopo una respinta di mano
+  lock: 0.35,             // dopo una respinta il portiere non la riprende subito
+  palmsCatch: [0.42, 0.65], // per trattenerla i due palmi entro tanti metri dal centro della palla [tuffo, presa]
+  // Collisione palla-portiere: sfere sulle ossa vere. [osso, osso verso cui
+  // spostarsi, frazione, raggio, mano?]
+  body: [
+    ['LeftHand', 'LeftHandMiddle1', 0.6, 0.1, true], ['RightHand', 'RightHandMiddle1', 0.6, 0.1, true],
+    ['LeftForeArm', 'LeftHand', 0.5, 0.06, true], ['RightForeArm', 'RightHand', 0.5, 0.06, true],
+    ['Head', null, 0, 0.12, false], ['Spine2', null, 0, 0.17, false], ['Spine', null, 0, 0.15, false], ['Hips', null, 0, 0.16, false],
+    ['LeftUpLeg', 'LeftLeg', 0.5, 0.09, false], ['RightUpLeg', 'RightLeg', 0.5, 0.09, false],
+    ['LeftLeg', 'LeftFoot', 0.5, 0.07, false], ['RightLeg', 'RightFoot', 0.5, 0.07, false],
+    ['LeftFoot', 'LeftToeBase', 0.5, 0.07, false], ['RightFoot', 'RightToeBase', 0.5, 0.07, false]
+  ],
+  bodyCheck: 3.5,         // si controllano le sfere solo con la palla entro tanti metri
+  // clip: contatto (secondi della clip), fine
   clips: {
-    catch: { clip: 'gk_catch', from: 0.1, contact: 0.43, end: 1.1 },
+    scoop: { clip: 'gk_scoop_', from: 0.45, contact: 0.7, end: 2.0 },
     high: { clip: 'gk_catch_high', from: 0.45, contact: 0.83, end: 2.2 },
-    block: { clip: 'gk_block_', from: 0.45, contact: 0.95, end: 2.8 },
-    dive: { clip: 'gk_dive_', from: 0.55, contact: 1.15, end: 2.9 },
-    scoop: { clip: 'gk_scoop_', from: 0.45, contact: 0.85, end: 2.0 },
     claim: { clip: 'gk_catch_run_', from: 1.0, contact: 1.567, end: 2.5 },
-    throw: { clip: 'gk_throw', from: 0.9, contact: 1.617, end: 2.6 },
-    dropkick: { clip: 'gk_dropkick', from: 1.2, contact: 2.083, end: 3.1 },
+    // palla in mano: fermo nel fotogramma `hold` (due mani al petto), poi il
+    // lancio riparte da li'; dal fotogramma oneHand.at la palla segue una mano sola
+    throw: { clip: 'gk_throw', hold: 0.5, rate: 1.25, contact: 1.617, end: 2.6, oneHand: { at: 0.72, hand: 'Right' } },
+    dropkick: { clip: 'gk_dropkick', from: 0.8, contact: 2.083, end: 3.1, oneHand: { at: 1.05, hand: 'Left' }, drop: 1.5 },
     concede: { clip: 'gk_concede', from: 0, end: 2.9 }
   }
 };
@@ -436,7 +481,8 @@ export const MODEL = {
   sashWidth: 0.07,
   sleeveX: 0.2,           // oltre questa distanza dal centro comincia la manica
   roughness: 0.8,
-  holdGap: 0.02           // palla in mano: dalla superficie della palla al centro del palmo
+  holdGap: 0.02,          // palla in mano: dalla superficie della palla al centro del palmo
+  attachRate: 18          // 1/s: palla che passa a una mano sola e si appoggia sul palmo
 };
 
 // Animazioni. `natural`: velocita' (m/s, modello alto 1,80) a cui la clip non
@@ -474,7 +520,8 @@ export const ANIM = {
   firstTime: 0.08,
   recoverMove: 0.35,      // joystick ridotto mentre si finisce il tiro
   receive: { clip: 'receive', start: 0.1, length: 0.6 },
-  chainFade: 0.15         // due gesti di fila: il primo sfuma sotto il secondo
+  chainFade: 0.15,        // due gesti di fila: il primo sfuma sotto il secondo
+  poseFps: 30             // campioni al secondo delle tabelle delle pose del portiere
 };
 
 export const CAMERA = {

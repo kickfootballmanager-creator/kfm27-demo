@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { BALL } from './config.js';
-import { solveTwoBone, rotateWorld } from './rig.js';
+import { solveTwoBone, rotateWorld, palm } from './rig.js';
 
 // Animazioni create in codice, per le azioni senza una clip adatta. Girano
 // dopo il mixer (Avatar.update): curve sulle ossa di gambe e busto sopra la
@@ -89,6 +89,32 @@ export class StandTackle {
     const arms = curve(D.arms, t);
     rotateWorld(r.LeftArm, _q.setFromAxisAngle(_F, arms));
     rotateWorld(r.RightArm, _q.setFromAxisAngle(_F, -arms));
+    return true;
+  }
+}
+
+// Portiere in parata: IK sulle braccia che porta i due palmi ai lati della
+// palla. Il gioco aggiorna target (centro palla) e weight a ogni passo.
+export class KeeperReach {
+  constructor(gap) {
+    this.gap = gap;
+    this.target = new THREE.Vector3();
+    this.weight = 0;
+    this.done = false;
+    this.ttl = 0.25;       // il gesto lo rinnova a ogni passo: se il gesto sparisce, l'IK si spegne
+  }
+
+  update(av, dt) {
+    if (this.done || (this.ttl -= dt) <= 0) return false;
+    if (this.weight <= 1e-3) return true;
+    const r = av.rig, o = av.object;
+    o.updateMatrixWorld(true);
+    const h = o.rotation.y, g = BALL.radius + this.gap;
+    _R.set(-Math.cos(h), 0, Math.sin(h));
+    _v.copy(this.target).addScaledVector(_R, -g);
+    _w.copy(this.target).addScaledVector(_R, g);
+    solveTwoBone(r.LeftArm, r.LeftForeArm, (out) => palm(r, 'Left', out), _v, this.weight);
+    solveTwoBone(r.RightArm, r.RightForeArm, (out) => palm(r, 'Right', out), _w, this.weight);
     return true;
   }
 }

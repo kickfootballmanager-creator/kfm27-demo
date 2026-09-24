@@ -331,6 +331,11 @@ export class TeamAI {
     // distanze cambiano troppo in fretta per le decisioni a 10 Hz
     s.react = react;
     s.pace = lerp(AI.tackleRate[0], AI.tackleRate[1], this.skill);
+    // finita la reazione si stringe sulla palla, dal proprio lato, fino a portata di contrasto
+    if (s.engaged >= react) {
+      const ux = p.pos.x - m.ball.pos.x, uz = p.pos.z - m.ball.pos.z, ul = Math.hypot(ux, uz) || 1;
+      p.aiTarget = { x: m.ball.pos.x + ux / ul * AI.press.tight, z: m.ball.pos.z + uz / ul * AI.press.tight };
+    }
     if (p.action || carrier.keeper || carrier.holding) return;
     // Scivolata: da dietro o di lato, quando il portatore scappa.
     const cv = Math.hypot(carrier.vel.x, carrier.vel.z);

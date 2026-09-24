@@ -106,8 +106,38 @@ function buildTemplate(gltf) {
     boots: fixed.boots ? fixed.boots.color.clone() : new THREE.Color(0x333333),
     hair: fixed.hair ? fixed.hair.color.clone() : new THREE.Color(0x3a302a),
     center,
+    poses: samplePoses(holder, clips),
     plate: platePlacement(holder, body, clips.idle)
   };
+}
+
+// Palmi fotogramma per fotogramma nelle clip del portiere, nel riferimento
+// del giocatore (a avanti, s destra, y su) con la radice ferma: servono a
+// scegliere la parata e il fotogramma in cui le mani arrivano sulla palla.
+function samplePoses(holder, clips) {
+  const rig = boneMap(holder);
+  const mx = new THREE.AnimationMixer(holder);
+  const v = new THREE.Vector3(), out = {};
+  const fps = ANIM.poseFps;
+  for (const name in clips) {
+    if (!name.startsWith('gk_')) continue;
+    const clip = clips[name], a = mx.clipAction(clip);
+    const n = Math.floor(clip.duration * fps) + 1;
+    const lh = new Float32Array(n * 3), rh = new Float32Array(n * 3);
+    a.play();
+    for (let i = 0; i < n; i++) {
+      a.time = Math.min(i / fps, clip.duration - 1e-3);
+      mx.update(0);
+      holder.updateMatrixWorld(true);
+      palm(rig, 'Left', v); lh[i * 3] = v.z; lh[i * 3 + 1] = -v.x; lh[i * 3 + 2] = v.y;
+      palm(rig, 'Right', v); rh[i * 3] = v.z; rh[i * 3 + 1] = -v.x; rh[i * 3 + 2] = v.y;
+    }
+    a.stop();
+    out[name] = { fps, n, lh, rh };
+  }
+  mx.stopAllAction();
+  mx.uncacheRoot(holder);
+  return out;
 }
 
 // Il numero e' un rettangolo figlio dell'osso della schiena, sul punto piu'
@@ -240,6 +270,7 @@ const wrapPhase = (x) => x - Math.floor(x);
 
 const _hl = new THREE.Vector3(), _hr = new THREE.Vector3(), _lat = new THREE.Vector3();
 const _tl = new THREE.Vector3(), _tr = new THREE.Vector3();
+const _hq = new THREE.Quaternion();
 
 // Un calciatore in scena: copia dello scheletro, clip condivise, fusione
 // delle corse in base alla velocita' reale e gesti (passaggio, tiro) sopra.
@@ -252,6 +283,9 @@ export class Avatar {
     const r = this.rig;
     this.bones = { lh: r.LeftHand, rh: r.RightHand, head: r.Head, rf: r.RightToeBase, lf: r.LeftToeBase };
     this.heldAt = new THREE.Vector3();
+    this.heldVel = new THREE.Vector3();
+    this.lastDt = 0;
+    this.attach = null;
     this.object.traverse((o) => {
       if (o.isSkinnedMesh) body = o;
       if (o.isBone && o.name === tpl.plate.bone) bone = o;
@@ -350,10 +384,30 @@ export class Avatar {
 
   // Palla fra le due mani: il centro sta a meta' fra i palmi dell'animazione,
   // poi l'IK sulle braccia porta ogni palmo sulla superficie della palla.
-  // Da chiamare dopo update(); scrive il centro in `out` e in heldAt.
-  holdBall(out, radius) {
+  // `hand` ('Left' | 'Right'): palla agganciata a quella mano sola, ferma
+  // rispetto all'osso da dove stava quando e' passata di mano.
+  // Da chiamare dopo update(); scrive il centro in `out`, in heldAt e la
+  // sua velocita' in heldVel (per lasciarla cadere o lanciarla).
+  holdBall(out, radius, hand = null) {
     const r = this.rig;
     this.object.updateMatrixWorld(true);
+    if (hand) {
+      // la palla resta nella direzione in cui stava rispetto al palmo e in
+      // pochi fotogrammi si appoggia su di lui
+      const bone = r[hand + 'Hand'], P = palm(r, hand, _hl);
+      bone.getWorldQuaternion(_hq);
+      if (!this.attach || this.attach.side !== hand) {
+        const d = _lat.subVectors(this.heldAt, P);
+        const dist = d.length() || radius;
+        this.attach = { side: hand, dir: d.divideScalar(dist).applyQuaternion(_hq.clone().invert()).clone(), dist };
+      }
+      const A = this.attach;
+      A.dist += (radius + MODEL.holdGap - A.dist) * (1 - Math.exp(-MODEL.attachRate * this.lastDt));
+      out.copy(A.dir).applyQuaternion(_hq).multiplyScalar(A.dist).add(P);
+      this.track(out);
+      return out;
+    }
+    this.attach = null;
     const L = palm(r, 'Left', _hl), R = palm(r, 'Right', _hr);
     out.addVectors(L, R).multiplyScalar(0.5);
     const lat = _lat.subVectors(R, L);
@@ -364,8 +418,13 @@ export class Avatar {
     _tr.copy(out).addScaledVector(lat, g);
     solveTwoBone(r.LeftArm, r.LeftForeArm, (o) => palm(r, 'Left', o), _tl);
     solveTwoBone(r.RightArm, r.RightForeArm, (o) => palm(r, 'Right', o), _tr);
-    this.heldAt.copy(out);
+    this.track(out);
     return out;
+  }
+
+  track(p) {
+    if (this.lastDt > 0) this.heldVel.subVectors(p, this.heldAt).divideScalar(this.lastDt);
+    this.heldAt.copy(p);
   }
 
   get busy() { return !!this.one || !!this.proc; }
@@ -452,6 +511,7 @@ export class Avatar {
       this.keeperStep.setEffectiveWeight(this.sideW * (1 - oneW));
     }
     this.mixer.update(dt);
+    this.lastDt = dt;
     if (this.proc && !this.proc.update(this, dt)) this.proc = null;
   }
 
