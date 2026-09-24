@@ -17,3 +17,6 @@ team_selection.png
 *serviceAccount*.json
 *service-account*.json
 *firebase-adminsdk*.json
+
+# FBX grezzi della partita 3D: non servono al gioco
+src/assets/match3d/source/

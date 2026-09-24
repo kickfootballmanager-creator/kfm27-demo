@@ -2656,8 +2656,8 @@ function dashboardPano(m){
         <div class="fc-vs-row"><b>${(m.home?oppN:S.teamName).toUpperCase()}</b> <span>${m.home?oppPos:myPos}°</span></div>
         <div class="fc-vs-stadium">${stadium}</div>
         <div class="fc-pred"><div class="fc-pred-bar"><span class="pp-h" style="width:${pH}%">${pH}%</span><span class="pp-d" style="width:${pD}%">${pD}%</span><span class="pp-a" style="width:${pA2}%">${pA2}%</span></div><div class="fc-pred-l"><span>1 ${(m.home?S.teamName:oppN)}</span><span>X</span><span>2 ${(m.home?oppN:S.teamName)}</span></div></div>
-        <button class="fc-matchday-pill" data-m26="1" onclick="playMatchRealtime()" style="background:linear-gradient(180deg,#00e67a,#00a653);color:#04180d;box-shadow:0 8px 22px rgba(0,210,106,.4);font-size:15px;">⚽ GIOCA LA PARTITA ▸</button>
-        <button class="fc-matchday-pill" onclick="goMatchDay()">Giorno Partita ▸</button>
+        <button class="fc-matchday-pill" data-m3d="1" onclick="playMatch3D()" style="background:linear-gradient(180deg,#00e67a,#00a653);color:#04180d;box-shadow:0 8px 22px rgba(0,210,106,.4);font-size:15px;">GIOCA LA PARTITA ▸</button>
+        <button class="fc-matchday-pill" onclick="playMatchRealtime()">Simula la partita ▸</button>
         <button class="fc-matchday-pill" style="margin-top:6px;background:linear-gradient(180deg,#00c46a,#00903f);color:#fff;" onclick="runSimLive()">Simulazione veloce ▸</button>
         <button class="fc-matchday-pill adv-pill" style="margin-top:6px;background:#1c2530;color:#fff;" onclick="advanceToDate(${m.date},{stopAtMatch:true})">Avanza i giorni ▸</button>
       </div>

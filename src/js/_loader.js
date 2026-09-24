@@ -1,4 +1,13 @@
 (function(){
+  /* ?match3d apre la partita di prova senza carriera e senza eadb.json.
+     A interruttore spento il parametro viene ignorato. */
+  if (window.MATCH3D_ENABLED && /[?&]match3d(=|&|$)/.test(location.search)) {
+    document.documentElement.classList.add('m3d-test');
+    window.kfmLoadMatch3d('test-mode')
+      .then(function(m){ return m.startTestMatch(); })
+      .catch(function(e){ console.error('KFM27: partita 3D di prova non avviata', e); });
+    return;
+  }
   function loadScriptSeq(list, i, done){
     if (i >= list.length){ done(); return; }
     var s = document.createElement('script');
@@ -64,7 +73,8 @@
     "src/js/053-fin-motion-mod.js",
     "src/js/054-anim-sel-mod.js",
     "src/js/055-coach-mod.js",
-    "src/js/056-cloud-mod.js"
+    "src/js/056-cloud-mod.js",
+    "src/js/057-match3d-hook.js"
   ];
   fetch('src/data/eadb.json')
     .then(function(r){ return r.json(); })

@@ -1,0 +1,103 @@
+/* Partita 3D: caricato solo quando parte una partita (main.js). */
+.m3d{
+  --m3d-panel:rgba(10,17,28,.72);
+  --m3d-line:rgba(255,255,255,.08);
+  --m3d-line-2:rgba(255,255,255,.16);
+  --m3d-ink:#f2f4f5;
+  --m3d-ink-2:rgba(242,244,245,.64);
+  --m3d-bg:#0a111c;
+  position:fixed; inset:0; z-index:2147483000;
+  background:var(--m3d-bg); color:var(--m3d-ink);
+  font-family:Inter,system-ui,sans-serif; font-size:13px;
+  overflow:hidden; touch-action:none; user-select:none; -webkit-user-select:none;
+  -webkit-tap-highlight-color:transparent;
+}
+.m3d canvas{display:block; width:100%; height:100%; touch-action:none; outline:none}
+html.m3d-test #kfm-intro, html.m3d-test #kfm-esc{display:none!important}
+
+.m3d-hud{position:absolute; inset:0; pointer-events:none}
+.m3d-hud button{pointer-events:auto; font:inherit; color:inherit; cursor:pointer}
+
+.m3d-score{
+  position:absolute;
+  top:calc(12px + env(safe-area-inset-top)); left:calc(12px + env(safe-area-inset-left));
+  display:flex; align-items:center; gap:12px;
+  padding:8px 16px; border-radius:16px;
+  background:var(--m3d-panel); border:1px solid var(--m3d-line);
+  -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px);
+}
+.m3d-team{display:flex; align-items:center; gap:8px; min-width:0}
+.m3d-crest{width:22px; height:22px; object-fit:contain; flex:none}
+.m3d-name{
+  font-family:Anton,Impact,sans-serif; font-size:16px; line-height:1; text-transform:uppercase;
+  max-width:24vw; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.m3d-goals{
+  display:flex; align-items:center; gap:8px;
+  font-family:Anton,Impact,sans-serif; font-size:22px; line-height:1; font-variant-numeric:tabular-nums;
+}
+.m3d-sep{color:var(--m3d-ink-2)}
+
+.m3d-exit{
+  position:absolute;
+  top:calc(12px + env(safe-area-inset-top)); right:calc(12px + env(safe-area-inset-right));
+  width:44px; height:44px; display:grid; place-items:center;
+  border-radius:16px; border:1px solid var(--m3d-line); background:var(--m3d-panel);
+}
+.m3d-exit:hover{border-color:var(--m3d-line-2)}
+.m3d-hud button:focus-visible{outline:2px solid var(--m3d-ink); outline-offset:2px}
+
+.m3d-banner{
+  position:absolute; left:50%; top:24%; transform:translateX(-50%);
+  display:flex; flex-direction:column; align-items:center; gap:8px;
+  padding:16px 32px; border-radius:16px;
+  background:var(--m3d-panel); border:1px solid var(--m3d-line);
+  animation:m3d-in .35s cubic-bezier(.2,.8,.2,1);
+}
+.m3d-banner[hidden]{display:none}
+.m3d-banner-t{font-family:Anton,Impact,sans-serif; font-size:34px; line-height:1; text-transform:uppercase}
+.m3d-banner-team{font-size:16px; color:var(--m3d-ink-2)}
+@keyframes m3d-in{from{opacity:0; transform:translate(-50%,8px) scale(.96)} to{opacity:1; transform:translateX(-50%)}}
+
+.m3d-hint{
+  position:absolute; left:50%; bottom:calc(24px + env(safe-area-inset-bottom)); transform:translateX(-50%);
+  padding:8px 16px; border-radius:16px; background:var(--m3d-panel); border:1px solid var(--m3d-line);
+  color:var(--m3d-ink-2); white-space:nowrap; transition:opacity .4s;
+}
+.m3d-hint.off{opacity:0}
+
+.m3d-dialog{
+  position:absolute; inset:0; display:grid; place-items:center; padding:16px;
+  background:rgba(4,7,12,.55); pointer-events:auto;
+}
+.m3d-dialog[hidden]{display:none}
+.m3d-panel{
+  width:min(420px,100%); display:flex; flex-direction:column; gap:12px;
+  padding:24px; border-radius:16px;
+  background:rgba(10,17,28,.94); border:1px solid var(--m3d-line);
+}
+.m3d-title{margin:0; font-family:Anton,Impact,sans-serif; font-weight:400; font-size:22px; line-height:1.1; text-transform:uppercase}
+.m3d-text{margin:0 0 8px; color:var(--m3d-ink-2); line-height:1.45}
+.m3d-choice{
+  display:flex; flex-direction:column; align-items:flex-start; gap:8px; text-align:left;
+  padding:12px 16px; border-radius:16px; border:1px solid var(--m3d-line-2); background:transparent;
+}
+.m3d-choice-l{font-size:16px; font-weight:700}
+.m3d-choice-n{font-size:13px; opacity:.72}
+.m3d-choice.primary{background:var(--m3d-ink); color:#0a111c; border-color:var(--m3d-ink)}
+.m3d-choice.ghost:hover, .m3d-resume:hover{border-color:rgba(255,255,255,.32)}
+.m3d-resume{
+  margin-top:8px; padding:12px 16px; border-radius:16px;
+  border:1px solid transparent; background:transparent; color:var(--m3d-ink-2); font-size:13px;
+}
+
+.m3d-rotate{
+  position:absolute; inset:0; display:none; flex-direction:column; align-items:center; justify-content:center; gap:16px;
+  background:var(--m3d-bg); font-size:16px; text-align:center; padding:24px; pointer-events:auto;
+}
+@media (orientation:portrait) and (max-width:820px){ .m3d-rotate{display:flex} }
+
+@media (prefers-reduced-motion:reduce){
+  .m3d-banner{animation:none}
+  .m3d-hint{transition:none}
+}

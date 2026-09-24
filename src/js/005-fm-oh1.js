@@ -339,8 +339,8 @@
       '<div class="fmd2-sec-h">'+I('news',14)+'Notizie squadra</div>'+newsHTML+
       '<div class="fmd2-sec-h">'+I('duel',14)+'Duello chiave</div>'+kb+
       '<div class="fmd2-actions">'+
-                '<button class="fmd2-btn primary" data-m26="1" style="background:linear-gradient(180deg,#00e67a,#00a653);color:#04180d;" onclick="playMatchRealtime()">'+I('play',18)+'⚽ Gioca la partita</button>'+
-'<button class="fmd2-btn primary" onclick="goMatchDay()">'+I('advance',18)+'Giorno Partita</button>'+
+                '<button class="fmd2-btn primary" data-m3d="1" style="background:linear-gradient(180deg,#00e67a,#00a653);color:#04180d;" onclick="playMatch3D()">'+I('play',18)+'Gioca la partita</button>'+
+'<button class="fmd2-btn primary" onclick="playMatchRealtime()">'+I('advance',18)+'Simula la partita</button>'+
         '<button class="fmd2-btn ghost" onclick="runSimLive()">'+I('play',16)+'Simulazione veloce</button>'+
         '<button class="fmd2-btn ghost" onclick="advanceToDate('+m.date+',{stopAtMatch:true})">'+I('calendar',16)+'Avanza i giorni</button>'+
         '<button class="fmd2-btn ghost" onclick="viewTeamModal(\''+String(oppN).replace(/'/g,"\\'")+'\')">'+I('scout',16)+'Analisi avversario</button>'+
