@@ -637,11 +637,21 @@ export const RULES = {
   // Rigore (clip penalty): contatto a 0,717 s con la radice 1,70 m avanti;
   // il tiratore parte 2,05 m dietro la palla. Come in PES la levetta sceglie
   // il lato e la potenza l'altezza: oltre overPower la palla va alta.
+  // Come in PES 2021: la levetta, tenuta, sceglie l'angolo (anche alto o
+  // basso), la barra la potenza: poca non arriva negli angoli alti, oltre il
+  // 90% la palla va alta. L1 + tiro: cucchiaio. R1 tenuto: guida alla mira.
   penalty: {
     clip: 'penalty', from: 0, contact: 0.717, end: 1.3, back: 2.05,
     speed: 18, postMargin: 0.7, height: [0.3, 1.9], overPower: 0.9, overHeight: 1.8,
+    topPower: 0.5,        // sotto questa potenza l'angolo alto resta basso
     error: 0.5,           // frazione dell'errore di mira del tiro normale
-    guess: [0.33, 0.55],  // portiere IA: probabilita' di indovinare il lato [difficolta' 0, 1]
+    guess: [0.33, 0.55],  // portiere IA: probabilita' di indovinare il lato [difficolta' e attributo 0, 1]
+    chip: { speed: 12.5, height: 1.5, spread: 0.4 },   // cucchiaio: lento, verso il centro
+    early: 0.35,          // portiere dell'utente che si butta prima di tanti secondi dal calcio...
+    readKeeper: 0.55,     // ...il tiratore IA lo vede e cambia lato con questa probabilita'
+    lateWindow: 0.3,      // dopo il calcio l'utente ha ancora tanti secondi per tuffarsi (in ritardo)
+    commit: 0.5,          // levetta del portiere oltre questa inclinazione: tuffo deciso
+    aimRing: 0.35,        // guida alla mira: raggio minimo del cerchio (m)
     edge: 18.5            // gli altri giocatori fuori dall'area, a tanti metri dalla linea di porta
   }
 };

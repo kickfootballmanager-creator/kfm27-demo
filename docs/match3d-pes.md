@@ -149,6 +149,29 @@ nasconde la traiettoria, disegnata per il primo mezzo secondo di volo alla
 potenza caricata. Oltre i 30 m: telecamera alta e le scelte della punizione
 indiretta (passaggio, cross, filtrante).
 
+## Rigori
+
+- PES 2021 (PES Mastery): si spinge la levetta sinistra verso l'angolo scelto
+  (i quattro angoli o il centro) e la si tiene mentre si carica la potenza
+  con Quadrato; da meta' a tre quarti della barra, di piu' per gli angoli
+  alti, verso il 90% la palla va alta. L1 prima di caricare: cucchiaio. R1
+  tenuto: un cerchio mostra dove andra' il tiro. Il portiere si tuffa
+  spingendo la levetta dalla parte scelta: presto sui tiri forti, all'ultimo
+  su quelli piano; la levetta va spinta fino in fondo.
+
+Da noi (`setpieces.js`, numeri in `RULES.penalty`): telecamera bassa dietro
+al tiratore, per i rigori a favore e contro. La levetta, tenuta anche durante
+la rincorsa, sceglie l'angolo in larghezza e in altezza; con meno di meta'
+barra l'angolo alto resta basso, oltre il 90% la palla sale sopra la
+traversa. L1 + tiro fa il cucchiaio, R1 tenuto mostra il cerchio della mira
+(largo quanto l'errore del tiratore). Il portiere IA indovina il lato con una
+probabilita' che cresce con difficolta' e attributo. Sul rigore avversario
+l'utente comanda il portiere: durante la rincorsa spinge la levetta e il
+portiere si sposta da quella parte e poi si tuffa li'; chi si butta troppo
+presto (oltre 0,35 s prima del calcio) puo' essere visto dal tiratore IA, che
+cambia lato; entro 0,3 s dopo il calcio ci si puo' ancora tuffare in
+ritardo; senza levetta il portiere resta al centro.
+
 ## Arbitro, falli, cartellini, rigori, fuorigioco
 
 - L'arbitro di PES 2020/2021 e' noto per fischiare molto, anche falli leggeri
@@ -161,10 +184,7 @@ indiretta (passaggio, cross, filtrante).
   subito. Rosso per il grave fallo di gioco (intervento che mette a rischio
   l'avversario, a gamba tesa o in velocita'); un fallo da rigore con tentativo
   vero sul pallone vale il giallo.
-- Rigore in PES: si carica il tiro e la levetta sceglie il lato; l'altezza
-  dipende dalla potenza (piu' barra, piu' alto), circa il 90% della barra e'
-  il tiro difficile da parare. Il portiere sceglie il lato con la levetta
-  mentre il tiratore prende la rincorsa.
+- Rigore: vedi la sezione Rigori.
 
 ## Fonti
 

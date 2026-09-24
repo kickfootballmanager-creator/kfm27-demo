@@ -1,7 +1,6 @@
-import { RULES, PITCH, BALL, CONTROL, PASS, FOUL, ADVANTAGE, GOAL, SHOT, FK } from './config.js';
+import { RULES, PITCH, BALL, CONTROL, PASS, FOUL, ADVANTAGE, FK } from './config.js';
 import { headingOf, choosePass, freeness } from './player.js';
 import { rootAction, standFall } from './gestures.js';
-import { loftFor } from './ball.js';
 import { whistle } from './audio.js';
 
 // Fasi della partita: kickoff (calcio d'inizio), play, restart (rimessa,
@@ -11,9 +10,7 @@ import { whistle } from './audio.js';
 
 const HL = PITCH.length / 2;
 const HW = PITCH.width / 2;
-const GOAL_HW = GOAL.width / 2;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-const lerp = (a, b, t) => a + (b - a) * t;
 const gauss = () => (Math.random() + Math.random() + Math.random() - 1.5) * 2;
 
 export class Rules {
@@ -127,7 +124,7 @@ export class Rules {
     const { type, side, spot } = pending;
     if (type === 'freekick' || type === 'penalty') { this.freeKick(pending); return; }
     const m = this.m, b = m.ball, team = m.teams[side];
-    for (const p of m.everyone) { p.action = null; p.holding = false; p.dropping = false; p.holdHand = null; }
+    for (const p of m.everyone) { p.action = null; p.holding = false; p.dropping = false; p.holdHand = null; p.homeTarget = null; }
     m.offside = m.indirect = null;
     let taker;
     if (type === 'goalkick') taker = team.keeper;
@@ -218,7 +215,7 @@ export class Rules {
       m.gain(p, s.type === 'kickoff' ? "calcio d'inizio" : s.type === 'penalty' ? 'rigore' : 'punizione');
     }
     const user = s.side === m.userSide && p === m.ctrl;
-    const aiming = s.fk && s.fk.mode === 'direct';
+    const aiming = s.fk && (s.fk.mode === 'direct' || s.fk.mode === 'penalty');
     if (user && aiming) m.setpieces.aim(dt, inp);
     if (user && m.charging) return;
     if (this.t > (user ? (aiming ? FK.userWait : RULES.userWait) : RULES.aiTake)) this.take('auto', 0.2 + Math.random() * 0.75, null);
@@ -231,7 +228,7 @@ export class Rules {
     if (s.type === 'kickoff') this.kickoffTap(p);
     else if (s.type === 'throw') this.throwIn(p, btn === 'auto' ? 'auto' : short ? 'short' : 'long', inp, power);
     else if (s.type === 'goalkick') m.startKick(p, 'cross', 0.8, { mag: 1, x: m.dirOf(p.team), z: 0 });
-    else if (s.type === 'penalty') this.penaltyKick(p, btn === 'auto' ? 0.6 + Math.random() * 0.32 : power, inp);
+    else if (s.type === 'penalty') m.setpieces.penaltyShot(p, btn === 'auto' ? 0.55 + Math.random() * 0.33 : power, inp, btn === 'auto');
     else if (s.type === 'freekick') this.freeKickTake(p, btn, power, inp);
     else {
       const k = short ? 'pass' : 'cross';
@@ -430,7 +427,7 @@ export class Rules {
   // --- punizione o rigore: palla sul punto, chi batte dietro, verso la porta.
   freeKick({ type, side, spot, direct }) {
     const m = this.m, b = m.ball, team = m.teams[side], d = m.dirOf(side);
-    for (const p of m.everyone) { if (!p.down) p.action = null; p.holding = false; p.dropping = false; p.holdHand = null; }
+    for (const p of m.everyone) { if (!p.down) p.action = null; p.holding = false; p.dropping = false; p.holdHand = null; p.homeTarget = null; }
     m.offside = m.indirect = null;
     let sp = { x: clamp(spot.x, -HL + 0.5, HL - 0.5), z: clamp(spot.z, -HW + 0.5, HW - 0.5) }, taker;
     if (type === 'penalty') {
@@ -484,36 +481,6 @@ export class Rules {
     p.action = { t: 0, rate: 1, end: 3, moves: true, tick: (a, dt) => {
       if (p.goTo(dt, tx, tz, h) || a.t > 2.5) { p.action = null; m.gain(p, 'punizione'); go(); }
     } };
-  }
-
-  // Rigore con la clip penalty: la levetta sceglie il lato, la potenza
-  // l'altezza (come in PES); la palla parte al fotogramma del calcio.
-  penaltyKick(p, power, inp) {
-    const m = this.m, T = RULES.penalty, d = m.dirOf(p.team);
-    let side;
-    if (inp) side = inp.mag > 0.3 && Math.abs(inp.z) > 0.3 ? Math.sign(inp.z) : 0;
-    else side = [-1, -1, 0, 1, 1][Math.floor(Math.random() * 5)];
-    const tz = side * (GOAL_HW - T.postMargin);
-    const over = Math.max(0, (power - T.overPower) / (1 - T.overPower));
-    const h = lerp(T.height[0], T.height[1], Math.min(1, power / T.overPower)) + T.overHeight * over;
-    const keeper = m.teams[m.otherSide(p.team)].keeperAI;
-    p.avatar.playOnce(T.clip, T.from, T.end - T.from);
-    p.action = rootAction(m, p, T.clip, T.from, T.end, 1, {
-      scaleS: 0,
-      events: [{ at: T.contact - T.from, fn: () => {
-        const b = m.ball, P = p.params, err = P.shotError * T.error;
-        const dx = d * HL - b.pos.x, dz = tz - b.pos.z, dist = Math.hypot(dx, dz);
-        const ang = Math.atan2(dz, dx) + gauss() * err;
-        const speed = lerp(T.speed, P.shotSpeed, power);
-        const loft = loftFor(b.pos.y, speed, dist, Math.max(BALL.radius + 0.04, h + gauss() * err * dist * SHOT.heightError));
-        b.kick(Math.cos(ang) * Math.cos(loft) * speed, Math.sin(loft) * speed, Math.sin(ang) * Math.cos(loft) * speed);
-        m.poss.fly('tiro', p, null, 'rigore');
-        m.kickLock = { p, t: CONTROL.kickLock };
-        m.lastKick = { kind: 'rigore', power, speed, dist };
-        keeper.penaltyKicked(side);
-        this.go('play');
-      } }]
-    });
   }
 
   // --- gol: esultanza di chi ha segnato, il portiere battuto si dispera

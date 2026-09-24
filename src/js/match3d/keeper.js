@@ -89,6 +89,9 @@ export class KeeperAI {
     // rigore contro: fermo sulla linea, al centro, rivolto al tiratore
     const set = m.rules.set;
     if (m.phase === 'restart' && set && set.type === 'penalty' && set.side !== this.side) {
+      // il portiere dell'utente sceglie il tuffo durante la rincorsa
+      if (this.side === m.userSide && set.taker.action) { this.penaltyWatch(dt); return; }
+      this.dive = null;
       this.moveTo(dt, this.goalX + this.dir * 0.3, 0, false);
       return;
     }
@@ -140,6 +143,15 @@ export class KeeperAI {
     const m = this.m, k = this.p, poss = m.poss;
     if (!poss.flying || poss.team === this.side) { this.watch = null; return false; }
     if (this.watch === poss.seq) return false;
+    // rigore contro l'utente che non ha ancora scelto: aspetta la sua levetta
+    // per poco; un tuffo deciso in ritardo parte da dove e' la palla adesso
+    const pen = this.penalty;
+    if (pen && pen.guess === null) {
+      const side = this.userSide();
+      if (side !== null) pen.guess = side;
+      else if (poss.age > RULES.penalty.lateWindow) pen.guess = 0;
+      else { k.drive(1 / 60, 0, 0, 0, { face: { x: m.ball.pos.x - k.pos.x, z: m.ball.pos.z - k.pos.z } }); return true; }
+    }
     const s = this.crossing();
     if (!s) return false;
     this.watch = poss.seq;
@@ -385,18 +397,37 @@ export class KeeperAI {
     }
   }
 
-  // Rigore appena calciato verso il lato `side` (-1, 0, 1 in z): il portiere
-  // aveva gia' scelto. Utente: la levetta al momento del tiro (ferma: resta
-  // al centro); IA: indovina con una probabilita' che cresce con la difficolta'.
+  // Lato (-1, 0, 1 in z) scelto con la levetta dall'utente che comanda il
+  // portiere sul rigore avversario, null se la levetta e' ferma.
+  userSide() {
+    const inp = this.m.lastInp;
+    if (!inp || inp.mag < RULES.penalty.commit) return null;
+    return Math.abs(inp.z) > 0.35 ? Math.sign(inp.z) : 0;
+  }
+
+  // Rincorsa del rigore avversario: il portiere dell'utente si butta quando
+  // si spinge la levetta; prima del calcio si sposta gia' verso quel lato.
+  penaltyWatch(dt) {
+    const m = this.m, k = this.p;
+    if (this.dive === undefined || this.dive === null) {
+      const side = this.userSide();
+      if (side !== null) this.dive = { side, t: m.poss.clock };
+    }
+    const z = this.dive ? this.dive.side * 0.6 : 0;
+    this.moveTo(dt, this.goalX + this.dir * 0.3, z, false);
+  }
+
+  // Rigore appena calciato verso il lato `side` (-1, 0, 1 in z). IA: indovina
+  // con una probabilita' che cresce con difficolta' e attributo. Utente: il
+  // lato scelto con la levetta; se non l'ha ancora scelto, save() aspetta.
   penaltyKicked(side) {
     const m = this.m, T = RULES.penalty;
     let guess;
-    if (this.side === m.userSide) {
-      const inp = m.lastInp;
-      guess = inp && inp.mag > 0.3 && Math.abs(inp.z) > 0.3 ? Math.sign(inp.z) : 0;
-    } else if (Math.random() < lerp(T.guess[0], T.guess[1], this.skill)) guess = side;
+    if (this.side === m.userSide) guess = this.dive ? this.dive.side : null;
+    else if (Math.random() < lerp(T.guess[0], T.guess[1], (this.skill + this.attr) / 2)) guess = side;
     else { const other = [-1, 0, 1].filter((v) => v !== side); guess = other[Math.floor(Math.random() * other.length)]; }
     this.penalty = { guess, real: side };
+    this.dive = null;
     this.watch = null;
   }
 

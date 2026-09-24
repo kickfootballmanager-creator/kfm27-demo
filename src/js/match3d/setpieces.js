@@ -50,6 +50,12 @@ export class SetPieces {
     this.guide.renderOrder = 6;
     this.guide.visible = false;
     this.path = [];
+    // guida alla mira del rigore (R1 tenuto): cerchio sul piano della porta
+    this.ring = new THREE.Mesh(new THREE.RingGeometry(0.86, 1, 40), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85, depthWrite: false, side: THREE.DoubleSide }));
+    this.ring.visible = false;
+    this.ring.renderOrder = 6;
+    this.group = new THREE.Group();
+    this.group.add(this.guide, this.ring);
     this.hold = 0;           // secondi di telecamera del calcio piazzato dopo il calcio
     this.pose0 = null;       // ultima posa, tenuta dopo il calcio
     this.wall = [];          // uomini in barriera al momento del calcio
@@ -57,7 +63,7 @@ export class SetPieces {
     this._p = new THREE.Vector3();
   }
 
-  get mesh() { return this.guide; }
+  get mesh() { return this.group; }
 
   // Nuova punizione: diretta (vicina, con barriera e mira) o da lontano.
   prepare(set) {
@@ -117,11 +123,72 @@ export class SetPieces {
     this.wallBlock();
   }
 
+  // Rigore: dove andrebbe la palla con la levetta (schermo) e la potenza di
+  // adesso. sx -1..1 a sinistra/destra, up 0..1 in alto.
+  penaltyTarget(p, sx, up, power, chip) {
+    const m = this.m, T = RULES.penalty, d = m.dirOf(p.team), b = m.ball.pos;
+    const w = GOAL_HW - T.postMargin;
+    if (chip) return { x: d * HL, y: T.chip.height, z: sx * w * T.chip.spread * d, speed: T.chip.speed };
+    const top = lerp(T.height[0], T.height[1], up);
+    const reach = clamp(power / T.topPower, 0, 1);
+    const over = Math.max(0, (power - T.overPower) / (1 - T.overPower));
+    const y = lerp(T.height[0], top, reach) + T.overHeight * over;
+    return { x: d * HL, y, z: sx * w * d, speed: lerp(T.speed, p.params.shotSpeed, power), dist: Math.hypot(d * HL - b.x, sx * w * d - b.z) };
+  }
+
+  // Rigore come in PES 2021: rincorsa della clip penalty, palla al fotogramma
+  // del calcio verso l'angolo della levetta (tenuta anche durante la rincorsa).
+  penaltyShot(p, power, inp, auto) {
+    const m = this.m, T = RULES.penalty;
+    const pen = { power, user: !auto, chip: false, sx: 0, up: 0.3 };
+    if (auto) {
+      pen.sx = [-1, -1, -0.5, 0, 0.5, 1, 1][Math.floor(Math.random() * 7)];
+      pen.up = Math.random() * 0.8;
+      pen.chip = Math.random() < 0.04;
+    } else {
+      if (inp && inp.mag > 0.3) { pen.sx = clamp(inp.sx, -1, 1); pen.up = clamp(-inp.sy, 0, 1); }
+      pen.chip = !!(inp && inp.btn && inp.btn.held.l1);
+    }
+    this.pen = pen;
+    const end = Math.min(T.end, clipDuration(m.tpl, T.clip));
+    p.avatar.playOnce(T.clip, T.from, end - T.from);
+    p.action = rootAction(m, p, T.clip, T.from, end, 1, {
+      scaleS: 0,
+      tick: () => {
+        // la levetta tenuta durante la rincorsa conta ancora
+        const i = m.lastInp;
+        if (pen.user && i && i.mag > 0.3) { pen.sx = clamp(i.sx, -1, 1); pen.up = clamp(-i.sy, 0, 1); }
+      },
+      events: [{ at: T.contact - T.from, fn: () => this.penaltyKick(p, pen) }]
+    });
+  }
+
+  penaltyKick(p, pen) {
+    const m = this.m, T = RULES.penalty, b = m.ball, P = p.params;
+    const keeper = m.teams[m.otherSide(p.team)].keeperAI;
+    // il tiratore IA vede il portiere dell'utente buttarsi troppo presto e cambia lato
+    const dv = keeper.dive;
+    if (!pen.user && dv && dv.side !== 0 && m.poss.clock - dv.t > T.early && Math.sign(pen.sx * m.dirOf(p.team)) === dv.side && Math.random() < T.readKeeper) pen.sx = -pen.sx;
+    const tg = this.penaltyTarget(p, pen.sx, pen.up, pen.power, pen.chip);
+    const err = P.shotError * T.error * (pen.chip ? 0.5 : 1);
+    const dx = tg.x - b.pos.x, dz = tg.z - b.pos.z, dist = Math.hypot(dx, dz);
+    const ang = Math.atan2(dz, dx) + gauss() * err;
+    const loft = loftFor(b.pos.y, tg.speed, dist, Math.max(BALL.radius + 0.04, tg.y + gauss() * err * dist * SHOT.heightError));
+    b.kick(Math.cos(ang) * Math.cos(loft) * tg.speed, Math.sin(loft) * tg.speed, Math.sin(ang) * Math.cos(loft) * tg.speed);
+    m.poss.fly('tiro', p, null, pen.chip ? 'cucchiaio' : 'rigore');
+    m.kickLock = { p, t: CONTROL.kickLock };
+    m.lastKick = { kind: pen.chip ? 'cucchiaio' : 'rigore', power: pen.power, speed: tg.speed, dist, sx: +pen.sx.toFixed(2), up: +pen.up.toFixed(2) };
+    keeper.penaltyKicked(Math.abs(tg.z) < 1 ? 0 : Math.sign(tg.z));
+    this.pen = null;
+    m.rules.go('play');
+  }
+
   // Mira dell'utente sulla diretta: la levetta sposta il punto sulla linea di
   // porta (a destra/sinistra dello schermo e in altezza), R1 mostra o nasconde
   // la traiettoria, la levetta destra da' l'effetto.
   aim(dt, inp) {
     const f = this.m.rules.set.fk;
+    this.aimInp = inp;
     if (!f || f.mode !== 'direct') return;
     const side = this.screenSide();
     if (inp.mag > 0) {
@@ -153,10 +220,12 @@ export class SetPieces {
     return { vx: Math.cos(ang) * hs, vy: Math.sin(loft) * speed, vz: Math.sin(ang) * hs, spin: f.curl * FK.spinMax };
   }
 
-  // La guida: il primo tratto della traiettoria, alla potenza caricata.
+  // La guida: il primo tratto della traiettoria, alla potenza caricata; sul
+  // rigore il cerchio della mira finche' si tiene R1.
   render(showFor) {
     const m = this.m, set = m.rules.set, g = this.guide;
     const f = set && set.fk;
+    this.renderRing(showFor, set);
     // solo a chi batte (l'utente): la traiettoria degli avversari non si vede
     const on = !!showFor && !!f && f.mode === 'direct' && f.guide && m.phase === 'restart' && set.ready &&
       set.taker === showFor && set.side === m.userSide && !showFor.action;
@@ -169,6 +238,22 @@ export class SetPieces {
     const a = g.geometry.attributes.position;
     for (let i = 0; i < n; i++) a.setXYZ(i, this.path[i].x, this.path[i].y, this.path[i].z);
     a.needsUpdate = true;
+  }
+
+  renderRing(p, set) {
+    const m = this.m, r = this.ring, i = this.aimInp;
+    const on = !!p && !!set && set.type === 'penalty' && m.phase === 'restart' && set.ready && set.taker === p &&
+      set.side === m.userSide && !p.action && !!i && !!i.btn && i.btn.held.r1;
+    r.visible = on;
+    if (!on) return;
+    const T = RULES.penalty, power = m.charging ? m.charge : 0.6;
+    const sx = i.mag > 0.3 ? clamp(i.sx, -1, 1) : 0, up = i.mag > 0.3 ? clamp(-i.sy, 0, 1) : 0.3;
+    const tg = this.penaltyTarget(p, sx, up, power, !!i.btn.held.l1);
+    // il cerchio si allarga con l'errore di chi tira
+    const rad = T.aimRing + p.params.shotError * T.error * (tg.dist || 11) * 1.4;
+    r.position.set(tg.x - m.dirOf(p.team) * 0.05, Math.max(0.1, tg.y), tg.z);
+    r.rotation.set(0, Math.PI / 2, 0);
+    r.scale.setScalar(rad);
   }
 
   // Tiro della diretta: la rincorsa e il calcio della clip FK.clip; durante la
@@ -264,10 +349,23 @@ export class SetPieces {
   // Indicazioni per chi batte, con i tasti del dispositivo in uso.
   prompt(glyph, device, pad) {
     const m = this.m, set = m.rules.set;
-    if (!set || !set.fk || m.phase !== 'restart' || set.side !== m.userSide || set.taker !== m.ctrl || set.taker.action) return null;
     const row = (t) => '<span class="m3d-prompt-row">' + t + '</span>';
     const g = (b) => glyph(b, pad);
     const touch = device === 'touch', keys = device === 'keys';
+    // rigore avversario: il portiere e' dell'utente
+    if (set && set.type === 'penalty' && m.phase === 'restart' && set.side !== m.userSide && set.ready) {
+      return '<span class="m3d-prompt-t">Rigore contro</span>' +
+        row((touch ? 'Joystick' : keys ? 'A o D' : 'Levetta sinistra') + ' a sinistra o a destra: tuffo') +
+        row('Presto sui tiri forti, all\'ultimo su quelli piano');
+    }
+    if (!set || !set.fk || m.phase !== 'restart' || set.side !== m.userSide || set.taker !== m.ctrl || set.taker.action) return null;
+    if (set.ready && set.type === 'penalty') {
+      return '<span class="m3d-prompt-t">Rigore</span>' +
+        row((touch ? 'Joystick' : keys ? 'WASD' : 'Levetta sinistra') + ' verso l\'angolo, tenuta') +
+        row((touch ? 'Tiro' : keys ? 'U' : g('square')) + ' tenuto: potenza. Oltre il 90% va alta') +
+        (touch ? '' : row((keys ? 'Q' : g('l1')) + ' + ' + (keys ? 'U' : g('square')) + ': cucchiaio')) +
+        (touch ? row('Scatto tenuto: guida alla mira') : row((keys ? 'L' : g('r1')) + ' tenuto: guida alla mira'));
+    }
     if (!set.ready) return '<span class="m3d-prompt-t">' + (set.fk.mode === 'penalty' ? 'Rigore' : 'Punizione') + '</span>' + row('Chi batte va sulla palla');
     if (set.fk.mode === 'direct') {
       return '<span class="m3d-prompt-t">Punizione diretta</span>' +
@@ -287,6 +385,8 @@ export class SetPieces {
     this.guide.geometry.dispose();
     this.guide.material.map.dispose();
     this.guide.material.dispose();
+    this.ring.geometry.dispose();
+    this.ring.material.dispose();
   }
 }
 
