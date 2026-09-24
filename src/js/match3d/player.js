@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { PLAYER, PITCH, GOAL, PASS, SHOT, ATTR, THROUGH, CROSS, FORMATIONS, FORMATION_ROLES, KICK, BALL } from './config.js';
+import { PLAYER, PITCH, GOAL, PASS, SHOT, ATTR, THROUGH, CROSS, FORMATIONS, FORMATION_ROLES, KICK, BALL, DUEL } from './config.js';
 import { playerParams } from './attributes.js';
 import { Avatar } from './avatar.js';
 import { rollSpeedFor, rollTime, loftFor } from './ball.js';
@@ -45,6 +45,9 @@ export class Player {
     this.sprinting = false;
     this.touchPhase = 0;
     this.knockTimer = 0;
+    this.stagger = 0;          // secondi sbilanciato dopo un contrasto a vuoto
+    this.burst = 0;            // secondi di allungo dopo aver saltato l'uomo
+    this.shield = 0;           // protezione della palla: 1 tenuta a destra, -1 a sinistra
 
     this.team = null;          // 'home' | 'away'
     this.role = String(data.role || '').toUpperCase();
@@ -71,6 +74,8 @@ export class Player {
     this.speed = 0;
     this.heading = this.prevHeading = this.moveHeading = heading;
     this.knockTimer = 0;
+    this.stagger = this.burst = 0;
+    this.press = null;
   }
 
   get dirX() { return Math.sin(this.heading); }
@@ -83,14 +88,18 @@ export class Player {
     const P = this.params;
     this.prev.copy(this.pos);
     this.prevHeading = this.heading;
+    // sbilanciato dopo un contrasto a vuoto: piu' lento e piu' rigido;
+    // chi ha appena saltato l'uomo allunga il passo
+    const off = this.stagger > 0 ? DUEL.staggerSpeed : 1;
+    const top = P.maxSpeed * off * (this.burst > 0 ? DUEL.burstSpeed : 1);
     const slow = 1 - Math.min(1, this.speed / P.maxSpeed);
-    const turn = (o.withBall ? P.turnRateBall : P.turnRate) * (1 + PLAYER.turnSlowBoost * slow) * (o.turnMul || 1) * dt;
+    const turn = (o.withBall ? P.turnRateBall : P.turnRate) * off * (1 + PLAYER.turnSlowBoost * slow) * (o.turnMul || 1) * dt;
     let want = 0;
     if (mag > 0) {
       const target = headingOf(dx, dz);
       this.moveHeading = wrap(this.moveHeading + clamp(wrap(target - this.moveHeading), -turn, turn));
       const left = Math.abs(wrap(target - this.moveHeading));
-      want = mag * P.maxSpeed * (o.sprint ? 1 : PLAYER.jogFactor) * (o.withBall ? P.dribbleSpeed : 1);
+      want = mag * top * (o.sprint ? 1 : PLAYER.jogFactor) * (o.withBall ? P.dribbleSpeed : 1);
       want *= Math.max(PLAYER.turnBrake, Math.cos(Math.min(left, Math.PI / 2)));
     }
     // Il busto segue la corsa o guarda o.face; di lato si corre piu' piano.

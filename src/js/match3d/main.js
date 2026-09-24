@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { PHYSICS, RENDER, RULES, PLAYER, CONTROL, DRIBBLE, SHOT, PASS, KIT, RECEIVE, FIRST_TOUCH, ANIM, POWER, FEINT, AI, AERIAL, SHAPE, PITCH, SLIDE, BALL } from './config.js';
+import { PHYSICS, RENDER, RULES, PLAYER, CONTROL, DRIBBLE, SHOT, PASS, KIT, RECEIVE, FIRST_TOUCH, ANIM, POWER, FEINT, AI, AERIAL, SHAPE, PITCH, SLIDE, BALL, DUEL } from './config.js';
 import { buildPitch } from './pitch.js';
 import { Ball, shadowTexture } from './ball.js';
 import { BroadcastCamera } from './camera.js';
@@ -13,6 +13,7 @@ import { TeamAI } from './team-ai.js';
 import { KeeperAI, HELD_Y } from './keeper.js';
 import { startTackle, startSlide, tryAerial, startKeeperGesture } from './gestures.js';
 import { Rules } from './rules.js';
+import { userPress, stagger, beat } from './defense.js';
 
 const KICKS = ['pass', 'through', 'cross', 'shot'];
 
@@ -360,13 +361,11 @@ class Match {
 
   userMove(dt, p, inp, withBall) {
     const b = this.ball, o = this.owner;
-    // Pressing (tenuto premuto in difesa): si chiude la strada verso la porta.
-    if (!this.userAttacking() && inp.held.through && o && o.team !== p.team) {
-      const gx = -this.dirOf(p.team) * PITCH.length / 2 - o.pos.x, gz = -o.pos.z, gl = Math.hypot(gx, gz) || 1;
-      const tx = o.pos.x + gx / gl * AI.press.contain - p.pos.x, tz = o.pos.z + gz / gl * AI.press.contain - p.pos.z;
-      const d = Math.hypot(tx, tz);
-      p.drive(dt, tx, tz, Math.min(1, d / AI.arrive), { sprint: inp.sprint, face: { x: b.pos.x - p.pos.x, z: b.pos.z - p.pos.z } });
-      return;
+    // Pressing (tenuto premuto in difesa): sul portatore, poi marcatura stretta
+    // e contrasto automatico (defense.js); senza portatore, sulla palla.
+    if (!this.userAttacking() && inp.held.through && this.phase === 'play') {
+      if (o && o.team !== p.team && !o.holding) { userPress(this, p, o, inp, dt); return; }
+      if (!o && b.live) { this.runToBall(dt, p); return; }
     }
     if (inp.mag > 0) {
       const mag = p.avatar.busy && !withBall ? inp.mag * ANIM.recoverMove : inp.mag;
@@ -429,7 +428,14 @@ class Match {
     if (cur > Math.hypot(best.pos.x - x, best.pos.z - z) + 2 && !(this.ctrl && this.ctrl.action)) this.setControlled(best);
   }
 
-  startTackle(p) { startTackle(this, p); }
+  startTackle(p, manual) { return startTackle(this, p, manual); }
+
+  // Fallo di `off` su `victim`. Finche' i falli sono spenti (RULES.fouls) il
+  // contrasto non lo produce mai; l'arbitro arriva con le regole dei falli.
+  foul(off, victim) {
+    stagger(off, DUEL.stagger.beaten, true);
+    beat(this, victim, off);
+  }
   startSlide(p, dx, dz) { startSlide(this, p, dx, dz); }
   startKeeperGesture(k, clip, from, contact, end, rate, o) { startKeeperGesture(this, k, clip, from, contact, end, rate, o); }
 
@@ -448,6 +454,7 @@ class Match {
   gain(p, cause) {
     this.poss.own(p, cause);
     p.holding = false;
+    p.shield = 0;
     const b = this.ball;
     p.ballAngle = Math.atan2(b.pos.x - p.pos.x, b.pos.z - p.pos.z);
     p.ballDist = Math.min(CONTROL.receiveRadius, Math.max(DRIBBLE.rest, Math.hypot(b.pos.x - p.pos.x, b.pos.z - p.pos.z)));
@@ -476,6 +483,10 @@ class Match {
     this.poss.tick(dt);
 
     if (this.kickLock && (this.kickLock.t -= dt) <= 0) this.kickLock = null;
+    for (const p of this.everyone) {
+      if (p.stagger > 0) p.stagger = Math.max(0, p.stagger - dt);
+      if (p.burst > 0) p.burst = Math.max(0, p.burst - dt);
+    }
     // Rete di sicurezza: un pallone che nessuno raggiunge torna libero.
     if (this.poss.flying && this.poss.age > RECEIVE.timeout) this.poss.loose('nessuno la raggiunge');
 
@@ -563,7 +574,7 @@ class Match {
         const b = this.ball, L = SLIDE.lead;
         const dx = inp.mag > 0 ? inp.x : b.pos.x + b.vel.x * L - p.pos.x, dz = inp.mag > 0 ? inp.z : b.pos.z + b.vel.z * L - p.pos.z;
         startSlide(this, p, dx, dz);
-      } else if (inp.down.shot) startTackle(this, p);
+      } else if (inp.down.shot) startTackle(this, p, true);
       return;
     }
     if (!this.charging) {
@@ -626,8 +637,9 @@ class Match {
     }
     a.aim = this.kickAim(p, a);
     a.dx = a.aim.tx - b.pos.x; a.dz = a.aim.tz - b.pos.z;
-    // Palla al piede: la clip parte da K.start. Di prima: quasi al contatto.
-    const from = this.owner === p ? K.start : Math.max(0, K.contact - ANIM.firstTime);
+    // Palla al piede: la clip parte da K.start. Di prima, o per liberarsi di un
+    // contrasto (inp.quick): quasi al contatto.
+    const from = this.owner === p && !(inp && inp.quick) ? K.start : Math.max(0, K.contact - (inp && inp.quick ? DUEL.quickPass : ANIM.firstTime));
     a.contact = K.contact - from;
     a.end = a.contact + K.recover;
     p.avatar.playOnce(K.clip, from, a.end);
@@ -752,7 +764,9 @@ class Match {
     const run = Math.min(1, p.speed / p.params.maxSpeed);
     const base = p.speed < 0.3 ? D.rest : D.walk + (D.sprint - D.walk) * run;
     const dist = base + D.swing * Math.min(1, p.speed / 3) * (0.5 + 0.5 * Math.sin(p.touchPhase));
-    const want = p.heading - Math.atan2(D.side, dist);   // un po' a destra, sul piede che tocca
+    // sul piede che tocca (destro), o sul lato lontano dal difensore se la protegge
+    const side = p.shield ? p.shield * AI.carrier.protect.shieldSide : 1;
+    const want = p.heading - Math.atan2(D.side * side, dist);
     const turn = wrapAngle(want - p.ballAngle);
     const step = D.turnRate * dt;
     p.ballAngle = wrapAngle(p.ballAngle + Math.max(-step, Math.min(step, turn)));

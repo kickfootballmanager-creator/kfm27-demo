@@ -1,5 +1,6 @@
-import { SHAPE, AI, PITCH, GOAL, TACKLE, CROSS, RULES } from './config.js';
+import { SHAPE, AI, PITCH, GOAL, CROSS, RULES, PRESS, TACKLE } from './config.js';
 import { freeness } from './player.js';
+import { autoTackle, aiPressState } from './defense.js';
 
 // IA di squadra. Decide a AI.hz volte al secondo; il movimento (steer) va a 60 Hz.
 // Stati individuali: SUPPORTO, INSERIMENTO, PORTATORE, PRESSING, MARCATURA, RIENTRO.
@@ -27,7 +28,6 @@ export class TeamAI {
     this.acc = Math.random() / AI.hz;
     this.runTimer = rand(...AI.run.every);
     this.runners = new Set();
-    this.pressSince = new Map();   // presser -> secondi a contatto col portatore
     // Precisione della squadra secondo la difficolta'.
     const err = lerp(AI.carrier.error[0], AI.carrier.error[1], difficulty);
     for (const p of players) { p.params.passError *= err; p.params.shotError *= err; p.aiState = 'SUPPORTO'; p.aiTarget = { x: p.pos.x, z: p.pos.z }; }
@@ -150,25 +150,33 @@ export class TeamAI {
     return best;
   }
 
-  // --- portatore IA: tiro, passaggio, filtrante, cross o dribbling
-  carrierThink(p, dt) {
+  // Sotto contrasto: il passaggio migliore subito, con il piede quasi sulla palla.
+  passNow(p) {
+    if (!p.action && this.m.owner === p) this.carrierThink(p, 0, true);
+  }
+
+  // --- portatore IA: tiro, passaggio, filtrante, cross o dribbling.
+  // `passOnly`: sta arrivando un contrasto, conta solo liberarsi della palla.
+  carrierThink(p, dt, passOnly = false) {
     const m = this.m, C = AI.carrier;
     p.aiState = 'PORTATORE';
     p.thinkT = (p.thinkT || 0) - dt;
-    if (p.thinkT > 0 || p.action) return;
-    p.thinkT = lerp(C.think[0], C.think[1], this.skill) * rand(0.7, 1.3);
+    if ((p.thinkT > 0 && !passOnly) || p.action) return;
 
     const d = this.dir, opp = this.opponents;
     const me = this.rel(p.pos.x, p.pos.z);
     let press = Infinity;
     for (const o of opp) press = Math.min(press, Math.hypot(o.pos.x - p.pos.x, o.pos.z - p.pos.z));
     const pressed = press < C.pressedAt;
+    // sotto pressione si decide piu' in fretta e, a volte, si protegge la palla
+    p.thinkT = lerp(C.think[0], C.think[1], this.skill) * rand(0.7, 1.3) * (pressed ? C.pressedThink : 1);
+    p.protecting = pressed && Math.random() < lerp(C.protect.chance[0], C.protect.chance[1], this.skill);
     const goalDist = Math.hypot(HL - me.a, me.s);
     const noise = () => (Math.random() - 0.5) * 0.35 * (1.2 - this.skill);
     const options = [];
 
     // Tiro: vicino, con la porta visibile.
-    if (goalDist < C.shootDist && me.a > 10) {
+    if (goalDist < C.shootDist && me.a > 10 && !passOnly) {
       const open = this.shotOpen(p);
       if (open > C.shootMinOpen) options.push({ kind: 'shot', score: 1.3 * (1 - goalDist / C.shootDist) + 0.6 * open + (goalDist < 16 ? 0.35 : 0) + noise() });
     }
@@ -187,14 +195,15 @@ export class TeamAI {
       if (q.aiState === 'INSERIMENTO' && gain > 4) options.push({ kind: 'through', to: q, score: base + 0.35 + noise() });
     }
     // Cross dalla fascia se in area c'e' qualcuno.
-    if (Math.abs(p.pos.z) > CROSS.wingZ && me.a > CROSS.finalThird) {
+    if (Math.abs(p.pos.z) > CROSS.wingZ && me.a > CROSS.finalThird && !passOnly) {
       let inBox = 0;
       for (const q of this.players) { const r = this.rel(q.pos.x, q.pos.z); if (q !== p && r.a > HL - 18 && Math.abs(r.s) < 16) inBox++; }
       if (inBox) options.push({ kind: 'cross', score: C.crossChance * (0.5 + 0.25 * inBox) + noise() });
     }
     // Dribbling verso la porta, se c'e' spazio.
     const ahead = freeness(p.pos.x + d * 7, p.pos.z, opp);
-    options.push({ kind: 'dribble', score: 0.45 * ahead + (pressed ? -0.3 : 0.25) + noise() });
+    if (!passOnly) options.push({ kind: 'dribble', score: 0.45 * ahead + (pressed ? -0.3 : 0.25) + noise() });
+    if (!options.length) return;
 
     options.sort((a, b) => b.score - a.score);
     const pick = options[0];
@@ -211,7 +220,7 @@ export class TeamAI {
     // Potenza come la darebbe un giocatore: il tiro fra meta' e la tacca,
     // il cross verso un palo a caso, il passaggio in base alla distanza.
     const power = pick.kind === 'shot' ? rand(0.5, 0.84) : pick.kind === 'cross' ? rand(0.1, 0.95) : Math.min(1, Math.hypot(dx, dz) / 45);
-    m.startKick(p, pick.kind, power, { mag: 1, x: dx / l, z: dz / l, to: pick.to });
+    m.startKick(p, pick.kind, power, { mag: 1, x: dx / l, z: dz / l, to: pick.to, quick: passOnly });
   }
 
   // Quanto e' libera la porta: 1 nessuno fra il portatore e i pali.
@@ -269,8 +278,9 @@ export class TeamAI {
       const sorted = avail.filter((p) => p.aiState !== 'PRESSING').sort((a, b) => dist2(a, target) - dist2(b, target));
       for (const p of sorted.slice(0, n)) pressers.push(p);
       for (const p of pressers) this.press(p, target, dt);
-      for (const p of [...this.pressSince.keys()]) if (!pressers.includes(p)) this.pressSince.delete(p);
     }
+    // chi non pressa piu' ricomincia da zero la marcatura stretta
+    for (const p of field) if (p.press && !pressers.includes(p)) p.press.engaged = 0;
 
     // Marcatura a uomo nella zona, uno contro uno; chi e' avanti alla palla rientra.
     const goal = this.world(-HL, 0);
@@ -299,7 +309,9 @@ export class TeamAI {
     }
   }
 
-  // Sul portatore: si chiude la strada verso la porta, poi si prova il contrasto.
+  // Sul portatore: si chiude la strada verso la porta, poi il contrasto parte
+  // da solo come per l'utente (defense.autoTackle), con riflessi e cadenza
+  // decisi dalla difficolta'.
   press(p, carrier, dt) {
     const m = this.m;
     const goal = this.world(-HL, 0);
@@ -309,14 +321,17 @@ export class TeamAI {
     p.aiSprint = true;
     p.aiFace = { x: m.ball.pos.x - p.pos.x, z: m.ball.pos.z - p.pos.z };
 
-    const bd = Math.hypot(m.ball.pos.x - p.pos.x, m.ball.pos.z - p.pos.z);
-    const reach = TACKLE.legReach + TACKLE.lunge;
-    const t = (this.pressSince.get(p) || 0) + (bd < reach + 0.4 ? dt : -dt);
-    this.pressSince.set(p, Math.max(0, t));
-    const delay = lerp(AI.press.delay[0], AI.press.delay[1], this.skill);
-    if (t < delay || p.action || carrier.keeper) return;
-    const rate = lerp(AI.tackleRate[0], AI.tackleRate[1], this.skill);
-    if (bd < reach && Math.random() < rate * dt) { m.startTackle(p); return; }
+    // la reazione comincia prima se il portatore arriva di corsa
+    const bx = m.ball.pos.x - p.pos.x, bz = m.ball.pos.z - p.pos.z, bd = Math.hypot(bx, bz) || 1;
+    const closing = Math.max(0, -((m.ball.vel.x - p.vel.x) * bx + (m.ball.vel.z - p.vel.z) * bz) / bd);
+    const react = lerp(AI.press.delay[0], AI.press.delay[1], this.skill);
+    const s = aiPressState(p, carrier);
+    s.engaged = bd < PRESS.engage + closing * (react + TACKLE.contact) ? s.engaged + dt : 0;
+    // il contrasto automatico si controlla a 60 Hz in steer: da vicino le
+    // distanze cambiano troppo in fretta per le decisioni a 10 Hz
+    s.react = react;
+    s.pace = lerp(AI.tackleRate[0], AI.tackleRate[1], this.skill);
+    if (p.action || carrier.keeper || carrier.holding) return;
     // Scivolata: da dietro o di lato, quando il portatore scappa.
     const cv = Math.hypot(carrier.vel.x, carrier.vel.z);
     if (bd > 1.8 && bd < 3.6 && cv > 4 && Math.random() < lerp(AI.slideChance[0], AI.slideChance[1], this.skill) * dt) {
@@ -356,10 +371,25 @@ export class TeamAI {
     const m = this.m;
     if (p.aiState === 'PORTATORE' && m.owner === p) {
       const dd = p.dribbleDir || { x: this.dir, z: 0 };
+      // protezione: con un difensore addosso la palla va sul lato lontano da
+      // lui e il portatore gli gira le spalle a passo corto
+      const P = AI.carrier.protect;
+      let near = null, nd = P.dist;
+      for (const o of this.opponents) { const d = Math.hypot(o.pos.x - p.pos.x, o.pos.z - p.pos.z); if (!o.keeper && d < nd) { nd = d; near = o; } }
+      if (near && p.protecting && !p.burst) {
+        const ax = p.pos.x - near.pos.x, az = p.pos.z - near.pos.z, al = Math.hypot(ax, az) || 1;
+        p.shield = (near.pos.x - p.pos.x) * p.rightX + (near.pos.z - p.pos.z) * p.rightZ > 0 ? -1 : 1;
+        p.drive(dt, ax / al * 0.6 + dd.x * 0.4, az / al * 0.6 + dd.z * 0.4, P.mag, { withBall: true });
+        return;
+      }
+      p.shield = 0;
       const space = freeness(p.pos.x + dd.x * 6, p.pos.z + dd.z * 6, this.opponents);
-      p.drive(dt, dd.x, dd.z, 1, { withBall: true, sprint: space > 0.7 });
+      p.drive(dt, dd.x, dd.z, 1, { withBall: true, sprint: space > 0.7 || p.burst > 0 });
       return;
     }
+    const car = m.owner;
+    if (p.aiState === 'PRESSING' && car && car.team !== p.team && p.press && p.press.car === car && p.press.react !== undefined &&
+      !car.keeper && !car.holding && autoTackle(m, p, p.press, p.press.react, p.press.pace)) return;
     const t = p.aiTarget;
     const dx = t.x - p.pos.x, dz = t.z - p.pos.z, d = Math.hypot(dx, dz);
     const bx = m.ball.pos.x - p.pos.x, bz = m.ball.pos.z - p.pos.z;

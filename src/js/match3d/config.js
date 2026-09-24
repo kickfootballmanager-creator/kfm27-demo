@@ -272,9 +272,12 @@ export const AI = {
     pressedAt: 3,         // un avversario entro questa distanza mette pressione
     feintChance: 0.25,
     crossChance: 0.7,
-    error: [1.6, 0.8]     // moltiplicatore dell'errore di passaggio e tiro [difficulty 0, 1]
+    error: [1.6, 0.8],    // moltiplicatore dell'errore di passaggio e tiro [difficulty 0, 1]
+    pressedThink: 0.5,    // sotto pressione decide piu' in fretta
+    // protegge la palla: la tiene sul lato lontano dal difensore e rallenta
+    protect: { dist: 2.2, mag: 0.45, chance: [0.3, 0.8], shieldSide: 2.2 }
   },
-  tackleRate: [0.9, 2.4], // tentativi di contrasto al secondo a contatto [difficulty 0, 1]
+  tackleRate: [0.75, 1.3], // cadenza dei contrasti automatici rispetto a PRESS.autoEvery [difficulty 0, 1]
   slideChance: [0.08, 0.2],
   intercept: { base: 0.3, def: 0.5, speed: 0.012 }    // probabilita' d'intercetto: base + def*attr - speed*v
 };
@@ -306,12 +309,50 @@ export const TACKLE = {
   duration: MOVES.standTackle.duration,
   legReach: 0.95,         // dal centro del giocatore al pallone, gamba tesa
   contactDist: 0.62,      // l'affondo porta il corpo a questa distanza dalla palla
-  lunge: 0.75,            // metri massimi dell'affondo verso la palla
+  lunge: 0.75,            // metri massimi dell'affondo verso la palla, oltre lo slancio della corsa
   lungeFrom: 0.04,        // l'affondo va da qui al contatto (secondi)
+  lungeSpeed: 5,          // m/s minimi dell'affondo
   poke: 4.5,              // m/s della palla tolta
   keep: 0.45,             // probabilita' di tenerla invece di allontanarla
-  dribbleResist: 0.35,    // quanto il dribbling di chi ha palla riduce la riuscita
   lock: 0.35              // chi l'ha appena persa non la riprende subito
+};
+
+// Difesa stile PES: Pressing tenuto porta sul portatore, da vicino marcatura
+// stretta (jockey) e contrasto automatico quando distanza e angolo lo permettono.
+export const PRESS = {
+  lead: 0.35,             // s: si corre dove sara' il portatore fra tanto
+  sprintDist: 6,          // oltre questa distanza si scatta anche senza Scatto
+  engage: 3.2,            // sotto questa distanza si entra in marcatura stretta
+  release: 5.5,           // oltre questa si torna a correre sul portatore
+  contain: 1.35,          // distanza di marcatura senza levetta
+  minR: 0.9,
+  maxR: 2.8,
+  jockeySpeed: 4.2,       // m/s attorno al portatore con la levetta
+  relax: 2.2,             // 1/s: senza levetta si torna fra portatore e porta
+  autoMargin: 0.1,        // metri tenuti di riserva sulla portata del contrasto
+  autoAngle: 1.0,         // rad fra il busto e la palla
+  autoClose: 0.5,         // sotto questa distanza prevista l'angolo non conta
+  autoReact: [0.4, 0.18], // s in marcatura prima del primo contrasto [difesa bassa, alta]
+  autoEvery: [1.2, 0.6]   // s fra due contrasti automatici [difesa bassa, alta]
+};
+
+// Esito di un contrasto: palla recuperata, il portatore salta l'uomo, fallo.
+export const DUEL = {
+  win: [0.3, 0.8],        // probabilita' base [difesa bassa, alta]
+  dribbleResist: 0.45,    // quanto il dribbling del portatore la riduce
+  timing: [0.75, 1.25],   // palla attaccata al piede del portatore / palla lontana
+  angle: { front: 1, side: 0.85, back: 0.6 },
+  skillGap: 0.4,          // peso della differenza di difficolta' fra le squadre
+  manual: 1.05,           // contrasto premuto: poco piu' efficace, molto piu' rischioso
+  foul: { auto: 0.04, manual: 0.11, side: 0.05, back: 0.24, speed: 0.012 },
+  passFirst: [0.15, 0.5], // IA con palla: la passa prima del contrasto [difficolta' 0, 1]
+  quickPass: 0.1,         // secondi fra la decisione e il piede sulla palla
+  stagger: { miss: 0.45, beaten: 0.8 }, // secondi sbilanciato dopo un contrasto a vuoto
+  staggerManual: 1.4,     // moltiplicatore per il contrasto premuto
+  staggerSpeed: 0.45,     // frazione della velocita' massima da sbilanciati
+  burst: 0.7,             // chi salta l'uomo accelera per tanti secondi
+  burstSpeed: 1.12,
+  knock: 1.2              // metri in piu' davanti al piede quando si salta l'uomo
 };
 
 // Scivolata: ci si butta nella direzione scelta seguendo la radice della clip.

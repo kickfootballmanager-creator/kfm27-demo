@@ -1,14 +1,14 @@
-import { TACKLE, SLIDE, DOWN, AERIAL, FEINT, KEEPER, PITCH, GOAL, CONTROL, ATTR, MOVES } from './config.js';
+import { TACKLE, SLIDE, DOWN, AERIAL, KEEPER, PITCH, GOAL, CONTROL, ATTR, MOVES, DUEL } from './config.js';
 import { rootAt, clipDuration } from './avatar.js';
 import { headingOf } from './player.js';
 import { StandTackle } from './moves.js';
+import { duel, stagger, beat, passFirstChance, defUnit } from './defense.js';
 
 // Contrasto, scivolata, caduta, colpo di testa, rovesciata, portiere: azioni (p.action)
 // che main.stepAction fa avanzare; gli eventi scattano al fotogramma misurato in player.motion.json.
 
 const HL = PITCH.length / 2;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-const unit = (v, lo, hi) => clamp((v - lo) / (hi - lo), 0, 1);
 const gauss = () => (Math.random() + Math.random() + Math.random() - 1.5) * 2;
 
 // Azione con lo spostamento della radice: tempi in secondi della clip.
@@ -19,52 +19,74 @@ export function rootAction(m, p, clip, from, end, rate, extra) {
   }, extra);
 }
 
-function defUnit(p) { return unit(p.params.tackle, ATTR.tackle[0], ATTR.tackle[1]); }
-function driUnit(p) { return unit(p.params.dribbleSpeed, ATTR.dribbleSpeed[0], ATTR.dribbleSpeed[1]); }
-
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 const smooth = (u) => u * u * (3 - 2 * u);
 
 // --- contrasto in piedi, creato in codice (moves.StandTackle): affondo verso
 // la palla con la gamba dalla sua parte, esito al contatto del piede.
-export function startTackle(m, p) {
-  if (p.action || p.down) return false;
+// `manual`: Contrasto premuto (piu' rischioso del contrasto automatico del Pressing).
+export function startTackle(m, p, manual = false) {
+  if (p.action || p.down || p.stagger > 0) return false;
   const T = TACKLE, b = m.ball;
+  // l'IA con palla vede arrivare il contrasto e puo' liberarsene prima
+  const car = m.owner;
+  if (car && car.team !== p.team && car !== m.ctrl && !car.keeper && Math.random() < passFirstChance(m, car)) m.teams[car.team].ai.passNow(car);
   const dx = b.pos.x - p.pos.x, dz = b.pos.z - p.pos.z, d = Math.hypot(dx, dz) || 1;
   const side = dx * p.rightX + dz * p.rightZ >= 0 ? 'Right' : 'Left';
   const move = new StandTackle(MOVES.standTackle, side, b.pos);
   p.avatar.playProc(move);
-  const h0 = p.heading, h1 = headingOf(dx, dz);
-  const x0 = p.pos.x, z0 = p.pos.z, ux = dx / d, uz = dz / d;
-  const lunge = clamp(d - T.contactDist, 0, T.lunge);
+  const h0 = p.heading, x0 = p.pos.x, z0 = p.pos.z;
+  // l'affondo insegue dove sara' la palla al contatto e si somma allo slancio della corsa
+  const range = T.lunge + p.speed * T.contact;
+  const pace = p.speed + T.lungeSpeed;
   p.action = {
     tackle: true, moves: true, t: 0, rate: 1, end: T.duration,
     tick: (a, dt) => {
       move.target.copy(b.pos);
-      const s = smooth(clamp((a.t - T.lungeFrom) / (T.contact - T.lungeFrom), 0, 1));
-      p.moveTo(x0 + ux * lunge * s, z0 + uz * lunge * s, dt);
-      p.heading = h0 + wrap(h1 - h0) * smooth(Math.min(1, a.t / T.contact));
-      p.moveHeading = h1;
+      const left = Math.max(0, T.contact - a.t);
+      const ax = b.pos.x + b.vel.x * left - p.pos.x, az = b.pos.z + b.vel.z * left - p.pos.z, al = Math.hypot(ax, az) || 1;
+      let nx = p.pos.x, nz = p.pos.z;
+      if (a.t >= T.lungeFrom && a.t <= T.contact && al > T.contactDist) {
+        const stepLen = Math.min(al - T.contactDist, pace * dt);
+        nx += ax / al * stepLen; nz += az / al * stepLen;
+        const ox = nx - x0, oz = nz - z0, ol = Math.hypot(ox, oz);
+        if (ol > range) { nx = x0 + ox / ol * range; nz = z0 + oz / ol * range; }
+      }
+      p.moveTo(nx, nz, dt);
+      if (a.t <= T.contact) p.heading = h0 + wrap(headingOf(ax, az) - h0) * smooth(Math.min(1, a.t / T.contact));
+      p.moveHeading = p.heading;
     },
-    events: [{ at: T.contact, fn: () => resolveTackle(m, p) }]
+    events: [{ at: T.contact, fn: () => resolveTackle(m, p, manual) }]
   };
   return true;
 }
 
-function resolveTackle(m, p) {
-  const T = TACKLE, b = m.ball;
-  // il piede arriva solo fin dove arriva la gamba tesa
-  if (!b.live || b.pos.y > 0.8 || Math.hypot(b.pos.x - p.pos.x, b.pos.z - p.pos.z) > T.legReach) return;
-  const owner = m.owner;
+// Al contatto del piede: palla recuperata, portatore che salta l'uomo o
+// fallo (duel). Se la gamba non ci arriva il difensore resta sbilanciato.
+function resolveTackle(m, p, manual) {
+  const T = TACKLE, b = m.ball, owner = m.owner;
   if (owner && owner.team === p.team) return;
+  const reach = b.live && b.pos.y <= 0.8 && Math.hypot(b.pos.x - p.pos.x, b.pos.z - p.pos.z) <= T.legReach;
+  if (!reach) {
+    if (owner || m.poss.flying) stagger(p, DUEL.stagger.miss, manual);
+    m.lastDuel = { def: p, result: 'vuoto', dist: Math.hypot(b.pos.x - p.pos.x, b.pos.z - p.pos.z) };
+    return;
+  }
   if (owner) {
-    const shield = owner.action && owner.action.feint ? FEINT.shield : 1;
-    const chance = p.params.tackle * (1 - T.dribbleResist * driUnit(owner)) * shield;
-    if (Math.random() > chance) return;
-    m.kickLock = { p: owner, t: T.lock };
-    if (Math.random() < T.keep) { m.gain(p, 'contrasto'); return; }
-    b.kick(p.dirX * T.poke + gauss() * 1.2, 0, p.dirZ * T.poke + gauss() * 1.2);
-    m.poss.loose('contrasto', p);
+    if (owner.holding) return;
+    const result = duel(m, p, owner, manual);
+    m.lastDuel = { def: p, car: owner, result };
+    if (result === 'won') {
+      m.kickLock = { p: owner, t: T.lock };
+      if (Math.random() < T.keep) { m.gain(p, 'contrasto'); return; }
+      b.kick(p.dirX * T.poke + gauss() * 1.2, 0, p.dirZ * T.poke + gauss() * 1.2);
+      m.poss.loose('contrasto', p);
+    } else if (result === 'foul') {
+      m.foul(p, owner, { kind: manual ? 'contrasto' : 'pressing' });
+    } else {
+      stagger(p, DUEL.stagger.beaten, manual);
+      beat(m, owner, p);
+    }
     return;
   }
   if (!m.poss.owned) m.gain(p, m.poss.flying && m.poss.team !== p.team ? 'intercetto' : 'controllo');
