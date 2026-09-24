@@ -210,6 +210,15 @@ export class Ball {
     this._rules();
   }
 
+  // Palla in mano (portiere, rimessa laterale): niente fisica ne' regole.
+  // Il disegno la mette poi fra le mani vere (main.placeHeldBall).
+  hold(x, y, z) {
+    this.prev.copy(this.pos);
+    this.pos.set(x, y, z);
+    this.vel.set(0, 0, 0);
+    this.spin = 0;
+  }
+
   step(dt) {
     const p = this.pos, v = this.vel;
     this.prev.copy(p);

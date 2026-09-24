@@ -101,6 +101,7 @@ def measure(arm, action):
     rt, rv = speed_peak("rf")
     lt, lv = speed_peak("lf")
     out["foot"] = {"right": [rt, rv], "left": [lt, lv]}
+    out["head"] = list(speed_peak("head"))
     hk = max(range(len(frames)), key=lambda i: frames[i]["head"].z)
     out["headTop"] = [r3(hk / fps), r3(frames[hk]["head"].z - ground)]
     lk = min(range(len(frames)), key=lambda i: frames[i]["hips"].z)

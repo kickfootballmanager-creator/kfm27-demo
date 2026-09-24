@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { PLAYER, PITCH, GOAL, PRACTICE, PASS, SHOT, ATTR, KIT, THROUGH, CROSS } from './config.js';
+import { PLAYER, PITCH, GOAL, PASS, SHOT, ATTR, THROUGH, CROSS, FORMATIONS, FORMATION_ROLES } from './config.js';
 import { playerParams } from './attributes.js';
 import { Avatar } from './avatar.js';
 
@@ -173,37 +173,47 @@ function hasRole(p, roles) {
   return own.some((r) => roles.includes(r));
 }
 
-// Sceglie dalla rosa i giocatori per le posizioni di PRACTICE, portieri esclusi.
-// Senza rosa (avversario sconosciuto) si usano sagome con il numero del ruolo.
-export function buildSquad(team, kit, attackDir, tpl, material, shadowTex) {
-  const pool = ((team && team.players) || []).filter((p) => p && !hasRole(p, ['POR']));
+// Le posizioni del modulo: `team.slots` dal manager (allineati ai giocatori),
+// altrimenti la tabella FORMATIONS; senza modulo noto, 4-3-3.
+export function formationSlots(team) {
+  if (team && Array.isArray(team.slots) && team.slots.length === 11) {
+    return team.slots.map((s) => ({ role: String(s.role || '').toUpperCase(), x: +s.x, y: +s.y }));
+  }
+  const name = team && FORMATIONS[team.formation] ? team.formation : '4-3-3';
+  return FORMATIONS[name].map(([x, y], i) => ({ role: FORMATION_ROLES[name][i], x, y }));
+}
+
+// Undici giocatori nell'ordine del modulo. Con `slots` il manager ha gia'
+// messo ogni titolare al suo posto; senza, si abbina per ruolo. Chi manca
+// diventa una sagoma con il numero del posto.
+export function buildTeam(team, side, attackDir, tpl, material, keeperMaterial, shadowTex, kit, keeperKit) {
+  const slots = formationSlots(team);
+  const aligned = team && Array.isArray(team.slots) && team.slots.length === 11;
+  // allineati: un posto vuoto resta vuoto, non fa scalare gli altri
+  const given = aligned ? (team.players || []) : ((team && team.players) || []).filter(Boolean);
   const used = new Set();
-  const take = (roles) => {
-    let p = pool.find((q) => !used.has(q) && hasRole(q, roles));
-    if (!p) p = pool.find((q) => !used.has(q));
+  const take = (i, role) => {
+    if (aligned) { const p = given[i]; if (p) used.add(p); return p; }
+    let p = given.find((q) => !used.has(q) && hasRole(q, [role]));
+    if (!p && role !== 'POR') p = given.find((q) => !used.has(q) && !hasRole(q, ['POR']));
+    if (!p) p = given.find((q) => !used.has(q));
     if (p) used.add(p);
     return p;
   };
-  const players = [];
-  let kickoff = 0;
-  for (const slot of PRACTICE.slots) {
-    const src = take(slot.roles);
+  const players = slots.map((slot, i) => {
+    const src = take(i, slot.role);
+    const keeper = i === 0;
     const data = src
-      ? { ...src, number: src.number || slot.number }
-      : { id: null, name: '', number: slot.number, role: slot.roles[0], overall: ATTR.fallback };
-    const pl = new Player(data, kit || KIT.home, tpl, material, shadowTex, attackDir);
+      ? { ...src, number: src.number || i + 1, role: src.role || slot.role }
+      : { id: null, name: '', number: i + 1, role: slot.role, overall: ATTR.fallback };
+    const pl = new Player(data, keeper ? keeperKit : kit, tpl, keeper ? keeperMaterial : material, shadowTex, attackDir);
+    pl.team = side;
     pl.slot = slot;
-    if (slot.kickoff) kickoff = players.length;
-    players.push(pl);
-  }
-  return { players, kickoff };
-}
-
-export function kickoffPlacement(squad) {
-  for (const pl of squad.players) {
-    const d = pl.attackDir;
-    pl.place(pl.slot.x * d, pl.slot.z * d, headingOf(d, 0));
-  }
+    pl.keeper = keeper;
+    pl.index = i;
+    return pl;
+  });
+  return players;
 }
 
 // Passaggio assistito: il compagno nel cono della direzione con il

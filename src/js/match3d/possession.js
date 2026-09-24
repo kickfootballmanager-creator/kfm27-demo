@@ -22,6 +22,7 @@ export class Possession {
     this.from = null;      // chi l'ha calciata o persa per ultimo
     this.team = null;      // squadra dell'ultimo tocco
     this.age = 0;          // secondi nello stato attuale
+    this.seq = 0;          // numero di cambi di stato: identifica un pallone in volo
     this.log = [];
     this.clock = 0;
   }
@@ -35,6 +36,7 @@ export class Possession {
     if (fields.from !== undefined) this.from = fields.from;
     if (fields.team !== undefined && fields.team !== null) this.team = fields.team;
     this.age = 0;
+    this.seq++;
     this.log.push({ t: this.clock, from: prev, to: this.describe(), cause });
     if (this.log.length > LOG_MAX) this.log.shift();
   }

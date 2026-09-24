@@ -203,20 +203,143 @@ export const ATTR = {
   tackle: [0.25, 0.8]
 };
 
-// Fase 2: il giocatore controllato e tre compagni fermi, porta vuota.
-// Coordinate relative al verso d'attacco: x avanti, z a destra.
-export const PRACTICE = {
-  slots: [
-    { x: 30, z: 4, roles: ['ATT', 'SP', 'COC'], number: 9 },
-    { x: 12, z: 16, roles: ['AD', 'ED', 'TD'], number: 7 },
-    { x: 20, z: -18, roles: ['AS', 'ES', 'TS'], number: 11 },
-    { x: -0.9, z: 0, roles: ['CC', 'COC', 'CDC'], number: 8, kickoff: true }
-  ]
+// Moduli del manager (007-fm-oh3.js): x 0-100 da sinistra a destra guardando
+// la porta avversaria, y 0-100 dalla porta avversaria alla propria. Servono
+// quando la squadra arriva senza `slots` (partita di prova).
+export const FORMATIONS = {
+  '4-3-3': [[50, 88], [18, 67], [38, 73], [62, 73], [82, 67], [30, 48], [50, 58], [70, 48], [22, 24], [50, 15], [78, 24]],
+  '4-2-3-1': [[50, 88], [16, 67], [38, 73], [62, 73], [84, 67], [37, 56], [63, 56], [50, 37], [19, 30], [50, 14], [81, 30]],
+  '4-4-2': [[50, 88], [16, 67], [38, 73], [62, 73], [84, 67], [16, 46], [40, 50], [60, 50], [84, 46], [40, 17], [60, 17]],
+  '3-5-2': [[50, 88], [30, 74], [50, 77], [70, 74], [11, 50], [35, 54], [50, 60], [65, 54], [89, 50], [40, 16], [60, 16]],
+  '4-1-4-1': [[50, 88], [16, 67], [38, 73], [62, 73], [84, 67], [50, 59], [16, 41], [38, 46], [62, 46], [84, 41], [50, 15]],
+  '5-3-2': [[50, 89], [10, 60], [30, 74], [50, 77], [70, 74], [90, 60], [32, 50], [50, 55], [68, 50], [40, 18], [60, 18]]
+};
+export const FORMATION_ROLES = {
+  '4-3-3': ['POR', 'TS', 'DC', 'DC', 'TD', 'CC', 'CDC', 'CC', 'AS', 'ATT', 'AD'],
+  '4-2-3-1': ['POR', 'TS', 'DC', 'DC', 'TD', 'CDC', 'CDC', 'COC', 'AS', 'ATT', 'AD'],
+  '4-4-2': ['POR', 'TS', 'DC', 'DC', 'TD', 'ES', 'CC', 'CC', 'ED', 'ATT', 'ATT'],
+  '3-5-2': ['POR', 'DC', 'DC', 'DC', 'ES', 'CC', 'CDC', 'CC', 'ED', 'ATT', 'ATT'],
+  '4-1-4-1': ['POR', 'TS', 'DC', 'DC', 'TD', 'CDC', 'AS', 'CC', 'CC', 'AD', 'ATT'],
+  '5-3-2': ['POR', 'ES', 'DC', 'DC', 'DC', 'ED', 'CC', 'CDC', 'CC', 'ATT', 'ATT']
+};
+
+// Posizioni di squadra: il modulo diventa un blocco che sale, scende e si
+// stringe verso la palla. L = linea difensiva (metri, verso d'attacco),
+// len = distanza fra difesa e punte, width = mezza larghezza occupata.
+export const SHAPE = {
+  defY: 73,               // y del modulo che sta sulla linea difensiva
+  attY: 15,               // y del modulo che sta sulla linea delle punte
+  attack: { lineOffset: -26, lineMin: -40, lineMax: 6, len: 38, width: 30, ballZ: 0.15 },
+  defend: { lineScale: 0.55, lineOffset: -14, lineMin: -45, lineMax: -4, len: 26, width: 22, ballZ: 0.4 },
+  kickoff: { line: -24, len: 21, width: 28 },
+  maxZ: 31                // nessuna posizione oltre questa distanza dal centro in larghezza
+};
+
+// Intelligenza artificiale. `difficulty` (0..1) scala reazione, precisione e aggressivita'
+// della squadra avversaria; i compagni dell'utente giocano sempre a AI.mateDifficulty.
+export const AI = {
+  hz: 10,                 // decisioni al secondo
+  mateDifficulty: 0.5,
+  arrive: 1.2,            // entro questa distanza la posizione e' raggiunta
+  sprintDist: 9,          // oltre questa distanza dalla posizione si scatta
+  space: { samples: 8, radius: 6, wOpp: 1.4, wLane: 1.2, wHome: 0.08 },
+  run: { every: [2.5, 5], depth: 12, max: 2 },        // inserimenti: ogni quanto, quanto oltre, quanti insieme
+  press: { max: 1, maxOwnThird: 2, contain: 1.4, delay: [0.45, 0.12] },   // delay: [difficulty 0, 1]
+  mark: { radius: 14, goalSide: 1.8 },
+  back: { dist: 16 },     // rientro: oltre questa distanza dalla posizione si corre indietro
+  carrier: {
+    think: [0.7, 0.3],    // secondi fra due decisioni del portatore [difficulty 0, 1]
+    shootDist: 25,
+    shootMinOpen: 0.25,
+    passProgress: 0.05,   // peso dell'avanzamento per metro
+    laneSafe: 2.2,        // un avversario piu' vicino di cosi' alla linea di passaggio la rende rischiosa
+    pressedAt: 3,         // un avversario entro questa distanza mette pressione
+    feintChance: 0.25,
+    crossChance: 0.7,
+    error: [1.6, 0.8]     // moltiplicatore dell'errore di passaggio e tiro [difficulty 0, 1]
+  },
+  tackleRate: [0.9, 2.4], // tentativi di contrasto al secondo a contatto [difficulty 0, 1]
+  slideChance: [0.08, 0.2],
+  intercept: { base: 0.3, def: 0.5, speed: 0.012 }    // probabilita' d'intercetto: base + def*attr - speed*v
+};
+
+// Contrasto in piedi (tackle): affondo breve, la palla parte al contatto.
+export const TACKLE = {
+  clip: 'tackle', from: 0.1, contact: 0.45, until: 0.7, rate: 1.25,
+  reach: 1.35,            // dal piede di chi entra alla palla
+  foot: 0.7,              // il piede e' a questa distanza davanti al giocatore
+  poke: 4.5,              // m/s della palla tolta
+  keep: 0.45,             // probabilita' di tenerla invece di allontanarla
+  dribbleResist: 0.35,    // quanto il dribbling di chi ha palla riduce la riuscita
+  lock: 0.35              // chi l'ha appena persa non la riprende subito
+};
+
+// Scivolata: ci si butta nella direzione scelta seguendo la radice della clip.
+export const SLIDE = {
+  clip: 'slide_tackle', from: 0.05, window: [0.15, 0.85], rate: 1,
+  foot: 0.95, reach: 0.85, body: 0.9,
+  success: 0.85,          // a contatto con la palla, moltiplicato per la difesa
+  knock: 7,               // m/s della palla colpita
+  momentum: [0.8, 5, 2.2], // allungo = clamp(a + velocita' / b, 1, c)
+  lead: 0.45              // senza joystick si mira dove sara' la palla fra tanti secondi
+};
+
+// Chi subisce una scivolata: cade (tripped), resta a terra (down_idle), si rialza.
+export const DOWN = {
+  fallTravel: 0.6,        // frazione dello spostamento della clip tripped
+  groundTime: 0.9,
+  getUp: { clip: 'tackle', from: 1.4, to: 2.27 }       // la parte finale del contrasto e' un rialzo da terra
+};
+
+// Palloni alti: colpo di testa, rovesciata, al volo.
+export const AERIAL = {
+  headMin: 1.25, headMax: 2.7,
+  jumpAbove: 1.95,        // oltre questa altezza si stacca da terra (header_jump)
+  reach: 1.1,             // distanza orizzontale palla-giocatore al contatto
+  header: { clip: 'header', from: 0.55, contact: 0.92, end: 1.5 },
+  jump: { clip: 'header_jump', from: 0.75, contact: 1.133, end: 1.75 },
+  bicycle: { clip: 'bicycle_kick', from: 0.35, contact: 0.75, end: 2.4, min: 0.9, max: 2.2, goalDist: 18, backAngle: 1.9 },
+  shotSpeed: [15, 21],    // colpo di testa verso la porta
+  passSpeed: 11,
+  clearSpeed: 17,
+  bicycleSpeed: [22, 28],
+  error: 0.12
+};
+
+// Portieri.
+export const KEEPER = {
+  depth: [1.2, 6],        // distanza dalla linea: palla lontana, palla vicina
+  depthRange: [45, 12],   // distanza della palla a cui si passa da un valore all'altro
+  maxZ: 3.2,              // non si sposta oltre questa distanza dal centro della porta
+  react: [0.28, 0.12],    // secondi di reazione a un tiro [difficulty 0, 1]
+  reach: [2.6, 3.6],      // portata laterale del tuffo [attributo basso, alto]
+  save: [0.62, 0.9],      // probabilita' di arrivarci se e' in portata [difficulty 0, 1]
+  catchSpeed: 24,         // sotto questa velocita' blocca, sopra respinge
+  parry: 0.45,            // frazione della velocita' dopo la respinta
+  claimDist: 7,           // cross che cade entro questa distanza dalla porta: esce
+  rushDist: 16,           // palla libera entro questa distanza: esce a prenderla
+  holdTime: 1.4,          // secondi con la palla in mano prima del rinvio
+  throwMax: 28,           // compagno libero entro questa distanza: rimessa con le mani
+  // clip: contatto (secondi della clip), fine, spostamento laterale della radice alla parata
+  clips: {
+    catch: { clip: 'gk_catch', from: 0.1, contact: 0.43, end: 1.1 },
+    high: { clip: 'gk_catch_high', from: 0.45, contact: 0.83, end: 2.2 },
+    block: { clip: 'gk_block_', from: 0.45, contact: 0.95, end: 2.8 },
+    dive: { clip: 'gk_dive_', from: 0.55, contact: 1.15, end: 2.9 },
+    scoop: { clip: 'gk_scoop_', from: 0.45, contact: 0.85, end: 2.0 },
+    claim: { clip: 'gk_catch_run_', from: 1.0, contact: 1.567, end: 2.5 },
+    throw: { clip: 'gk_throw', from: 0.9, contact: 1.617, end: 2.6 },
+    dropkick: { clip: 'gk_dropkick', from: 1.2, contact: 2.083, end: 3.1 },
+    concede: { clip: 'gk_concede', from: 0, end: 2.9 }
+  }
 };
 
 export const KIT = {
   home: { primary: '#e8ecf0', secondary: null, shorts: '#1b2230', pattern: 'solid' },
-  away: { primary: '#1d4f9c', secondary: null, shorts: '#f2f4f5', pattern: 'solid' }
+  away: { primary: '#1d4f9c', secondary: null, shorts: '#f2f4f5', pattern: 'solid' },
+  // portieri: colori che non si confondono con nessuna divisa di movimento
+  keeperHome: { primary: '#2e9e5b', secondary: null, shorts: '#1b2230', socks: '#2e9e5b', pattern: 'solid' },
+  keeperAway: { primary: '#e0b52a', secondary: null, shorts: '#1b2230', socks: '#e0b52a', pattern: 'solid' }
 };
 
 // player.glb: altezza reale, poi scalata da PLAYER.visualScale.

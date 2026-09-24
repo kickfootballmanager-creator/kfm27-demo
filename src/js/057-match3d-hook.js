@@ -28,26 +28,46 @@ function giocatore(p, i, ruolo){
   };
 }
 
-function squadraUtente(st){
+/* Posti del modulo {role, x, y}: gli stessi che usa la partita in tempo reale. */
+function posti(lista){
+  return (lista || []).slice(0, 11).map(function(s){ return { role: s.role, x: s.x, y: s.y }; });
+}
+function postiBase(){ return (typeof FORMATION_SLOTS !== 'undefined') ? FORMATION_SLOTS : null; }
+
+/* I titolari restano al loro posto nel modulo (xi[i] gioca nello slot i),
+   con gli squalificati sostituiti come in playMatchRealtime. */
+function squadraUtente(st, match){
+  var layout = (window.FM_FORMATIONS2 && st.formationName && window.FM_FORMATIONS2[st.formationName]) || postiBase();
   var xi = (st.draft && st.draft.xi) ? st.draft.xi : [];
+  var susp = {};
+  try {
+    var bucket = (typeof _compBucket === 'function') ? _compBucket(match.type) : 'SA';
+    susp = (st.susp && st.susp[bucket]) || {};
+  } catch (e) { susp = {}; }
   var out = [];
-  for (var i = 0; i < xi.length && out.length < 11; i++) if (xi[i] && xi[i].name) out.push(giocatore(xi[i], i));
+  for (var i = 0; i < 11; i++) {
+    var slot = layout ? layout[i] : null, p = xi[i] || null;
+    if (p && p.name && susp[p.name] && typeof _pickReserve === 'function' && slot) { var rep = _pickReserve(slot.role, xi); if (rep) p = rep; }
+    out.push(p && p.name ? giocatore(p, i, slot && slot.role) : null);
+  }
   return { id: st.teamName, name: st.teamName, colors: null, crest: st.userLogo || null,
-    formation: st.formationName || '4-3-3', players: out };
+    formation: st.formationName || '4-3-3', slots: layout ? posti(layout) : null, players: out };
 }
 
+/* L'avversario schiera il miglior undici sul modulo base del manager. */
 function squadraAvversaria(match){
   var nome = match.name, od = null;
   try {
     od = (typeof euroClubData === 'function' ? euroClubData(nome) : null) ||
       ((typeof EADB !== 'undefined' && EADB[nome] && typeof buildClub === 'function') ? buildClub(nome) : null);
   } catch (e) { od = null; }
-  var out = [];
+  var layout = postiBase(), out = [];
   if (od && od.r && od.r.length) {
     var xi = (typeof pickBestXI === 'function') ? pickBestXI(od.r).xi : od.r.slice(0, 11);
-    for (var j = 0; j < xi.length && out.length < 11; j++) if (xi[j] && xi[j].name) out.push(giocatore(xi[j], j));
+    for (var j = 0; j < 11; j++) out.push(xi[j] && xi[j].name ? giocatore(xi[j], j, layout && layout[j] && layout[j].role) : null);
   }
-  return { id: nome, name: nome, colors: null, crest: match.logo || null, formation: '4-3-3', players: out };
+  return { id: nome, name: nome, colors: null, crest: match.logo || null, formation: '4-3-3',
+    slots: layout ? posti(layout) : null, players: out };
 }
 
 /* Le stesse maglie della partita in tempo reale: la squadra in trasferta
@@ -75,7 +95,7 @@ window.playMatch3D = function(){
   var match = st.calendar[st.currentWeek]; if (!match) return;
   if (!giocabile(st, match)) { window.runSim(); return; }
 
-  var utente = squadraUtente(st), avv = squadraAvversaria(match);
+  var utente = squadraUtente(st, match), avv = squadraAvversaria(match);
   if (match.home) vesti(utente, avv); else vesti(avv, utente);
   avvio = true;
   window.kfmLoadMatch3d()
