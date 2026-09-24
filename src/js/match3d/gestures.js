@@ -1,4 +1,4 @@
-import { TACKLE, SLIDE, DOWN, AERIAL, KEEPER, PITCH, GOAL, CONTROL, ATTR, MOVES, DUEL } from './config.js';
+import { TACKLE, SLIDE, DOWN, AERIAL, KEEPER, PITCH, GOAL, CONTROL, ATTR, MOVES, DUEL, FOUL } from './config.js';
 import { rootAt, clipDuration } from './avatar.js';
 import { headingOf } from './player.js';
 import { StandTackle, KeeperReach } from './moves.js';
@@ -82,7 +82,7 @@ function resolveTackle(m, p, manual) {
       b.kick(p.dirX * T.poke + gauss() * 1.2, 0, p.dirZ * T.poke + gauss() * 1.2);
       m.poss.loose('contrasto', p);
     } else if (result === 'foul') {
-      m.foul(p, owner, { kind: manual ? 'contrasto' : 'pressing' });
+      m.foul(p, owner, { kind: manual ? 'contrasto' : 'pressing', ballFirst: false });
     } else {
       stagger(p, DUEL.stagger.beaten, manual);
       beat(m, owner, p);
@@ -130,6 +130,10 @@ export function startSlide(m, p, dx, dz) {
             m.poss.loose('scivolata', p);
           }
           trip(m, o);
+          // fallo se l'uomo e' preso senza la palla, o da dietro anche dopo averla toccata
+          const ox = p.pos.x - o.pos.x, oz = p.pos.z - o.pos.z, ol = Math.hypot(ox, oz) || 1;
+          const behind = (ox * o.dirX + oz * o.dirZ) / ol < -0.3;
+          if (!a.hit || behind) m.foul(p, o, { kind: 'scivolata', ballFirst: !!a.hit });
         }
       }
     }
@@ -151,6 +155,17 @@ export function trip(m, o) {
       o.action = { clip: 'down_idle', t: 0, rate: 1, end: DOWN.groundTime, onEnd: () => getUp(m, o) };
     }
   });
+}
+
+// Chi subisce un fallo in un contrasto in piedi: la clip tackle e' proprio una
+// caduta dopo un fallo, con il rialzo alla fine.
+export function standFall(m, o) {
+  if (o.down) return;
+  const F = FOUL.standFall;
+  o.down = true;
+  if (m.ctrl === o) m.buffer = null;
+  o.avatar.playOnce(F.clip, F.from, F.end - F.from);
+  o.action = rootAction(m, o, F.clip, F.from, F.end, 1, { scaleA: F.travel, scaleS: F.travel, onEnd: () => { o.down = false; } });
 }
 
 function getUp(m, o) {
@@ -195,7 +210,9 @@ function startAerial(m, p, C, intent, bicycle, s) {
 
 function resolveAerial(m, p, intent, bicycle) {
   const b = m.ball, A = AERIAL;
-  if (!b.live || m.poss.owned) return;
+  if (!b.live || m.poss.owned || m.phase !== 'play') return;
+  // di testa su un pallone giocato quando era in fuorigioco
+  if (m.checkOffside(p)) return;
   const lo = bicycle ? A.bicycle.min - 0.4 : A.headMin - 0.3, hi = bicycle ? A.bicycle.max + 0.4 : A.headMax + 0.3;
   if (Math.hypot(b.pos.x - p.pos.x, b.pos.z - p.pos.z) > A.reach * 1.4 || b.pos.y < lo || b.pos.y > hi) return;
   const d = m.dirOf(p.team);

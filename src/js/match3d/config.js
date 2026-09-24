@@ -259,9 +259,10 @@ export const AI = {
   arrive: 1.2,            // entro questa distanza la posizione e' raggiunta
   sprintDist: 9,          // oltre questa distanza dalla posizione si scatta
   space: { samples: 8, radius: 6, wOpp: 1.4, wLane: 1.2, wHome: 0.08 },
-  run: { every: [2.5, 5], depth: 12, max: 2 },        // inserimenti: ogni quanto, quanto oltre, quanti insieme
+  run: { every: [2.5, 5], depth: 12, max: 2, onside: 0.8 },  // inserimenti: ogni quanto, quanto oltre, quanti insieme; onside: m prima della linea del fuorigioco
   press: { max: 1, maxOwnThird: 2, contain: 1.4, tight: 0.85, delay: [0.45, 0.12] },   // delay: [difficulty 0, 1]; tight: m dalla palla quando stringe
   mark: { radius: 14, goalSide: 1.8 },
+  wall: { maxDist: 32, size: [2, 5], gap: 0.62, postAim: 1.6 },  // barriera: da 2 a 5 uomini, piu' vicini alla porta piu' sono
   back: { dist: 16 },     // rientro: oltre questa distanza dalla posizione si corre indietro
   carrier: {
     think: [0.7, 0.3],    // secondi fra due decisioni del portatore [difficulty 0, 1]
@@ -393,6 +394,7 @@ export const KEEPER = {
   depthRange: [45, 12],   // distanza della palla a cui si passa da un valore all'altro
   maxZ: 3.2,              // non si sposta oltre questa distanza dal centro della porta
   react: [0.28, 0.12],    // secondi di reazione a un tiro [difficulty 0, 1]
+  penaltyReact: 0.04,     // sul rigore il lato e' gia' scelto: parte subito
   aim: [0.3, 0.06],       // errore (m) sul punto d'intercetto previsto [attributo basso, alto]
   claimDist: 7,           // cross che cade entro questa distanza dalla porta: esce
   rushDist: 16,           // palla libera entro questa distanza: esce a prenderla
@@ -465,7 +467,8 @@ export const KIT = {
   away: { primary: '#1d4f9c', secondary: null, shorts: '#f2f4f5', pattern: 'solid' },
   // portieri: colori che non si confondono con nessuna divisa di movimento
   keeperHome: { primary: '#2e9e5b', secondary: null, shorts: '#1b2230', socks: '#2e9e5b', pattern: 'solid' },
-  keeperAway: { primary: '#e0b52a', secondary: null, shorts: '#1b2230', socks: '#e0b52a', pattern: 'solid' }
+  keeperAway: { primary: '#e0b52a', secondary: null, shorts: '#1b2230', socks: '#e0b52a', pattern: 'solid' },
+  referee: { primary: '#15171b', secondary: null, shorts: '#15171b', socks: '#15171b', pattern: 'solid' }
 };
 
 // player.glb: altezza reale, poi scalata da PLAYER.visualScale.
@@ -545,9 +548,9 @@ export const CAMERA = {
 
 // Regole e tempi della partita. Falli, fuorigioco e rigori non ci sono ancora.
 export const RULES = {
-  fouls: false,
-  offside: false,
-  penalties: false,
+  fouls: true,
+  offside: true,
+  penalties: true,
   durationMinutes: 6,     // minuti reali per 90' di gioco
   shotGrace: 3,           // a tempo scaduto si aspetta la fine di un tiro in volo, al massimo cosi'
   outPause: 0.9,          // palla fuori: attesa prima di sistemare la ripresa
@@ -565,7 +568,62 @@ export const RULES = {
   // rilascio) riporta il battitore sulla linea.
   throwIn: { clip: 'throw_in', from: 0, release: 1.55, end: 2.3, rate: 1.25, outside: 2.3, shortApex: 0.9, longApex: 3.2, shortMax: 16, longMax: 30 },
   goalKick: { x: 5.5, z: 5 },  // metri dalla linea di porta, dal centro della porta
-  cornerInset: 0.4
+  cornerInset: 0.4,
+  foulPause: 2.4,         // fischio del fallo: caduta, cartellino, poi la punizione
+  freeKickShoot: 30,      // punizione diretta: l'IA tira in porta entro tanti metri
+  // Rigore (clip penalty): contatto a 0,717 s con la radice 1,70 m avanti;
+  // il tiratore parte 2,05 m dietro la palla. Come in PES la levetta sceglie
+  // il lato e la potenza l'altezza: oltre overPower la palla va alta.
+  penalty: {
+    clip: 'penalty', from: 0, contact: 0.717, end: 1.3, back: 2.05,
+    speed: 18, postMargin: 0.7, height: [0.3, 1.9], overPower: 0.9, overHeight: 1.8,
+    error: 0.5,           // frazione dell'errore di mira del tiro normale
+    guess: [0.33, 0.55],  // portiere IA: probabilita' di indovinare il lato [difficolta' 0, 1]
+    edge: 18.5            // gli altri giocatori fuori dall'area, a tanti metri dalla linea di porta
+  }
+};
+
+// Falli: gravita' dall'intervento, cartellino oltre le soglie.
+export const FOUL = {
+  base: { pressing: 0.15, contrasto: 0.3, scivolata: 0.5 },
+  back: 0.35,             // intervento da dietro
+  side: 0.1,
+  speed: 0.04,            // per m/s di chi entra
+  ballFirst: -0.35,       // prima la palla, poi l'uomo
+  noBall: 0.15,           // l'uomo e basta
+  noise: 0.25,
+  yellow: 0.6,
+  red: 1.15,
+  dogsoDist: 26,          // chiara occasione da gol: vittima entro tanti metri dalla porta avversaria
+  // Chi subisce il fallo: contrasto in piedi -> la clip tackle (caduta dopo
+  // un fallo, con rialzo); scivolata -> tripped, down_idle e rialzo.
+  standFall: { clip: 'tackle', from: 0, end: 2.27, travel: 0.4 }
+};
+
+// Regola del vantaggio: l'arbitro aspetta `decide` secondi; se la squadra che
+// ha subito il fallo tiene palla in una zona utile si gioca, e se la perde
+// entro `window` si torna al fallo. Il cartellino arriva alla prima interruzione.
+export const ADVANTAGE = { decide: 0.45, window: 2.5, attackMin: -12 };
+
+// Fuorigioco al momento del passaggio: oltre il penultimo difensore, oltre la
+// palla, nella meta' avversaria. Tolleranza per i casi al limite.
+export const OFFSIDE = { margin: 0.3 };
+
+// Arbitro in campo: segue l'azione di lato e un po' dietro, rivolto alla palla.
+export const REFEREE = {
+  behind: 6,              // metri dietro la palla, rispetto a chi attacca
+  side: 9,                // metri di lato (dalla parte lontana dalla telecamera se c'e' spazio)
+  minDist: 6,             // mai piu' vicino di cosi' alla palla
+  sprintDist: 6,
+  armLen: 0.62,           // dalla spalla al palmo, braccio teso
+  signal: { rise: 0.2, hold: 1.4, fall: 0.3 },   // secondi del gesto
+  cardSize: [0.075, 0.105],
+  attrs: { pac: 72, sho: 50, pas: 50, dri: 50, def: 50, phy: 70 }
+};
+
+// Fischietto sintetizzato con WebAudio: due toni con trillo.
+export const SOUND = {
+  whistle: { f1: 2950, f2: 3180, trill: 28, depth: 110, gain: 0.12, short: 0.32, long: 0.9, gap: 0.15 }
 };
 
 export const RENDER = {

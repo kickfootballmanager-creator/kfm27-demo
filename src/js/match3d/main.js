@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { PHYSICS, RENDER, RULES, PLAYER, CONTROL, DRIBBLE, SHOT, PASS, KIT, RECEIVE, FIRST_TOUCH, ANIM, POWER, FEINT, AI, AERIAL, SHAPE, PITCH, SLIDE, BALL, DUEL } from './config.js';
+import { PHYSICS, RENDER, RULES, PLAYER, CONTROL, DRIBBLE, SHOT, PASS, KIT, RECEIVE, FIRST_TOUCH, ANIM, POWER, FEINT, AI, AERIAL, SHAPE, PITCH, SLIDE, BALL, DUEL, OFFSIDE } from './config.js';
 import { buildPitch } from './pitch.js';
 import { Ball, shadowTexture } from './ball.js';
 import { BroadcastCamera } from './camera.js';
@@ -14,6 +14,8 @@ import { KeeperAI, HELD_Y } from './keeper.js';
 import { startTackle, startSlide, tryAerial, startKeeperGesture } from './gestures.js';
 import { Rules } from './rules.js';
 import { userPress, stagger, beat } from './defense.js';
+import { Referee } from './referee.js';
+import { unlockAudio, closeAudio } from './audio.js';
 
 const KICKS = ['pass', 'through', 'cross', 'shot'];
 
@@ -113,6 +115,15 @@ class Match {
     this.charge = 0;
     this.barTimer = 0;
     this.passTarget = null;
+    this.cards = [];           // cartellini: { team, playerId, number, name, type, minute }
+    this.stats = { fouls: { home: 0, away: 0 }, offsides: { home: 0, away: 0 } };
+    this.offside = null;       // compagni in fuorigioco all'ultimo passaggio: { team, players }
+    this.indirect = null;      // punizione indiretta appena battuta: { taker, seq }
+    this.pendingIndirect = null;
+    this.noOffsideSeq = -1;    // pallone da rimessa, angolo o rinvio: niente fuorigioco
+    this.offSeq = -1;
+    this.leaving = [];         // espulsi che escono dal campo
+    this.lastInp = null;
   }
 
   // Chi ha la palla al piede (POSSEDUTA), altrimenti null.
@@ -170,6 +181,11 @@ class Match {
     this.squad = this.teams[this.userSide];
     this.opponents = this.teams[this.userSide === 'home' ? 'away' : 'home'].players;
     this.everyone = [...this.teams.home.players, ...this.teams.away.players];
+    // arbitro: segue l'azione, non tocca la palla, gli altri non lo attraversano
+    this.referee = new Referee(this, tpl, shadow);
+    this.referee.place(0, -12);
+    scene.add(this.referee.shadow, this.referee.mesh, this.referee.card);
+    this.bodies = [...this.everyone, this.referee.p];
     this.ctrlRing = ring(PLAYER.ringInner, PLAYER.ringOuter, 0.9);
     this.targetRing = ring(PLAYER.targetRingInner, PLAYER.targetRingOuter, 0.45);
     scene.add(this.ctrlRing, this.targetRing);
@@ -189,8 +205,12 @@ class Match {
     this.camera.snap(this.ball);
     this.ball.sync(1, 0);
     for (const p of this.everyone) p.sync(1, 0);
+    this.referee.sync(1, 0, this.camera.cam);
 
     this._listen(window, 'resize', () => this.onResize());
+    // audio (fischietto) sbloccato al primo tocco o tasto, come vogliono i browser mobili
+    this._listen(window, 'pointerdown', () => unlockAudio(), true);
+    this._listen(window, 'keydown', () => unlockAudio(), true);
     this._listen(window, 'keydown', (e) => this.onKey(e, true), true);
     this._listen(window, 'keyup', (e) => this.onKey(e, false), true);
     this._listen(document, 'visibilitychange', () => this.onVisibility());
@@ -277,6 +297,8 @@ class Match {
     const alpha = this.paused ? 1 : this.acc / step;
     this.ball.sync(alpha, this.paused ? 0 : dt);
     for (const p of this.everyone) p.sync(alpha, this.paused ? 0 : dt);
+    for (const p of this.leaving) p.sync(alpha, this.paused ? 0 : dt);
+    this.referee.sync(alpha, this.paused ? 0 : dt, this.camera.cam);
     this.placeHeldBall();
     this.syncMarkers(dt);
     this.renderer.render(this.scene, this.camera.cam);
@@ -430,11 +452,68 @@ class Match {
 
   startTackle(p, manual) { return startTackle(this, p, manual); }
 
-  // Fallo di `off` su `victim`. Finche' i falli sono spenti (RULES.fouls) il
-  // contrasto non lo produce mai; l'arbitro arriva con le regole dei falli.
-  foul(off, victim) {
+  // Fallo di `off` su `victim`: lo giudica l'arbitro (rules.foul). Con i
+  // falli spenti, o a gioco fermo, il contrasto finisce come un dribbling riuscito.
+  foul(off, victim, info = {}) {
+    if (this.rules.foul(off, victim, { kind: info.kind || 'contrasto', ballFirst: !!info.ballFirst })) return;
     stagger(off, DUEL.stagger.beaten, true);
-    beat(this, victim, off);
+    if (this.owner === victim) beat(this, victim, off);
+  }
+
+  // Espulso: esce dal campo verso la linea laterale piu' vicina e la squadra
+  // resta in inferiorita'.
+  sendOff(p) {
+    const t = this.teams[p.team];
+    p.sentOff = true;
+    p.action = null;
+    p.avatar.proc = null;
+    p.down = false;
+    if (this.owner === p) this.poss.loose('fischio');
+    for (const list of [t.players, this.everyone, this.bodies]) { const i = list.indexOf(p); if (i >= 0) list.splice(i, 1); }
+    this.leaving.push(p);
+    if (this.ctrl === p) this.setControlled(this.nearestTo(this.squad.players, p.pos.x, p.pos.z));
+  }
+
+  walkOff(dt) {
+    for (const p of this.leaving) {
+      if (!p.mesh.visible) continue;
+      const side = Math.sign(p.pos.z) || 1;
+      p.drive(dt, 0, side, 0.6, {});
+      if (Math.abs(p.pos.z) > PITCH.width / 2 + PITCH.runoff - 1.5) { p.mesh.visible = false; p.shadow.visible = false; }
+    }
+  }
+
+  // Fuorigioco: al momento di ogni passaggio si segnano i compagni di chi
+  // calcia che stanno nella meta' avversaria, oltre la palla e oltre il
+  // penultimo difensore. Non vale su rimessa, angolo e rinvio dal fondo.
+  noteOffside() {
+    const poss = this.poss;
+    if (!poss.flying || poss.seq === this.offSeq) return;
+    this.offSeq = poss.seq;
+    this.offside = null;
+    const k = poss.from;
+    if (!RULES.offside || !k || !k.team || poss.seq === this.noOffsideSeq) return;
+    const A = k.team, d = this.dirOf(A);
+    const defs = this.teams[this.otherSide(A)].players.map((q) => q.pos.x * d).sort((a, c) => c - a);
+    const line = defs.length > 1 ? defs[1] : PITCH.length / 2;
+    const ballA = this.ball.pos.x * d;
+    const set = new Set();
+    for (const q of this.teams[A].players) {
+      if (q === k || q.keeper) continue;
+      const a = q.pos.x * d;
+      if (a > 0 && a > ballA + OFFSIDE.margin && a > line + OFFSIDE.margin) set.add(q);
+    }
+    if (set.size) this.offside = { team: A, players: set };
+  }
+
+  // `p` sta per giocare la palla: se era in fuorigioco al passaggio, fischio.
+  checkOffside(p) {
+    const o = this.offside;
+    if (!o) return false;
+    this.offside = null;
+    if (o.team !== p.team || !o.players.has(p) || this.phase !== 'play') return false;
+    this.rules.offside(p);
+    return true;
   }
   startSlide(p, dx, dz) { startSlide(this, p, dx, dz); }
   startKeeperGesture(k, clip, from, contact, end, rate, o) { startKeeperGesture(this, k, clip, from, contact, end, rate, o); }
@@ -453,6 +532,7 @@ class Match {
   // POSSEDUTA(p): la palla parte da dove si trova, attorno al giocatore.
   gain(p, cause) {
     this.poss.own(p, cause);
+    if (this.offside && this.offside.team !== p.team) this.offside = null;
     p.holding = false;
     p.shield = 0;
     p.holdHand = null;
@@ -480,6 +560,7 @@ class Match {
   tick(dt) {
     const b = this.ball;
     const inp = this.controls.read();
+    this.lastInp = inp;
     const me = this.ctrl;
     if (inp.mag > 0 || inp.any) this.hud.hideHint();
     this.poss.tick(dt);
@@ -515,7 +596,10 @@ class Match {
       else if (p !== me) { this.aerial(p, null); if (!p.action) this.teams[p.team].ai.steer(dt, p); }
       else this.userMove(dt, p, inp, withBall);
     }
-    separate(this.everyone, (p) => p === this.ctrl || p.down || (p.action && p.action.root) || p === this.owner);
+    if (live || setting) this.referee.update(dt);
+    else this.referee.p.drive(dt, 0, 0, 0, { face: { x: b.pos.x - this.referee.p.pos.x, z: b.pos.z - this.referee.p.pos.z } });
+    this.walkOff(dt);
+    separate(this.bodies, (p) => p === this.ctrl || p.down || (p.action && p.action.root) || p === this.owner);
     for (const p of this.everyone) p.confine();
 
     if (live || this.rules.userTaking()) this.actions(dt, inp);
@@ -534,6 +618,7 @@ class Match {
       if (!this.teams.home.keeperAI.touch()) this.teams.away.keeperAI.touch();
       if (!this.owner) this.contacts(inp);
     }
+    this.noteOffside();
     this.autoSwitch();
     this.controls.setMode(this.userAttacking() ? 'attack' : 'defense');
 
@@ -732,6 +817,10 @@ class Match {
       this.poss.fly('tiro', p, null);
     }
     this.lastKick = { kind: a.kind, power: a.power, speed: b.vel.length(), dist: d };
+    // angolo e rinvio dal fondo: niente fuorigioco; punizione indiretta: il gol diretto non vale
+    const set = this.phase !== 'play' && this.rules.set;
+    if (set && (set.type === 'corner' || set.type === 'goalkick')) this.noOffsideSeq = this.poss.seq;
+    if (this.pendingIndirect === p) { this.indirect = { taker: p, seq: this.poss.seq }; this.pendingIndirect = null; }
     this.release(p, CONTROL.kickLock);
     if (a.target && (p === this.ctrl || (p.team === this.userSide && a.target.team === this.userSide))) this.switchTo(a.target);
     if (this.phase !== 'play') this.rules.go('play');
@@ -826,6 +915,7 @@ class Match {
   allPlayers() { return this.everyone; }
 
   receive(p, inp, cause) {
+    if (this.checkOffside(p)) return;
     // Il portiere nella sua area la prende con le mani, ma non su un retropassaggio.
     const hands = p.keeper && this.poss.team !== p.team && Math.abs(p.pos.x + this.dirOf(p.team) * PITCH.length / 2) < PITCH.penaltyDepth && Math.abs(p.pos.z) < PITCH.penaltyWidth / 2;
     this.gain(p, cause);
@@ -863,6 +953,15 @@ class Match {
 
   // side: verso della porta in cui e' entrata la palla. Segna chi attacca da quella parte.
   onGoal(side) {
+    // punizione indiretta finita in porta senza altri tocchi: rinvio dal fondo
+    if (this.indirect && this.indirect.seq === this.poss.seq) {
+      this.indirect = null;
+      this.ball.scored = 0;
+      this.ball.out = true;
+      this.hud.toast('Punizione indiretta: gol non valido');
+      this.rules.out();
+      return;
+    }
     const team = side === this.attackDir ? this.userSide : (this.userSide === 'home' ? 'away' : 'home');
     const home = team === 'home';
     if (home) this.goals.home++; else this.goals.away++;
@@ -901,7 +1000,8 @@ class Match {
     this.controls.destroy();
     this.debug.destroy();
     this.hud.destroy();
-    for (const p of this.everyone) p.avatar.dispose();
+    for (const p of [...this.everyone, ...this.leaving, this.referee.p]) p.avatar.dispose();
+    closeAudio();
     disposeScene(this.scene);
     this.renderer.dispose();
     this.renderer.forceContextLoss();
@@ -911,7 +1011,8 @@ class Match {
       homeGoals: this.goals.home,
       awayGoals: this.goals.away,
       scorers: this.scorers,
-      stats: {}
+      cards: this.cards,
+      stats: { cards: this.cards, fouls: this.stats.fouls, offsides: this.stats.offsides }
     });
   }
 }

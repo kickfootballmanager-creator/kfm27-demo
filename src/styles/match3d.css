@@ -6,6 +6,8 @@
   --m3d-ink:#f2f4f5;
   --m3d-ink-2:rgba(242,244,245,.64);
   --m3d-bg:#0a111c;
+  --m3d-yellow:#f2c230;
+  --m3d-red:#d8323a;
   position:fixed; inset:0; z-index:2147483000;
   background:var(--m3d-bg); color:var(--m3d-ink);
   font-family:Inter,system-ui,sans-serif; font-size:13px;
@@ -37,6 +39,14 @@ html.m3d-test #kfm-intro, html.m3d-test #kfm-esc{display:none!important}
   font-family:Anton,Impact,sans-serif; font-size:22px; line-height:1; font-variant-numeric:tabular-nums;
 }
 .m3d-sep{color:var(--m3d-ink-2)}
+/* Cartellini accanto al nome: il colore e' lo stato (ammonizione, espulsione). */
+.m3d-cards{display:flex; align-items:center; gap:12px}
+.m3d-cards[hidden]{display:none}
+.m3d-card-g{display:flex; align-items:center; gap:8px}
+.m3d-card{display:block; width:8px; height:11px; border-radius:2px}
+.m3d-card.yellow{background:var(--m3d-yellow)}
+.m3d-card.red{background:var(--m3d-red)}
+.m3d-card-n{font-size:11px; line-height:1; font-variant-numeric:tabular-nums; color:var(--m3d-ink-2)}
 .m3d-time{
   display:flex; align-items:baseline; gap:8px; padding-left:12px; border-left:1px solid var(--m3d-line);
   font-variant-numeric:tabular-nums;

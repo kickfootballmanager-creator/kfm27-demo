@@ -20,7 +20,20 @@ function team(t, side) {
     box.appendChild(img);
   }
   box.appendChild(el('span', 'm3d-name', t.name));
+  // cartellini della squadra: si riempie con setCards
+  const cards = el('span', 'm3d-cards');
+  cards.hidden = true;
+  box.appendChild(cards);
+  box._cards = cards;
   return box;
+}
+
+// Un gruppo di cartellini dello stesso colore: il rettangolo e, oltre uno, il numero.
+function cardChip(type, n) {
+  const g = el('span', 'm3d-card-g');
+  g.appendChild(el('span', 'm3d-card ' + type));
+  if (n > 1) g.appendChild(el('span', 'm3d-card-n', String(n)));
+  return g;
 }
 
 export class Hud {
@@ -41,7 +54,9 @@ export class Hud {
     this.halfTag = el('span', 'm3d-half', '1T');
     const clock = el('div', 'm3d-time');
     clock.append(this.clock, this.halfTag);
-    score.append(team(home, 'home'), goals, team(away, 'away'), clock);
+    const homeBox = team(home, 'home'), awayBox = team(away, 'away');
+    this.cardBoxes = { home: homeBox._cards, away: awayBox._cards };
+    score.append(homeBox, goals, awayBox, clock);
 
     const exit = el('button', 'm3d-exit');
     exit.type = 'button';
@@ -134,6 +149,20 @@ export class Hud {
   setScore(h, a) {
     this.hg.textContent = String(h);
     this.ag.textContent = String(a);
+  }
+
+  // Cartellini mostrati finora: gialli e rossi per squadra accanto al nome.
+  setCards(cards) {
+    for (const side of ['home', 'away']) {
+      const box = this.cardBoxes[side];
+      const y = cards.filter((c) => c.team === side && c.type === 'yellow').length;
+      const r = cards.filter((c) => c.team === side && c.type === 'red').length;
+      box.textContent = '';
+      if (y) box.appendChild(cardChip('yellow', y));
+      if (r) box.appendChild(cardChip('red', r));
+      box.hidden = !y && !r;
+      box.setAttribute('aria-label', (y ? y + (y === 1 ? ' ammonizione' : ' ammonizioni') : '') + (y && r ? ', ' : '') + (r ? r + (r === 1 ? ' espulsione' : ' espulsioni') : ''));
+    }
   }
 
   showGoal(name, scorer) {

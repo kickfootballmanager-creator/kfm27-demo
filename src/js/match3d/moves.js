@@ -93,6 +93,44 @@ export class StandTackle {
   }
 }
 
+// Gesti dell'arbitro, creati in codice (non ci sono clip): IK sulle braccia
+// verso una direzione nel mondo. kind: 'point' (punizione, rimessa, braccio
+// verso la direzione), 'up' (punizione indiretta, fuorigioco, cartellino),
+// 'advantage' (vantaggio: tutte e due le braccia in avanti), 'spot' (rigore:
+// verso il dischetto). `dir`: vettore orizzontale nel mondo.
+export class RefSignal {
+  constructor(def, kind, dir) {
+    this.def = def;
+    this.kind = kind;
+    this.dir = new THREE.Vector3(dir.x, 0, dir.z).normalize();
+    this.t = 0;
+  }
+
+  update(av, dt) {
+    const S = this.def.signal;
+    this.t += dt;
+    const t = this.t, total = S.rise + S.hold + S.fall;
+    if (t >= total) return false;
+    const w = t < S.rise ? t / S.rise : t < S.rise + S.hold ? 1 : 1 - (t - S.rise - S.hold) / S.fall;
+    const r = av.rig, o = av.object;
+    o.updateMatrixWorld(true);
+    const d = this.dir, L = this.def.armLen;
+    const arm = (side, x, y, z) => {
+      r[side + 'Arm'].getWorldPosition(_hip);
+      _tgt.set(x, y, z).normalize().multiplyScalar(L).add(_hip);
+      r[side + 'ForeArm'].getWorldPosition(_pole).y -= 0.3;
+      solveTwoBone(r[side + 'Arm'], r[side + 'ForeArm'], (out) => palm(r, side, out), _tgt, smooth01(w), _pole);
+    };
+    if (this.kind === 'up') arm('Right', d.x * 0.1, 1, d.z * 0.1);
+    else if (this.kind === 'spot') arm('Right', d.x, -0.55, d.z);
+    else if (this.kind === 'advantage') { arm('Right', d.x, -0.15, d.z); arm('Left', d.x, -0.15, d.z); }
+    else arm('Right', d.x, 0.25, d.z);
+    return true;
+  }
+}
+
+const smooth01 = (u) => { const c = Math.max(0, Math.min(1, u)); return c * c * (3 - 2 * c); };
+
 // Portiere in parata: IK sulle braccia che porta i due palmi ai lati della
 // palla. Il gioco aggiorna target (centro palla) e weight a ogni passo.
 export class KeeperReach {

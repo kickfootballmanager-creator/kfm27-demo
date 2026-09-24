@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { KEEPER, PITCH, GOAL, BALL, ATTR, PLAYER } from './config.js';
+import { KEEPER, PITCH, GOAL, BALL, ATTR, PLAYER, RULES } from './config.js';
 import { rootAt, clipDuration } from './avatar.js';
 import { freeness } from './player.js';
 import { palm } from './rig.js';
@@ -85,6 +85,12 @@ export class KeeperAI {
   position(dt) {
     const m = this.m, k = this.p, b = m.ball.pos;
     k.aiState = 'POSIZIONE';
+    // rigore contro: fermo sulla linea, al centro, rivolto al tiratore
+    const set = m.rules.set;
+    if (m.phase === 'restart' && set && set.type === 'penalty' && set.side !== this.side) {
+      this.moveTo(dt, this.goalX + this.dir * 0.3, 0, false);
+      return;
+    }
     const gx = this.goalX;
     const vx = b.x - gx, vz = b.z, vl = Math.hypot(vx, vz) || 1;
     const t = clamp((KEEPER.depthRange[0] - vl) / (KEEPER.depthRange[0] - KEEPER.depthRange[1]), 0, 1);
@@ -147,9 +153,14 @@ export class KeeperAI {
   plan(options = KEEPER.saves, P = KEEPER.plan) {
     const m = this.m, k = this.p, tpl = m.tpl;
     const path = m.ball.predict(this.path, 1 / 60, P.horizon);
-    const react = lerp(KEEPER.react[0], KEEPER.react[1], this.skill);
+    let react = lerp(KEEPER.react[0], KEEPER.react[1], this.skill);
     const err = lerp(KEEPER.aim[0], KEEPER.aim[1], this.attr);
-    const ex = gauss() * err, ey = gauss() * err * 0.6, ez = gauss() * err;
+    const ex = gauss() * err, ey = gauss() * err * 0.6;
+    let ez = gauss() * err;
+    // rigore: il lato e' deciso prima del tiro; se sbaglia, si tuffa dall'altra parte
+    const pen = this.penalty;
+    this.penalty = null;
+    if (pen) react = KEEPER.penaltyReact;
     const fx = k.dirX, fz = k.dirZ, rx = k.rightX, rz = k.rightZ;
     const toward = -this.dir;
     // se sta correndo il gesto parte da dove si sara' fermato
@@ -161,7 +172,8 @@ export class KeeperAI {
       if (s.x * toward > HL + 0.3) break;
       const avail = s.t - react;
       if (avail <= 0.05) continue;
-      const px = s.x + ex, py = Math.max(BALL.radius, s.y + ey), pz = s.z + ez;
+      const px = s.x + ex, py = Math.max(BALL.radius, s.y + ey);
+      const pz = pen && pen.guess !== pen.real ? pen.guess * (GOAL_HW - RULES.penalty.postMargin) : s.z + ez;
       const dx = px - ox, dz = pz - oz;
       const a = dx * fx + dz * fz, lat = dx * rx + dz * rz;
       // i cross arrivano di lato: si scorre tutta la traiettoria
@@ -351,6 +363,21 @@ export class KeeperAI {
       const D = KEEPER.clips.dropkick;
       m.startKeeperGesture(k, D.clip, D.from, D.contact, D.end, 1, { release: 'kick', spec: D, target: far, scaleS: 0, scaleA: 0.5 });
     }
+  }
+
+  // Rigore appena calciato verso il lato `side` (-1, 0, 1 in z): il portiere
+  // aveva gia' scelto. Utente: la levetta al momento del tiro (ferma: resta
+  // al centro); IA: indovina con una probabilita' che cresce con la difficolta'.
+  penaltyKicked(side) {
+    const m = this.m, T = RULES.penalty;
+    let guess;
+    if (this.side === m.userSide) {
+      const inp = m.lastInp;
+      guess = inp && inp.mag > 0.3 && Math.abs(inp.z) > 0.3 ? Math.sign(inp.z) : 0;
+    } else if (Math.random() < lerp(T.guess[0], T.guess[1], this.skill)) guess = side;
+    else { const other = [-1, 0, 1].filter((v) => v !== side); guess = other[Math.floor(Math.random() * other.length)]; }
+    this.penalty = { guess, real: side };
+    this.watch = null;
   }
 
   // Dopo il gol: si dispera, finito l'eventuale tuffo.

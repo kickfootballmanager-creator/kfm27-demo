@@ -85,17 +85,46 @@ export class TeamAI {
     for (const p of field) { p.aiTarget = this.shapeTarget(p, block); p.aiState = 'SUPPORTO'; p.aiSprint = false; p.aiFace = null; }
 
     // Alle riprese degli avversari si sta a RULES.wall metri dalla palla.
-    if (m.phase === 'restart' && m.rules.set && m.rules.set.side !== this.side) {
-      const s = m.rules.set.spot;
+    const set = m.phase === 'restart' ? m.rules.set : null;
+    if (set && set.side !== this.side) {
+      const s = set.spot;
       for (const p of field) {
         const dx = p.aiTarget.x - s.x, dz = p.aiTarget.z - s.z, d = Math.hypot(dx, dz);
         if (d < RULES.wall) { const k = RULES.wall / Math.max(d, 0.1); p.aiTarget = { x: s.x + dx * k, z: clamp(s.z + dz * k, -HW + 1, HW - 1) }; }
+      }
+      if (set.type === 'freekick' && set.direct) this.wall(field, s);
+    }
+    // rigore: tutti fuori dall'area e dalla lunetta, tranne chi tira
+    if (set && set.type === 'penalty') {
+      const d = m.dirOf(set.side), edge = HL - RULES.penalty.edge;
+      for (const p of field) {
+        if (p === set.taker) continue;
+        if (p.aiTarget.x * d > edge) p.aiTarget = { x: d * edge, z: p.aiTarget.z };
+        p.aiTarget.z = clamp(p.aiTarget.z, -18, 18);
       }
     }
     if (m.phase !== 'play') return;
     if (phase === 'attack') this.attack(field, dt);
     else if (phase === 'defend') this.defend(field, dt);
     else this.loose(field);
+  }
+
+  // Barriera sulle punizioni dirette vicine alla propria porta: i piu' vicini
+  // in fila a 9,15 m dalla palla, sulla linea verso il palo vicino.
+  wall(field, s) {
+    const W = AI.wall, goal = this.world(-HL, 0);
+    const post = { x: goal.x, z: (Math.sign(s.z) || 1) * W.postAim };
+    if (Math.hypot(goal.x - s.x, goal.z - s.z) > W.maxDist) return;
+    const ux = post.x - s.x, uz = post.z - s.z, ul = Math.hypot(ux, uz) || 1;
+    const cx = s.x + ux / ul * RULES.wall, cz = s.z + uz / ul * RULES.wall;
+    const n = Math.min(field.length, Math.round(W.size[0] + (W.size[1] - W.size[0]) * (1 - Math.min(1, ul / W.maxDist))));
+    const men = field.filter((p) => this.free(p)).sort((a, b) => dist2(a, { pos: { x: cx, z: cz } }) - dist2(b, { pos: { x: cx, z: cz } })).slice(0, n);
+    men.forEach((p, i) => {
+      const off = (i - (n - 1) / 2) * W.gap;
+      p.aiTarget = { x: cx - uz / ul * off, z: cz + ux / ul * off };
+      p.aiState = 'BARRIERA';
+      p.aiFace = { x: s.x - p.aiTarget.x, z: s.z - p.aiTarget.z };
+    });
   }
 
   // --- in possesso
@@ -116,16 +145,22 @@ export class TeamAI {
         for (const p of cand) this.runners.add(p);
       }
     }
+    // Fuorigioco: senza palla si resta in linea col penultimo difensore (o
+    // con la palla se e' piu' avanti); lo spazio oltre lo attacca il filtrante.
+    const defs = opp.map((o) => this.rel(o.pos.x, o.pos.z).a).sort((a, b) => b - a);
+    const onside = RULES.offside ? Math.max(defs.length > 1 ? defs[1] : HL, ball.a) - AI.run.onside : HL;
     for (const p of field) {
       if (p === carrier || !this.free(p)) continue;
       if (this.runners.has(p)) {
         const s = clamp(this.rel(p.aiTarget.x, p.aiTarget.z).s * 0.7, -HW + 4, HW - 4);
-        p.aiTarget = this.world(clamp(Math.max(last + 5, ball.a + AI.run.depth), -HL + 10, HL - 7), s);
+        p.aiTarget = this.world(clamp(Math.min(onside, Math.max(last + 5, ball.a + AI.run.depth)), -HL + 10, HL - 7), s);
         p.aiState = 'INSERIMENTO';
         p.aiSprint = true;
       } else if (carrier) {
         p.aiTarget = this.openSpace(p, p.aiTarget, carrier);
       }
+      const r = this.rel(p.aiTarget.x, p.aiTarget.z);
+      if (r.a > onside) p.aiTarget = this.world(onside, r.s);
     }
     if (carrier && carrier !== m.ctrl && !carrier.keeper) this.carrierThink(carrier, dt);
   }
