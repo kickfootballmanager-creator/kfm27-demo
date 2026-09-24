@@ -118,26 +118,39 @@ export class Rules {
     this.go('restart');
   }
 
+  // La ripresa in corso la batte l'utente (i suoi comandi passano da main.actions).
+  userTaking() {
+    const m = this.m, s = this.set;
+    return (m.phase === 'restart' || m.phase === 'kickoff') && !!s && s.side === m.userSide && s.taker === m.ctrl && !s.taker.action;
+  }
+
+  // Comando dell'utente alla ripresa, con la potenza della barra: Passa e
+  // Filtrante giocano corto, Cross e Tiro lungo. false se non e' ancora il momento.
+  userKick(btn, power, inp) {
+    if (!this.userTaking() || this.t < RULES.restartReady || btn === 'feint') return false;
+    this.take(btn === 'pass' || btn === 'through' ? 'short' : 'long', power, inp);
+    return true;
+  }
+
   // Palla ferma sul punto; chi batte aspetta il comando (utente) o il suo momento (IA).
   setPiece(dt, inp) {
     const m = this.m, s = this.set, p = s.taker;
     if (p.action) return;
     if (!p.holding) m.ball.hold(m.ball.pos.x, BALL.radius, m.ball.pos.z);
     const user = s.side === m.userSide && p === m.ctrl;
-    let kind = null;
-    if (user && this.t > RULES.restartReady) {
-      if (inp.down.pass || inp.down.through) kind = 'short';
-      else if (inp.down.cross || inp.down.shot) kind = 'long';
-    }
-    if (!kind && this.t > (user ? RULES.userWait : RULES.aiTake)) kind = 'auto';
-    if (!kind) return;
+    if (user && m.charging) return;
+    if (this.t > (user ? RULES.userWait : RULES.aiTake)) this.take('auto', 0.2 + Math.random() * 0.75, null);
+  }
+
+  take(kind, power, inp) {
+    const m = this.m, s = this.set, p = s.taker;
     if (s.type === 'kickoff') this.kickoffTap(p);
-    else if (s.type === 'throw') this.throwIn(p, kind, user ? inp : null);
+    else if (s.type === 'throw') this.throwIn(p, kind, inp, power);
     else if (s.type === 'goalkick') m.startKick(p, 'cross', 0.8, { mag: 1, x: m.dirOf(p.team), z: 0 });
     else {
       const k = kind === 'short' ? 'pass' : 'cross';
       const dx = -Math.sign(s.spot.x) * 0.9, dz = -Math.sign(s.spot.z) * 0.45, l = Math.hypot(dx, dz);
-      m.startKick(p, kind === 'auto' && Math.random() < 0.25 ? 'pass' : k, 0.5, user && inp.mag > 0 ? inp : { mag: 1, x: dx / l, z: dz / l });
+      m.startKick(p, kind === 'auto' && Math.random() < 0.25 ? 'pass' : k, power, inp && inp.mag > 0 ? inp : { mag: 1, x: dx / l, z: dz / l });
     }
   }
 
@@ -166,11 +179,11 @@ export class Rules {
   }
 
   // Rimessa laterale: rincorsa della clip fino alla linea, palla lasciata al fotogramma misurato.
-  throwIn(p, kind, inp) {
+  throwIn(p, kind, inp, power = 0.3) {
     const m = this.m, T = RULES.throwIn;
     const mates = m.teams[p.team].players, opp = m.teams[m.otherSide(p.team)].players;
     const ax = inp && inp.mag > 0 ? inp.x : p.dirX, az = inp && inp.mag > 0 ? inp.z : p.dirZ;
-    let to = choosePass(p, ax, az, mates.filter((q) => !q.keeper && Math.hypot(q.pos.x - p.pos.x, q.pos.z - p.pos.z) < (kind === 'long' ? T.longMax : T.shortMax)), opp, PASS.coneNoStick);
+    let to = choosePass(p, ax, az, mates.filter((q) => !q.keeper && Math.hypot(q.pos.x - p.pos.x, q.pos.z - p.pos.z) < (kind === 'long' ? T.longMax : T.shortMax)), opp, PASS.coneNoStick, power);
     if (!to) {
       let best = -1;
       for (const q of mates) { if (q === p || q.keeper) continue; const f = freeness(q.pos.x, q.pos.z, opp) - Math.hypot(q.pos.x - p.pos.x, q.pos.z - p.pos.z) / 40; if (f > best) { best = f; to = q; } }

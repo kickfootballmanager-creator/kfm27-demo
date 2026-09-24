@@ -208,8 +208,10 @@ export class TeamAI {
     else if (pick.kind === 'shot') { dx = d * HL - p.pos.x; dz = (Math.random() < 0.5 ? -1 : 1) * GOAL.width * 0.3 - p.pos.z; }
     else { dx = d; dz = 0; }
     const l = Math.hypot(dx, dz) || 1;
-    const power = pick.kind === 'shot' ? rand(0.5, 0.84) : pick.kind === 'cross' ? rand(0.3, 0.7) : Math.min(1, Math.hypot(dx, dz) / 45);
-    m.startKick(p, pick.kind, power, { mag: 1, x: dx / l, z: dz / l });
+    // Potenza come la darebbe un giocatore: il tiro fra meta' e la tacca,
+    // il cross verso un palo a caso, il passaggio in base alla distanza.
+    const power = pick.kind === 'shot' ? rand(0.5, 0.84) : pick.kind === 'cross' ? rand(0.1, 0.95) : Math.min(1, Math.hypot(dx, dz) / 45);
+    m.startKick(p, pick.kind, power, { mag: 1, x: dx / l, z: dz / l, to: pick.to });
   }
 
   // Quanto e' libera la porta: 1 nessuno fra il portatore e i pali.

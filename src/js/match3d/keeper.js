@@ -215,7 +215,7 @@ export class KeeperAI {
     }
     if (!k.holding) {
       const dx = near ? near.pos.x - k.pos.x : this.dir, dz = near ? near.pos.z - k.pos.z : 0, l = Math.hypot(dx, dz) || 1;
-      m.startKick(k, near ? 'pass' : 'cross', near ? 0.2 : 0.8, { mag: 1, x: dx / l, z: dz / l });
+      m.startKick(k, near ? 'pass' : 'cross', near ? 0.2 : 0.8, { mag: 1, x: dx / l, z: dz / l, to: near || undefined });
       return;
     }
     if (near) {

@@ -92,7 +92,7 @@ const _pp = new THREE.Vector3(), _pv = new THREE.Vector3();
 
 // Con dv/dt = -(f + c v) la palla si ferma dopo v/c - f/c^2 ln(1 + c v / f):
 // si cerca per bisezione la velocita' che arriva a distanza d con velocita' `arrive`.
-function rollSpeedFor(d, arrive = 0) {
+export function rollSpeedFor(d, arrive = 0) {
   const f = BALL.rollFriction, c = BALL.rollDrag;
   const stop = (v) => v / c - (f / (c * c)) * Math.log(1 + c * v / f);
   const need = d + stop(arrive);
@@ -102,6 +102,49 @@ function rollSpeedFor(d, arrive = 0) {
     if (stop(mid) < need) lo = mid; else hi = mid;
   }
   return hi;
+}
+
+// Secondi che un rasoterra partito a v0 impiega a percorrere d metri
+// (x(t) della stessa equazione); Infinity se si ferma prima.
+export function rollTime(v0, d) {
+  const f = BALL.rollFriction, c = BALL.rollDrag, a = v0 + f / c;
+  const x = (t) => a * (1 - Math.exp(-c * t)) / c - f * t / c;
+  const stop = Math.log(a * c / f) / c;
+  if (x(stop) < d) return Infinity;
+  let lo = 0, hi = stop;
+  for (let i = 0; i < 30; i++) {
+    const mid = (lo + hi) / 2;
+    if (x(mid) < d) lo = mid; else hi = mid;
+  }
+  return hi;
+}
+
+// Altezza a `dist` metri in orizzontale di un calcio a `speed` m/s con alzo
+// `loft`: stessa gravita' e stessa aria della fisica, senza rimbalzi.
+function heightAt(y0, speed, loft, dist) {
+  let x = 0, y = y0, vx = Math.cos(loft) * speed, vy = Math.sin(loft) * speed;
+  const dt = 1 / 120;
+  for (let i = 0; i < 600; i++) {
+    const px = x, py = y;
+    vy -= BALL.gravity * dt;
+    const k = Math.max(0, 1 - BALL.airDrag * Math.hypot(vx, vy) * dt);
+    vx *= k; vy *= k;
+    x += vx * dt; y += vy * dt;
+    if (x >= dist) return py + (y - py) * (dist - px) / (x - px);
+    if (vx < 0.5) break;
+  }
+  return -Infinity;
+}
+
+// Alzo (rad) con cui un calcio a `speed` m/s passa a `dist` metri
+// all'altezza h: bisezione, l'altezza cresce con l'alzo.
+export function loftFor(y0, speed, dist, h) {
+  let lo = -0.25, hi = 0.75;
+  for (let i = 0; i < 16; i++) {
+    const mid = (lo + hi) / 2;
+    if (heightAt(y0, speed, mid, dist) < h) lo = mid; else hi = mid;
+  }
+  return (lo + hi) / 2;
 }
 
 // Distanza orizzontale del primo rimbalzo, partendo da terra all'altezza y.
@@ -170,6 +213,15 @@ export class Ball {
     const dist = Math.hypot(dx, dz);
     if (dist < 0.3) return;
     const speed = Math.min(KICK.groundMax, Math.max(KICK.groundMin, rollSpeedFor(dist, arrive) * speedMul));
+    this.pos.y = BALL.radius;
+    this.kick(dx / dist * speed, 0, dz / dist * speed);
+  }
+
+  // Rasoterra verso (tx, tz) alla velocita' decisa da chi calcia.
+  rollAt(tx, tz, speed) {
+    const dx = tx - this.pos.x, dz = tz - this.pos.z;
+    const dist = Math.hypot(dx, dz);
+    if (dist < 0.3) return;
     this.pos.y = BALL.radius;
     this.kick(dx / dist * speed, 0, dz / dist * speed);
   }

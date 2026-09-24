@@ -123,47 +123,59 @@ export const FIRST_TOUCH = {
   receiveBelow: 1.5       // sotto questa velocita' si vede l'animazione di ricezione
 };
 
+// Potenza = distanza, come in PES: la barra sceglie quale compagno raggiungere
+// nel cono della levetta (poca potenza il piu' vicino, piena il piu' lontano) e
+// la velocita' della palla cresce con la potenza e con la distanza.
 export const PASS = {
   cone: 0.7,              // semiapertura del cono di ricerca (rad)
   coneNoStick: 1.2,       // joystick fermo: si cerca in un cono piu' largo davanti al giocatore
   minDist: 3,
   maxDist: 55,
   wAngle: 1,              // pesi del punteggio: piu' basso e' meglio
-  wDist: 0.45,
-  wFree: 0.6,
+  wReach: 1.6,            // distanza del compagno lontana da quella chiesta dalla potenza
+  reachSpan: 8,           // metri minimi fra "vicino" e "lontano" per il peso qui sopra
+  wFree: 0.35,
   freeRadius: 8,          // un avversario entro questa distanza "copre" il compagno
-  wPower: 0.5,            // la potenza sposta la scelta verso compagni piu' lontani
   lead: 0.6,              // frazione del movimento del compagno anticipata dal passaggio
-  arriveSpeed: 8,         // velocita' residua del rasoterra quando arriva al compagno
-  pressArrive: 2,         // in piu' se passatore o ricevente sono pressati
-  powerArrive: 1,         // in piu' a potenza piena
-  blindDist: 14,          // nessun compagno nel cono: passaggio nello spazio
+  speedMin: 14,           // m/s: tocco leggero verso il compagno vicino
+  speedMax: 26,           // m/s: potenza piena verso il compagno lontano
+  speedPower: 0.55,       // quota della velocita' decisa dalla potenza
+  speedDist: 0.45,        // quota decisa dalla distanza
+  speedDistRef: 45,       // a questa distanza la quota della distanza e' piena
+  pressBoost: 2,          // m/s in piu' se passatore o ricevente sono pressati
+  arriveMin: 6,           // la palla arriva sempre almeno a questa velocita'
+  blindDist: [8, 30],     // nessun compagno nel cono: spazio a potenza zero e piena
   speedError: 0.08        // errore relativo sulla forza, scalato dall'attributo
 };
 
-// Filtrante: rasoterra nello spazio davanti al compagno che corre.
+// Filtrante: rasoterra nello spazio davanti al compagno che corre. La potenza
+// decide quanto lontano nello spazio.
 export const THROUGH = {
   cone: 0.9,
-  minLead: 5,             // metri davanti al compagno, a potenza zero
-  maxLead: 13,            // a potenza piena
-  arriveSpeed: 4,         // arriva lenta nello spazio: ci corre sopra il compagno
-  wSpace: 0.8             // peso dello spazio libero davanti al compagno
+  lead: [4, 16],          // metri davanti alla corsa del compagno, a potenza zero e piena
+  arrive: [4, 10],        // m/s con cui arriva nello spazio: ci corre sopra il compagno
+  speedMin: 12,
+  speedMax: 26,
+  wReach: 1.1,            // come nel passaggio la barra sceglie anche il compagno, ma conta lo spazio
+  wSpace: 0.8,            // peso dello spazio libero davanti al compagno
+  goalGap: 7              // il punto d'arrivo resta almeno a tanti metri dalla linea di porta
 };
 
 // Cross dalle fasce verso l'area, lancio lungo altrove. Palla alta che
-// atterra sul bersaglio.
+// atterra sul bersaglio. Nel cross la potenza sceglie il palo, come in PES
+// (poca: primo palo, meta': centro, tanta: secondo palo) e alza la parabola.
 export const CROSS = {
   wingZ: 14,              // oltre questa distanza dal centro (in larghezza) si e' in fascia
   finalThird: 17,         // e oltre questa coordinata d'attacco si crossa
-  apexMin: 3.2,           // altezza massima della parabola, a potenza zero
-  apexMax: 6.5,           // a potenza piena
-  targets: [              // punti dell'area: distanza dalla linea di porta, z (verso la fascia di chi crossa)
-    { back: 11, z: 0 }, { back: 7, z: -3 }, { back: 7, z: 3 }, { back: 12, z: -6 }, { back: 6, z: -1 }
-  ],
-  mateRadius: 6,          // compagni che contano per scegliere il punto
+  nearZ: 2.4,             // primo palo: metri dal centro verso chi crossa
+  farZ: -4.2,             // secondo palo: dall'altra parte
+  back: [5.5, 10, 7],     // distanza dalla linea di porta: primo palo, centro, secondo palo
+  powerLow: 0.1,          // sotto questa potenza sempre primo palo
+  powerHigh: 0.9,         // sopra sempre secondo palo
+  apex: [2.8, 6.2],       // altezza della parabola, a potenza zero e piena
   longMin: 18,            // lancio: compagni almeno cosi' lontani
-  longSpace: 32,          // lancio senza compagni nel cono: nello spazio
-  apexLong: 7,
+  longSpace: [20, 42],    // lancio senza compagni nel cono: nello spazio, a potenza zero e piena
+  apexLong: [5, 9],
   cone: 0.8,
   error: 1.3              // errore sul punto d'arrivo (m) a passaggio 0, scalato dall'attributo
 };
@@ -176,15 +188,19 @@ export const FEINT = {
   endCancel: 0.75         // da questa frazione della clip si puo' gia' passare o tirare
 };
 
+// Tiro: la potenza decide la velocita' (da minSpeed all'attributo del
+// giocatore) e l'altezza sulla linea di porta; oltre overPower la palla sale
+// fino a scavalcare la traversa, come in PES.
 export const SHOT = {
-  minSpeed: 20,
-  loftMin: 0.05,          // rad a potenza zero
-  loftMax: 0.19,          // rad a potenza piena
+  minSpeed: 16,
+  height: [0.25, 2.0],    // metri sulla linea di porta: potenza zero, potenza overPower
+  overHeight: 2.2,        // metri in piu' a potenza piena
+  heightError: 0.45,      // errore d'altezza per radiante d'errore di mira e metro di distanza
   overPower: 0.85,        // oltre questa soglia la mira peggiora e la palla si alza
-  overLoft: 0.08,
   overError: 1.6,
   sprintError: 1.35,
-  postMargin: 0.45        // la mira resta dentro i pali di questo margine
+  postMargin: 0.45,       // la mira resta dentro i pali di questo margine
+  awayDist: 20            // tiro lontano dalla porta: altezza misurata a questa distanza
 };
 
 // Attributi 0-99 -> parametri fisici: [valore a ATTR.low, valore a ATTR.high].
@@ -198,7 +214,7 @@ export const ATTR = {
   turnRateBall: [3.6, 7], // rad/s con la palla
   dribbleSpeed: [0.84, 0.96],
   passError: [0.09, 0.012],
-  shotSpeed: [27, 32],
+  shotSpeed: [28, 34],    // m/s a potenza piena
   shotError: [0.1, 0.022],
   tackle: [0.25, 0.8]
 };

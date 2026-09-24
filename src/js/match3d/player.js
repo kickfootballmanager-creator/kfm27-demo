@@ -1,7 +1,8 @@
 import * as THREE from 'three';
-import { PLAYER, PITCH, GOAL, PASS, SHOT, ATTR, THROUGH, CROSS, FORMATIONS, FORMATION_ROLES } from './config.js';
+import { PLAYER, PITCH, GOAL, PASS, SHOT, ATTR, THROUGH, CROSS, FORMATIONS, FORMATION_ROLES, KICK, BALL } from './config.js';
 import { playerParams } from './attributes.js';
 import { Avatar } from './avatar.js';
+import { rollSpeedFor, rollTime, loftFor } from './ball.js';
 
 const HL = PITCH.length / 2;
 const HW = PITCH.width / 2;
@@ -216,27 +217,58 @@ export function buildTeam(team, side, attackDir, tpl, material, keeperMaterial, 
   return players;
 }
 
-// Passaggio assistito: il compagno nel cono della direzione con il
-// punteggio piu' basso (angolo, distanza, marcatura).
-// `power` (0..1, pressione prolungata) preferisce i compagni piu' lontani.
-export function choosePass(from, dirX, dirZ, mates, opponents, cone = PASS.cone, power = 0) {
-  const dl = Math.hypot(dirX, dirZ) || 1;
-  const ux = dirX / dl, uz = dirZ / dl;
-  let best = null, bestScore = Infinity;
+const lerp = (a, b, t) => a + (b - a) * t;
+const lerp2 = ([a, b], t) => a + (b - a) * t;
+
+// Compagni nel cono (ux, uz) fra minD e maxD: { m, d, ang }.
+function inCone(from, ux, uz, mates, cone, minD, maxD, noKeeper) {
+  const out = [];
   for (const m of mates) {
-    if (m === from || !available(m)) continue;
+    if (m === from || !available(m) || (noKeeper && m.keeper)) continue;
     const dx = m.pos.x - from.pos.x, dz = m.pos.z - from.pos.z;
     const d = Math.hypot(dx, dz);
-    if (d < PASS.minDist || d > PASS.maxDist) continue;
+    if (d < minD || d > maxD) continue;
     const ang = Math.acos(clamp((dx * ux + dz * uz) / d, -1, 1));
-    if (ang > cone) continue;
-    const free = freeness(m.pos.x, m.pos.z, opponents);
-    const want = PASS.minDist + (PASS.maxDist * 0.6 - PASS.minDist) * power;
-    const score = PASS.wAngle * (ang / cone) + PASS.wDist * (d / PASS.maxDist) - PASS.wFree * free +
-      PASS.wPower * power * Math.abs(d - want) / PASS.maxDist;
-    if (score < bestScore) { bestScore = score; best = m; }
+    if (ang <= cone) out.push({ m, d, ang });
+  }
+  return out;
+}
+
+// La potenza diventa una distanza fra il compagno piu' vicino e il piu'
+// lontano del cono: 0 il vicino, 1 il lontano.
+function reachFor(cand, power) {
+  let near = Infinity, far = 0;
+  for (const c of cand) { near = Math.min(near, c.d); far = Math.max(far, c.d); }
+  return { d: near + (far - near) * power, span: Math.max(PASS.reachSpan, far - near) };
+}
+
+// Passaggio assistito: nel cono della levetta, il compagno la cui distanza
+// e' piu' vicina a quella chiesta dalla potenza, poi angolo e marcatura.
+export function choosePass(from, dirX, dirZ, mates, opponents, cone = PASS.cone, power = 0) {
+  const dl = Math.hypot(dirX, dirZ) || 1;
+  const cand = inCone(from, dirX / dl, dirZ / dl, mates, cone, PASS.minDist, PASS.maxDist, false);
+  if (!cand.length) return null;
+  const want = reachFor(cand, power);
+  let best = null, bestScore = Infinity;
+  for (const c of cand) {
+    const score = PASS.wAngle * (c.ang / cone) + PASS.wReach * Math.abs(c.d - want.d) / want.span -
+      PASS.wFree * freeness(c.m.pos.x, c.m.pos.z, opponents);
+    if (score < bestScore) { bestScore = score; best = c.m; }
   }
   return best;
+}
+
+// Velocita' del rasoterra: cresce con la potenza e con la distanza, piu' secca
+// sotto pressione, mai cosi' lenta da non arrivare.
+export function passSpeed(d, power, press = 0) {
+  const s = clamp(PASS.speedPower * power + PASS.speedDist * Math.min(1, d / PASS.speedDistRef), 0, 1);
+  const v = PASS.speedMin + (PASS.speedMax - PASS.speedMin) * s + PASS.pressBoost * press;
+  return Math.min(KICK.maxSpeed, Math.max(v, rollSpeedFor(d, PASS.arriveMin)));
+}
+
+// Filtrante: arriva nello spazio alla velocita' voluta, piu' veloce se piu' lontano.
+export function throughSpeed(d, power) {
+  return clamp(rollSpeedFor(d, lerp2(THROUGH.arrive, power)), THROUGH.speedMin, THROUGH.speedMax);
 }
 
 // Chi e' a terra o impegnato in un tuffo non riceve passaggi.
@@ -250,38 +282,53 @@ export function freeness(x, z, opponents) {
 }
 
 // Filtrante: il compagno nel cono con piu' spazio davanti. La palla va dove
-// arrivera' correndo, non ai suoi piedi.
+// arrivera' correndo, non ai suoi piedi; la potenza decide quanto avanti.
 export function chooseThrough(from, dirX, dirZ, mates, opponents, power) {
   const dl = Math.hypot(dirX, dirZ) || 1;
   const ux = dirX / dl, uz = dirZ / dl;
-  const lead = THROUGH.minLead + (THROUGH.maxLead - THROUGH.minLead) * power;
   let best = null, bestScore = Infinity;
-  for (const m of mates) {
-    if (m === from || !available(m) || m.keeper) continue;
-    const dx = m.pos.x - from.pos.x, dz = m.pos.z - from.pos.z;
-    const d = Math.hypot(dx, dz);
-    if (d < PASS.minDist || d > PASS.maxDist) continue;
-    const ang = Math.acos(clamp((dx * ux + dz * uz) / d, -1, 1));
-    if (ang > THROUGH.cone) continue;
-    const run = runDirection(m);
-    const tx = m.pos.x + run.x * lead, tz = clampZ(m.pos.z + run.z * lead);
-    const space = freeness(tx, tz, opponents);
-    const score = PASS.wAngle * (ang / THROUGH.cone) + PASS.wDist * (d / PASS.maxDist) - THROUGH.wSpace * space;
-    if (score < bestScore) { bestScore = score; best = { mate: m, tx, tz }; }
+  const cand = inCone(from, ux, uz, mates, THROUGH.cone, PASS.minDist, PASS.maxDist, true);
+  const want = cand.length ? reachFor(cand, power) : null;
+  for (const c of cand) {
+    const pt = throughPoint(from, c.m, power);
+    const space = freeness(pt.tx, pt.tz, opponents);
+    const score = PASS.wAngle * (c.ang / THROUGH.cone) + THROUGH.wReach * Math.abs(c.d - want.d) / want.span - THROUGH.wSpace * space;
+    if (score < bestScore) { bestScore = score; best = { mate: c.m, tx: pt.tx, tz: pt.tz }; }
   }
   if (best) return best;
-  return { mate: null, tx: from.pos.x + ux * (PASS.blindDist + lead), tz: clampZ(from.pos.z + uz * (PASS.blindDist + lead)) };
+  const reach = lerp2(PASS.blindDist, power) + lerp2(THROUGH.lead, power);
+  return { mate: null, tx: throughX(from.pos.x + ux * reach, from.attackDir), tz: clampZ(from.pos.z + uz * reach) };
 }
 
-// Dove corre il compagno: la sua corsa se si muove, altrimenti verso la
-// porta avversaria.
+// Il filtrante resta un passaggio: si ferma prima dell'area piccola avversaria.
+const throughX = (x, dir) => clampX(dir * Math.min(dir * x, HL - THROUGH.goalGap));
+
+// Punto del filtrante: `lead` metri davanti alla corsa del compagno, ma mai
+// dietro a dove sara' quando arriva la palla.
+export function throughPoint(from, m, power) {
+  const run = runDirection(m);
+  const lead = lerp2(THROUGH.lead, power);
+  const sp = Math.hypot(m.vel.x, m.vel.z);
+  let L = lead;
+  for (let i = 0; i < 2; i++) {
+    const tx = m.pos.x + run.x * L, tz = m.pos.z + run.z * L;
+    const d = Math.hypot(tx - from.pos.x, tz - from.pos.z);
+    const t = rollTime(throughSpeed(d, power), d);
+    L = Math.max(lead, sp * (Number.isFinite(t) ? t : 2) + lead * 0.5);
+  }
+  return { tx: throughX(m.pos.x + run.x * L, from.attackDir), tz: clampZ(m.pos.z + run.z * L) };
+}
+
+// Dove corre il compagno: la sua corsa se va in avanti, altrimenti verso la
+// porta avversaria (un filtrante non si gioca verso la propria porta).
 function runDirection(m) {
   const s = Math.hypot(m.vel.x, m.vel.z);
-  if (s > 2) return { x: m.vel.x / s, z: m.vel.z / s };
+  if (s > 2 && m.vel.x * m.attackDir > 0.3 * s) return { x: m.vel.x / s, z: m.vel.z / s };
   return { x: m.attackDir, z: 0 };
 }
 
 const clampZ = (z) => clamp(z, -HW + 1, HW - 1);
+const clampX = (x) => clamp(x, -HL + 1, HL - 1);
 
 // Cross dalla fascia nell'ultimo terzo, lancio lungo altrove. Restituisce
 // punto d'arrivo, altezza della parabola, tipo e destinatario.
@@ -289,36 +336,32 @@ export function chooseCross(from, dirX, dirZ, mates, opponents, power) {
   const d = from.attackDir;
   const ax = from.pos.x * d;
   if (Math.abs(from.pos.z) > CROSS.wingZ && ax > CROSS.finalThird) {
+    // la potenza sceglie il palo: primo, centro, secondo
     const side = Math.sign(from.pos.z) || 1;
-    let best = null, bestN = -1;
-    for (const t of CROSS.targets) {
-      const tx = d * (HL - t.back), tz = -side * t.z;
-      let n = 0;
-      for (const m of mates) if (m !== from && !m.keeper && Math.hypot(m.pos.x - tx, m.pos.z - tz) < CROSS.mateRadius) n += 1 - Math.hypot(m.pos.x - tx, m.pos.z - tz) / CROSS.mateRadius;
-      if (n > bestN) { bestN = n; best = { tx, tz }; }
-    }
-    return { kind: 'cross', tx: best.tx, tz: best.tz, apex: CROSS.apexMin + (CROSS.apexMax - CROSS.apexMin) * power, mate: nearestMate(best.tx, best.tz, from, mates) };
+    const u = clamp((power - CROSS.powerLow) / (CROSS.powerHigh - CROSS.powerLow), 0, 1);
+    const B = CROSS.back;
+    const back = u < 0.5 ? lerp(B[0], B[1], u * 2) : lerp(B[1], B[2], (u - 0.5) * 2);
+    const tx = d * (HL - back), tz = side * lerp(CROSS.nearZ, CROSS.farZ, u);
+    return { kind: 'cross', tx, tz, apex: lerp2(CROSS.apex, power), mate: nearestMate(tx, tz, from, mates) };
   }
   const dl = Math.hypot(dirX, dirZ) || 1;
   const ux = dirX / dl, uz = dirZ / dl;
+  const cand = inCone(from, ux, uz, mates, CROSS.cone, CROSS.longMin, PASS.maxDist + 15, true);
   let best = null, bestScore = Infinity;
-  for (const m of mates) {
-    if (m === from || !available(m) || m.keeper) continue;
-    const dx = m.pos.x - from.pos.x, dz = m.pos.z - from.pos.z;
-    const dist = Math.hypot(dx, dz);
-    if (dist < CROSS.longMin || dist > PASS.maxDist + 15) continue;
-    const ang = Math.acos(clamp((dx * ux + dz * uz) / dist, -1, 1));
-    if (ang > CROSS.cone) continue;
-    const score = ang / CROSS.cone - PASS.wFree * freeness(m.pos.x, m.pos.z, opponents) - 0.3 * power * dist / PASS.maxDist;
-    if (score < bestScore) { bestScore = score; best = m; }
+  if (cand.length) {
+    const want = reachFor(cand, power);
+    for (const c of cand) {
+      const score = c.ang / CROSS.cone + PASS.wReach * Math.abs(c.d - want.d) / want.span - PASS.wFree * freeness(c.m.pos.x, c.m.pos.z, opponents);
+      if (score < bestScore) { bestScore = score; best = c; }
+    }
   }
-  const apex = CROSS.apexLong * (0.8 + 0.4 * power);
   if (best) {
-    const run = runDirection(best);
-    return { kind: 'lancio', tx: best.pos.x + run.x * 3, tz: clampZ(best.pos.z + run.z * 3), apex, mate: best };
+    const run = runDirection(best.m);
+    const apex = lerp2(CROSS.apexLong, power) * clamp(best.d / 35, 0.6, 1.2);
+    return { kind: 'lancio', tx: clampX(best.m.pos.x + run.x * 3), tz: clampZ(best.m.pos.z + run.z * 3), apex, mate: best.m };
   }
-  const reach = CROSS.longSpace * (0.7 + 0.5 * power);
-  return { kind: 'lancio', tx: clamp(from.pos.x + ux * reach, -HL + 2, HL - 2), tz: clampZ(from.pos.z + uz * reach), apex, mate: null };
+  const reach = lerp2(CROSS.longSpace, power);
+  return { kind: 'lancio', tx: clampX(from.pos.x + ux * reach), tz: clampZ(from.pos.z + uz * reach), apex: lerp2(CROSS.apexLong, power), mate: null };
 }
 
 function nearestMate(x, z, from, mates) {
@@ -345,17 +388,21 @@ export function pressure(p, opponents) {
 }
 
 // Punto d'arrivo del passaggio con l'errore di chi calcia.
-// Ai piedi del compagno, anticipando un po' la sua corsa.
-export function passAim(from, ball, target, dirX, dirZ) {
+// Ai piedi del compagno, anticipando un po' la sua corsa per il tempo che la
+// palla impiega davvero ad arrivare. Senza compagno: nello spazio, piu'
+// lontano con piu' potenza.
+export function passAim(from, ball, target, dirX, dirZ, power = 0) {
   let tx, tz;
   if (target) {
-    const t = Math.hypot(target.pos.x - ball.pos.x, target.pos.z - ball.pos.z) / 16;
+    const d = Math.hypot(target.pos.x - ball.pos.x, target.pos.z - ball.pos.z);
+    const t0 = rollTime(passSpeed(d, power), d);
+    const t = Number.isFinite(t0) ? t0 : d / 8;
     tx = target.pos.x + target.vel.x * t * PASS.lead;
     tz = target.pos.z + target.vel.z * t * PASS.lead;
   } else {
-    const dl = Math.hypot(dirX, dirZ) || 1;
-    tx = ball.pos.x + dirX / dl * PASS.blindDist;
-    tz = ball.pos.z + dirZ / dl * PASS.blindDist;
+    const dl = Math.hypot(dirX, dirZ) || 1, reach = lerp2(PASS.blindDist, power);
+    tx = clampX(ball.pos.x + dirX / dl * reach);
+    tz = clampZ(ball.pos.z + dirZ / dl * reach);
   }
   const e = gauss() * from.params.passError;
   const dx = tx - ball.pos.x, dz = tz - ball.pos.z;
@@ -387,7 +434,13 @@ export function shotVelocity(from, ball, power, aimX, aimZ, fromStick) {
   const err = P.shotError * (1 + SHOT.overError * over) * (from.sprinting ? SHOT.sprintError : 1);
   const ang = Math.atan2(dz, dx) + gauss() * err;
   const speed = SHOT.minSpeed + (P.shotSpeed - SHOT.minSpeed) * power;
-  const loft = Math.max(0, SHOT.loftMin + (SHOT.loftMax - SHOT.loftMin) * power * power + SHOT.overLoft * over + gauss() * err * 0.5);
-  const h = Math.cos(loft) * speed;
-  return { vx: Math.cos(ang) * h, vy: Math.sin(loft) * speed, vz: Math.sin(ang) * h };
+  // Altezza sulla linea di porta: sale con la potenza, oltre overPower scavalca la traversa.
+  const cx = Math.cos(ang);
+  const toLine = (d * HL - ball.pos.x) / cx;
+  const dist = cx * d > 0.1 && (forward || !fromStick) ? toLine : SHOT.awayDist;
+  const hLine = lerp2(SHOT.height, Math.min(1, power / SHOT.overPower)) + SHOT.overHeight * over;
+  const h = Math.max(BALL.radius + 0.04, hLine + gauss() * err * SHOT.heightError * dist);
+  const loft = loftFor(ball.pos.y, speed, dist, h);
+  const hs = Math.cos(loft) * speed;
+  return { vx: cx * hs, vy: Math.sin(loft) * speed, vz: Math.sin(ang) * hs };
 }

@@ -5,7 +5,7 @@ import { Ball, shadowTexture } from './ball.js';
 import { BroadcastCamera } from './camera.js';
 import { Hud } from './hud.js';
 import { Controls } from './controls.js';
-import { buildTeam, separate, choosePass, passAim, shotVelocity, pressure, chooseThrough, chooseCross, loftError, headingOf } from './player.js';
+import { buildTeam, separate, choosePass, passAim, shotVelocity, pressure, chooseThrough, chooseCross, loftError, headingOf, passSpeed, throughSpeed, throughPoint } from './player.js';
 import { loadPlayerModel, kitMaterial, rootAt, clipDuration } from './avatar.js';
 import { Possession } from './possession.js';
 import { Debug } from './debug.js';
@@ -507,7 +507,7 @@ class Match {
     separate(this.everyone, (p) => p === this.ctrl || p.down || (p.action && p.action.root) || p === this.owner);
     for (const p of this.everyone) p.confine();
 
-    if (live) this.actions(dt, inp);
+    if (live || this.rules.userTaking()) this.actions(dt, inp);
 
     const wasLive = b.live;
     if (this.owner && this.owner.holding) {
@@ -519,12 +519,17 @@ class Match {
     this.autoSwitch();
     this.controls.setMode(this.userAttacking() ? 'attack' : 'defense');
 
+    // Anello sul compagno che riceverebbe: mentre si carica segue la potenza,
+    // dal vicino al lontano.
     this.passTarget = null;
     const w = this.windup;
     if (w) this.passTarget = w.target || null;
-    else if (this.owner === this.ctrl && b.live) {
-      const ax = inp.mag > 0 ? inp.x : this.ctrl.dirX, az = inp.mag > 0 ? inp.z : this.ctrl.dirZ;
-      this.passTarget = choosePass(this.ctrl, ax, az, this.squad.players, this.opponents, inp.mag > 0 ? PASS.cone : PASS.coneNoStick);
+    else if (this.owner === this.ctrl && b.live && !this.ctrl.holding) {
+      const c = this.ctrl, k = this.charging, pw = k ? this.charge : 0;
+      const ax = inp.mag > 0 ? inp.x : c.dirX, az = inp.mag > 0 ? inp.z : c.dirZ;
+      if (k === 'through') this.passTarget = chooseThrough(c, ax, az, this.squad.players, this.opponents, pw).mate;
+      else if (k === 'cross') this.passTarget = chooseCross(c, ax, az, this.squad.players, this.opponents, pw).mate;
+      else if (k !== 'shot') this.passTarget = choosePass(c, ax, az, this.squad.players, this.opponents, inp.mag > 0 ? PASS.cone : PASS.coneNoStick, pw);
     }
 
     if (wasLive && b.scored) this.onGoal(b.scored);
@@ -576,6 +581,12 @@ class Match {
     if (inp.down.feint && this.owner === me) this.buffer = { kind: 'feint', t: CONTROL.buffer };
 
     if (!this.buffer || !me) return;
+    // Ripresa battuta dall'utente: la barra vale anche qui (angolo, rimessa).
+    if (this.phase !== 'play') {
+      if (this.rules.userKick(this.buffer.kind, this.buffer.power, inp)) this.buffer = null;
+      else if ((this.buffer.t -= dt) <= 0) this.buffer = null;
+      return;
+    }
     if (me.action && !(me.action.feint && me.action.t >= me.action.cancelAt)) {
       if ((this.buffer.t -= dt) <= 0) this.buffer = null;
       return;
@@ -590,34 +601,30 @@ class Match {
     else this.startKick(me, buf.kind, buf.power, inp);
   }
 
-  // Prepara il calcio: bersaglio scelto ora, palla che parte al contatto.
+  // Prepara il calcio: bersaglio scelto ora (potenza = distanza), mira e
+  // velocita' calcolate al contatto del piede. `inp.to`: compagno gia' scelto (IA).
   startKick(p, kind, power, inp) {
     const b = this.ball;
     const ax = inp && inp.mag > 0 ? inp.x : p.dirX, az = inp && inp.mag > 0 ? inp.z : p.dirZ;
     const stick = !!(inp && inp.mag > 0);
     const mates = this.teams[p.team].players, opp = this.teams[this.otherSide(p.team)].players;
+    const given = inp && inp.to !== undefined;
     const K = ANIM[kind];
-    const a = { kick: true, kind, power, clip: K.clip, moveMag: K.moveMag, turn: K.turn, t: 0 };
+    const a = { kick: true, kind, power, clip: K.clip, moveMag: K.moveMag, turn: K.turn, t: 0, ax, az, fromStick: stick };
     if (kind === 'pass') {
-      a.target = choosePass(p, ax, az, mates, opp, stick ? PASS.cone : PASS.coneNoStick, power);
-      a.aim = passAim(p, b, a.target, ax, az);
+      a.target = given ? inp.to : choosePass(p, ax, az, mates, opp, stick ? PASS.cone : PASS.coneNoStick, power);
     } else if (kind === 'through') {
       const c = chooseThrough(p, ax, az, mates, opp, power);
-      const e = loftError(p);
-      a.target = c.mate;
-      a.aim = { tx: c.tx + e.x * 0.5, tz: c.tz + e.z * 0.5, speedMul: 1 };
+      a.target = given ? inp.to : c.mate;
+      a.spot = { tx: c.tx, tz: c.tz };
     } else if (kind === 'cross') {
       const c = chooseCross(p, ax, az, mates, opp, power);
-      const e = loftError(p);
       a.target = c.mate;
       a.cross = c.kind;
       a.apex = c.apex;
-      a.aim = { tx: c.tx + e.x, tz: c.tz + e.z };
-    } else {
-      a.ax = ax; a.az = az; a.fromStick = stick;
-      const v = shotVelocity(p, b, power, ax, az, stick);
-      a.aim = { tx: b.pos.x + v.vx, tz: b.pos.z + v.vz };
+      a.spot = { tx: c.tx, tz: c.tz };
     }
+    a.aim = this.kickAim(p, a);
     a.dx = a.aim.tx - b.pos.x; a.dz = a.aim.tz - b.pos.z;
     // Palla al piede: la clip parte da K.start. Di prima: quasi al contatto.
     const from = this.owner === p ? K.start : Math.max(0, K.contact - ANIM.firstTime);
@@ -667,23 +674,44 @@ class Match {
     };
   }
 
+  // Punto d'arrivo del calcio `a` con l'errore di chi calcia; per il tiro
+  // anche la velocita' (aim.v).
+  kickAim(p, a) {
+    const b = this.ball;
+    if (a.kind === 'pass') return passAim(p, b, a.target, a.ax, a.az, a.power);
+    if (a.kind === 'through') {
+      const pt = a.target ? throughPoint(p, a.target, a.power) : a.spot, e = loftError(p);
+      return { tx: pt.tx + e.x * 0.5, tz: pt.tz + e.z * 0.5 };
+    }
+    if (a.kind === 'cross') {
+      const e = loftError(p);
+      return { tx: a.spot.tx + e.x, tz: a.spot.tz + e.z };
+    }
+    const v = shotVelocity(p, b, a.power, a.ax, a.az, a.fromStick);
+    return { tx: b.pos.x + v.vx, tz: b.pos.z + v.vz, v };
+  }
+
   kickNow(p, a) {
     const b = this.ball;
     if (!this.canKick(p)) return;
-    if (a.kind === 'pass' || a.kind === 'through') {
+    const aim = this.kickAim(p, a);
+    const d = Math.hypot(aim.tx - b.pos.x, aim.tz - b.pos.z);
+    if (a.kind === 'pass') {
       const t = a.target, opp = this.teams[this.otherSide(p.team)].players;
-      const press = t ? Math.max(pressure(p, opp), pressure(t, opp)) : 0;
-      const arrive = a.kind === 'pass' ? PASS.arriveSpeed + PASS.pressArrive * press + PASS.powerArrive * a.power : THROUGH.arriveSpeed;
-      b.rollTo(a.aim.tx, a.aim.tz, arrive, a.aim.speedMul);
-      this.poss.fly(a.kind === 'pass' ? 'passaggio' : 'filtrante', p, t);
+      const press = Math.max(pressure(p, opp), t ? pressure(t, opp) : 0);
+      b.rollAt(aim.tx, aim.tz, passSpeed(d, a.power, press) * aim.speedMul);
+      this.poss.fly('passaggio', p, t);
+    } else if (a.kind === 'through') {
+      b.rollAt(aim.tx, aim.tz, throughSpeed(d, a.power));
+      this.poss.fly('filtrante', p, a.target);
     } else if (a.kind === 'cross') {
-      b.lobTo(a.aim.tx, a.aim.tz, a.apex);
+      b.lobTo(aim.tx, aim.tz, a.apex);
       this.poss.fly(a.cross, p, a.target);
     } else {
-      const v = shotVelocity(p, b, a.power, a.ax, a.az, a.fromStick);
-      b.kick(v.vx, v.vy, v.vz);
+      b.kick(aim.v.vx, aim.v.vy, aim.v.vz);
       this.poss.fly('tiro', p, null);
     }
+    this.lastKick = { kind: a.kind, power: a.power, speed: b.vel.length(), dist: d };
     this.release(p, CONTROL.kickLock);
     if (a.target && (p === this.ctrl || (p.team === this.userSide && a.target.team === this.userSide))) this.switchTo(a.target);
     if (this.phase !== 'play') this.rules.go('play');

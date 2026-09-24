@@ -38,6 +38,8 @@ export class Debug {
         '  v ' + Math.hypot(b.vel.x, b.vel.z).toFixed(1) + ' m/s',
       'comandato ' + (m.ctrl ? m.ctrl.number + ' ' + (m.ctrl.aiState || '') : '-')
     ];
+    const k = m.lastKick;
+    if (k) lines.push('ultimo calcio ' + k.kind + '  potenza ' + k.power.toFixed(2) + '  ' + k.speed.toFixed(1) + ' m/s  bersaglio a ' + k.dist.toFixed(1) + ' m');
     if (m.aiSummary) lines.push(m.aiSummary());
     lines.push('', 'ultimi cambi di possesso:');
     for (const e of p.log.slice(-8).reverse()) lines.push(e.t.toFixed(1).padStart(6) + '  ' + e.from + ' -> ' + e.to + '  (' + e.cause + ')');
