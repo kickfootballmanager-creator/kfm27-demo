@@ -4,25 +4,55 @@ Riassunto delle fonti in fondo, poi come ogni meccanica diventa codice in
 `src/js/match3d/`. Dove le guide non danno numeri, i numeri sono nostri e
 stanno in `config.js`.
 
-## Comandi di PES 2021 (pad PlayStation) e i nostri pulsanti
+## Comandi di PES 2021: schema predefinito verificato
 
-| PES 2021 | Cosa fa | KFM27 (touch / tastiera) |
-|---|---|---|
-| X | Passaggio rasoterra ai piedi | Passa / J |
-| Triangolo | Filtrante rasoterra nello spazio | Filtrante / I |
-| L1 + Triangolo | Filtrante alto | non previsto |
-| Cerchio | Cross dalla fascia, lancio altrove | Cross / U |
-| Cerchio x2 | Cross basso | non previsto |
-| Quadrato | Tiro | Tiro / K |
-| R1 | Scatto | Scatto / L |
-| X (difesa, tenuto) | Pressione sul portatore | Pressing / I (tenuto) |
-| X x2 (difesa) | Contrasto in piedi | Contrasto / K |
-| Cerchio (difesa) | Scivolata | Scivolata / U |
-| L1 (difesa) | Cambio giocatore | Cambio / J |
-| R2 + levetta | Jockey: si segue il portatore guardandolo | levetta con Pressing tenuto |
+Verificato il 24/09/2026 su FIFPlay, RealSport101 (schema Standard), PES
+Mastery e sul manuale Konami di PES 2019 (stessi comandi). La skill match3d
+scriveva Quadrato = cross e Cerchio = tiro: lo schema ufficiale e' il
+contrario, Quadrato tiro e Cerchio cross/lancio. Seguiamo lo schema ufficiale.
 
-In PES il passaggio e la pressione stanno sullo stesso tasto; da noi le etichette
-cambiano col possesso ma ogni pulsante fa una cosa sola (regola della skill).
+| PlayStation | Xbox | Attacco | Difesa |
+|---|---|---|---|
+| X | A | Passaggio rasoterra | Pressing (tenuto); due volte: contrasto in piedi |
+| Quadrato | X | Tiro | Raddoppio: un compagno va in pressione (tenuto) |
+| Cerchio | B | Cross dalla fascia, lancio altrove | Scivolata |
+| Triangolo | Y | Filtrante rasoterra | Uscita del portiere (tenuto) |
+| R1 | RB | Scatto | Scatto |
+| R2 | RT | Controllo stretto (con la levetta) | Jockey (con la levetta, rivolti al portatore) |
+| L1 | LB | (in PES modifica passaggi: uno-due, filtrante alto; non fatto) | Cambio giocatore |
+| Levetta destra | Levetta destra | Finte (skill_spin) | Cambio manuale verso la direzione |
+| Levetta sinistra | Levetta sinistra | Movimento: inclinazione = velocita' | Movimento |
+| Options | Menu | Pausa | Pausa |
+
+Calci piazzati (PES): rigore con levetta sinistra per la direzione e
+Quadrato tenuto per la potenza, L1 + Quadrato cucchiaio, R1 guida alla mira;
+il portiere si tuffa spingendo la levetta. Punizione: Quadrato tiro con la
+barra, X e Cerchio per passaggio e cross, R1 mostra o nasconde la
+traiettoria; la barriera salta con Triangolo.
+
+### Touch
+
+Joystick a sinistra con l'origine dove si appoggia il pollice. A destra i
+quattro tasti del pad a rombo come sul controller (Triangolo sopra, Quadrato
+a sinistra, Cerchio a destra, X sotto), con icona e nome dell'azione del
+momento; Scatto (R1) accanto al rombo; sopra di lui Finta in attacco e Cambio
+giocatore (L1) in difesa, sempre visibile. Il doppio tocco su X in difesa e'
+il contrasto, come sul pad.
+
+### Tastiera (prova da PC)
+
+WASD o frecce muovono. J = X, U = Quadrato, K = Cerchio, I = Triangolo,
+L = R1, Q = L1, E = R2, O = finta (la levetta destra). Quindi in attacco
+J passaggio, U tiro, K cross, I filtrante; in difesa J pressing (due volte
+contrasto), U raddoppio, K scivolata, I portiere, Q cambio.
+
+### Cambio giocatore
+
+L1 passa al compagno piu' vicino alla palla; la levetta destra al compagno
+nella direzione spinta. Cambio automatico: in attacco dopo un passaggio al
+ricevente; in difesa quando la palla passa agli avversari o torna libera e
+quando entra in un'altra zona del campo (6 fasce per 3), mai mentre si
+tiene premuto Pressing o R2.
 
 ## Passaggio rasoterra
 
@@ -125,5 +155,7 @@ difensore, dribbling del portatore, tempismo e difficolta'.
 - Manuale ufficiale Konami (PES 2019, comandi uguali): https://dds.konami.com/games/manual/pes2019/PS4/en/control_player.html
 - Manuale Konami, comandi di squadra: https://dds.konami.com/games/manual/pes2019/PS4/en/control_team.html
 - Comandi PES 2021: https://realsport101.com/article/pes-2021-controls-complete-guide-goalkeeper-defence-attack-on-ps4-and-xbox-one-dribbling-passing-shooting-tactics-gameplay-season-update
+- Comandi PES 2021, schema predefinito: https://www.fifplay.com/pes-2021-controls/
+- PES Mastery, punizioni: https://pesmastery.com/pes-free-kick-tutorial/
 - Discussione Steam sull'arbitro di PES 2020/2021: https://steamcommunity.com/app/996470/discussions/0/2518023667588674849/
 - IFAB, vantaggio: https://www.footballrules.com/offences-sanctions/advantage/

@@ -74,7 +74,12 @@ export class Hud {
     this.toastEl = el('div', 'm3d-toast');
     this.toastEl.hidden = true;
 
-    this.hint = el('div', 'm3d-hint', 'WASD muovi · J passa/cambio · I filtrante/pressing · U cross/scivolata · K tiro/contrasto · L scatto · O finta');
+    // legenda dei comandi (tastiera o controller), sparisce al primo comando
+    this.hint = el('div', 'm3d-hint');
+
+    // indicazioni dei calci piazzati (rigore, punizione), con i simboli del controller
+    this.prompt = el('div', 'm3d-prompt');
+    this.prompt.hidden = true;
 
     this.tag = el('div', 'm3d-tag');
     this.tagNum = el('span', 'm3d-tag-n');
@@ -100,7 +105,7 @@ export class Hud {
     rotate.innerHTML = ICON_ROTATE;
     rotate.appendChild(el('span', null, 'Gira il telefono in orizzontale'));
 
-    hud.append(score, this.tag, exit, this.layer, this.power, this.banner, this.toastEl, this.hint, this.dialog, rotate);
+    hud.append(score, this.tag, exit, this.layer, this.power, this.prompt, this.banner, this.toastEl, this.hint, this.dialog, rotate);
     root.appendChild(hud);
     this.node = hud;
   }
@@ -201,6 +206,30 @@ export class Hud {
   }
 
   hideHint() { this.hint.classList.add('off'); }
+
+  // Testo della legenda: HTML costruito dal gioco (simboli SVG dei tasti), mai da dati esterni.
+  setHint(html) {
+    this.hint.innerHTML = html;
+    this.hint.classList.remove('off');
+  }
+
+  // Indicazione del calcio piazzato in corso; null la nasconde.
+  setPrompt(html) {
+    if (html === this.lastPrompt) return;
+    this.lastPrompt = html;
+    this.prompt.hidden = !html;
+    if (html) this.prompt.innerHTML = html;
+  }
+
+  // Pausa col controller: croce su e giu' fra i pulsanti, X/A preme.
+  menu(action) {
+    const list = [...this.dialog.querySelectorAll('button')].filter((b) => !b.hidden);
+    if (!list.length) return;
+    const i = list.indexOf(document.activeElement);
+    if (action === 'ok') { if (i >= 0) list[i].click(); else list[0].focus(); return; }
+    const n = action === 'up' ? (i <= 0 ? list.length - 1 : i - 1) : (i + 1) % list.length;
+    list[n].focus();
+  }
 
   setPlayer(number, name) {
     this.tagNum.textContent = number ? String(number) : '';

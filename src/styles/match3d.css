@@ -87,11 +87,34 @@ html.m3d-test #kfm-intro, html.m3d-test #kfm-esc{display:none!important}
 
 .m3d-hint{
   position:absolute; left:50%; bottom:calc(24px + env(safe-area-inset-bottom)); transform:translateX(-50%);
+  display:flex; flex-direction:column; align-items:center; gap:8px;
   padding:8px 16px; border-radius:16px; background:var(--m3d-panel); border:1px solid var(--m3d-line);
   color:var(--m3d-ink-2); white-space:nowrap; transition:opacity .4s;
 }
+.m3d-hint:empty{display:none}
 .m3d-hint.off{opacity:0}
 .m3d.touch .m3d-hint{display:none}
+.m3d-hint-row{display:flex; align-items:center; gap:16px}
+.m3d-hint-h{color:var(--m3d-ink); font-weight:700}
+.m3d-hint-i{display:inline-flex; align-items:center; gap:8px}
+
+/* Simbolo di un tasto del controller: forma PlayStation o lettera Xbox. */
+.m3d-glyph{
+  display:inline-grid; place-items:center; flex:none; width:22px; height:22px; border-radius:50%;
+  border:1px solid var(--m3d-line-2); color:var(--m3d-ink); font-size:11px; font-weight:700; line-height:1;
+}
+.m3d-glyph.wide{width:auto; padding:0 8px; border-radius:8px}
+
+/* Calci piazzati: cosa fare, con i tasti del dispositivo in uso. */
+.m3d-prompt{
+  position:absolute; left:50%; bottom:calc(96px + env(safe-area-inset-bottom)); transform:translateX(-50%);
+  display:flex; flex-direction:column; align-items:center; gap:8px;
+  padding:12px 16px; border-radius:16px; background:var(--m3d-panel); border:1px solid var(--m3d-line);
+  font-size:13px; white-space:nowrap;
+}
+.m3d-prompt[hidden]{display:none}
+.m3d-prompt-t{font-family:Anton,Impact,sans-serif; font-size:16px; line-height:1; text-transform:uppercase}
+.m3d-prompt-row{display:flex; align-items:center; gap:8px; color:var(--m3d-ink-2)}
 
 /* Giocatore comandato: numero e nome sotto il punteggio. */
 .m3d-tag{
@@ -139,10 +162,11 @@ html.m3d-test #kfm-intro, html.m3d-test #kfm-esc{display:none!important}
   position:absolute; left:50%; top:50%; width:48px; height:48px; border-radius:50%;
   transform:translate(-50%,-50%); background:rgba(242,244,245,.88);
 }
-/* Sei pulsanti come in PES: Tiro grande sotto il pollice, Passa a sinistra,
-   Filtrante sopra, Cross in diagonale, Scatto e Finta verso il centro. */
+/* I quattro tasti del pad a rombo, come sul controller: Triangolo sopra,
+   Quadrato a sinistra, Cerchio a destra, X sotto. Scatto (R1) in basso a
+   sinistra del rombo; sopra di lui Finta in attacco o Cambio (L1) in difesa. */
 .m3d-buttons{
-  position:absolute; width:232px; height:152px;
+  position:absolute; width:304px; height:208px;
   right:calc(24px + env(safe-area-inset-right)); bottom:calc(24px + env(safe-area-inset-bottom));
 }
 .m3d-hud .m3d-btn{
@@ -154,13 +178,13 @@ html.m3d-test #kfm-intro, html.m3d-test #kfm-esc{display:none!important}
 .m3d-btn.on{background:var(--m3d-ink); color:#0a111c; border-color:var(--m3d-ink)}
 .m3d-btn-i{display:grid; place-items:center; line-height:0}
 .m3d-btn-l{font-size:11px; line-height:1.2; text-transform:uppercase; letter-spacing:.04em}
-.m3d-btn.shot{right:0; bottom:0; width:80px; height:80px}
-.m3d-btn.pass{right:96px; bottom:8px; width:64px; height:64px}
-.m3d-btn.through{right:8px; bottom:96px; width:64px; height:64px}
-.m3d-btn.cross{right:88px; bottom:88px; width:64px; height:64px}
-.m3d-btn.sprint{right:176px; bottom:8px; width:56px; height:56px}
-.m3d-btn.feint{right:168px; bottom:88px; width:64px; height:64px}
-.m3d-btn.through .m3d-btn-l, .m3d-btn.cross .m3d-btn-l, .m3d-btn.feint .m3d-btn-l, .m3d-btn.sprint .m3d-btn-l{font-size:11px; letter-spacing:0}
+.m3d-btn.triangle{right:80px; bottom:144px; width:64px; height:64px}
+.m3d-btn.square{right:152px; bottom:72px; width:64px; height:64px}
+.m3d-btn.circle{right:8px; bottom:72px; width:64px; height:64px}
+.m3d-btn.cross{right:80px; bottom:0; width:64px; height:64px}
+.m3d-btn.r1{right:240px; bottom:8px; width:56px; height:56px}
+.m3d-btn.feint, .m3d-btn.l1{right:232px; bottom:144px; width:64px; height:64px}
+.m3d-btn .m3d-btn-l{font-size:11px; letter-spacing:0; text-transform:none}
 
 .m3d-dialog{
   position:absolute; inset:0; display:grid; place-items:center; padding:16px;

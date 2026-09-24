@@ -1,10 +1,10 @@
 import * as THREE from 'three';
-import { PHYSICS, RENDER, RULES, PLAYER, CONTROL, DRIBBLE, SHOT, PASS, KIT, RECEIVE, FIRST_TOUCH, ANIM, POWER, FEINT, AI, AERIAL, SHAPE, PITCH, SLIDE, BALL, DUEL, OFFSIDE, DEBUG } from './config.js';
+import { PHYSICS, RENDER, RULES, PLAYER, CONTROL, DRIBBLE, SHOT, PASS, KIT, RECEIVE, FIRST_TOUCH, ANIM, POWER, FEINT, AI, AERIAL, SHAPE, PITCH, SLIDE, BALL, DUEL, OFFSIDE, DEBUG, PRESS } from './config.js';
 import { buildPitch } from './pitch.js';
 import { Ball, shadowTexture } from './ball.js';
 import { BroadcastCamera } from './camera.js';
 import { Hud } from './hud.js';
-import { Controls } from './controls.js';
+import { Controls, glyph } from './controls.js';
 import { buildTeam, separate, choosePass, passAim, shotVelocity, pressure, chooseThrough, chooseCross, loftError, headingOf, passSpeed, throughSpeed, throughPoint } from './player.js';
 import { loadPlayerModel, kitMaterial, rootAt, clipDuration } from './avatar.js';
 import { Possession } from './possession.js';
@@ -18,6 +18,11 @@ import { Referee } from './referee.js';
 import { unlockAudio, closeAudio } from './audio.js';
 
 const KICKS = ['pass', 'through', 'cross', 'shot'];
+// Legenda: una riga per l'attacco e una per la difesa, un elemento per comando.
+const hintRow = (title, items) => '<span class="m3d-hint-row"><span class="m3d-hint-h">' + title + '</span>' +
+  items.map((t) => '<span class="m3d-hint-i">' + t + '</span>').join('') + '</span>';
+const KEY_HINT = hintRow('Attacco', ['WASD muovi', 'J passaggio', 'U tiro', 'K cross', 'I filtrante', 'L scatto', 'E controllo stretto', 'O finta']) +
+  hintRow('Difesa', ['J pressing, due volte contrasto', 'U raddoppio', 'K scivolata', 'I portiere', 'Q cambio']);
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const wrap01 = (x) => x - Math.floor(x);
@@ -201,7 +206,13 @@ class Match {
       simulate: () => this.finish('simulate'),
       back: () => this.finish('back')
     });
-    this.controls = new Controls(root, this.hud.layer);
+    this.controls = new Controls(root, this.hud.layer, {
+      onPad: (type) => this.onPad(type),
+      onPadLost: () => this.onPadLost(),
+      onPause: () => { if (this.phase === 'end') return; if (this.hud.exitOpen) this.closeExit(); else this.openExit(); },
+      onMenu: (a) => { if (this.hud.exitOpen) this.hud.menu(a); }
+    });
+    this.hud.setHint(this.controls.padKind ? this.padHint(this.controls.padKind) : KEY_HINT);
     this.debug = new Debug(root, this);
 
     this.rules = new Rules(this, this.opts.durationMinutes);
@@ -292,6 +303,7 @@ class Match {
     this.last = now;
     const step = 1 / PHYSICS.hz;
 
+    if (this.paused) this.controls.pollMenu();
     if (!this.paused) {
       this.acc += dt;
       let n = 0;
@@ -408,17 +420,64 @@ class Match {
 
   userMove(dt, p, inp, withBall) {
     const b = this.ball, o = this.owner;
-    // Pressing (tenuto premuto in difesa): sul portatore, poi marcatura stretta
-    // e contrasto automatico (defense.js); senza portatore, sulla palla.
-    if (!this.userAttacking() && inp.held.through && this.phase === 'play') {
-      if (o && o.team !== p.team && !o.holding) { userPress(this, p, o, inp, dt); return; }
-      if (!o && b.live) { this.runToBall(dt, p); return; }
+    // controllo stretto (R2): passi corti, palla piu' vicina
+    p.close = withBall && !!inp.held.close;
+    if (!this.userAttacking() && this.phase === 'play') {
+      // Pressing (X tenuto): sul portatore, poi marcatura stretta e contrasto
+      // automatico (defense.js); senza portatore, sulla palla.
+      if (inp.held.press) {
+        if (o && o.team !== p.team && !o.holding) { userPress(this, p, o, inp, dt); return; }
+        if (!o && b.live) { this.runToBall(dt, p); return; }
+      }
+      // Jockey (R2 + levetta): rivolti al portatore, passi laterali
+      if (inp.held.jockey && o && o.team !== p.team && !o.holding) {
+        p.drive(dt, inp.x, inp.z, inp.mag * PRESS.jockeyMag, { face: { x: o.pos.x - p.pos.x, z: o.pos.z - p.pos.z } });
+        return;
+      }
     }
     if (inp.mag > 0) {
       const mag = p.avatar.busy && !withBall ? inp.mag * ANIM.recoverMove : inp.mag;
-      p.drive(dt, inp.x, inp.z, mag, { sprint: inp.sprint, withBall });
+      p.drive(dt, inp.x, inp.z, mag, { sprint: inp.sprint, withBall, close: p.close });
     } else if (inp.sprint && !o && b.live) this.runToBall(dt, p);
     else p.drive(dt, 0, 0, 0, { withBall });
+  }
+
+  // Levette dallo schermo al campo, secondo dove guarda la telecamera: in su
+  // e' sempre "verso il fondo dello schermo", anche nei calci piazzati.
+  mapInput(inp) {
+    const f = this._fwd || (this._fwd = new THREE.Vector3());
+    this.camera.cam.getWorldDirection(f);
+    f.y = 0;
+    if (f.lengthSq() < 1e-6) f.set(0, 0, -1);
+    f.normalize();
+    const rx = -f.z, rz = f.x;
+    const to = (sx, sy) => ({ x: rx * sx - f.x * sy, z: rz * sx - f.z * sy });
+    const m = to(inp.x, inp.z);
+    inp.sx = inp.x; inp.sy = inp.z;
+    inp.x = m.x; inp.z = m.z;
+    if (inp.switchDir) inp.switchDir = to(inp.switchDir.x, inp.switchDir.y);
+    if (inp.rs) { const r = to(inp.rs.x, inp.rs.y); inp.rs.fx = r.x; inp.rs.fz = r.z; }
+    return inp;
+  }
+
+  // Controller collegato: avviso e legenda con i simboli del suo tipo.
+  onPad(type) {
+    this.hud.toast('Controller ' + (type === 'ps' ? 'PlayStation' : 'Xbox') + ' collegato');
+    this.hud.setHint(this.padHint(type));
+  }
+
+  // Controller scollegato: la partita va in pausa.
+  onPadLost() {
+    this.hud.setHint(KEY_HINT);
+    if (this.phase === 'end') return;
+    this.openExit();
+    this.hud.toast('Controller scollegato: partita in pausa');
+  }
+
+  padHint(t) {
+    const g = (b, text) => glyph(b, t) + text;
+    return hintRow('Attacco', [g('cross', 'passaggio'), g('square', 'tiro'), g('circle', 'cross'), g('triangle', 'filtrante'), g('r1', 'scatto'), g('r2', 'controllo stretto'), g('rs', 'finta')]) +
+      hintRow('Difesa', [g('cross', 'pressing, due volte contrasto'), g('square', 'raddoppio'), g('circle', 'scivolata'), g('triangle', 'portiere'), g('l1', 'cambio')]);
   }
 
   // Palloni alti vicini: colpo di testa, rovesciata, respinta di testa.
@@ -432,6 +491,8 @@ class Match {
     if (p === this.ctrl) {
       if (inp && (inp.held.shot || (this.buffer && this.buffer.kind === 'shot'))) intent = mine || !poss.team ? 'shot' : 'clear';
       else if (inp && (inp.held.pass || inp.held.cross || (this.buffer && this.buffer.kind === 'pass'))) intent = mine ? 'pass' : 'clear';
+      // in difesa il pallone alto si respinge con Quadrato o Cerchio, come in PES
+      else if (inp && !mine && inp.btn && (inp.btn.held.square || inp.btn.held.circle)) intent = 'clear';
     } else if (this.receiver === p) {
       const d = this.dirOf(p.team);
       if (Math.hypot(d * PITCH.length / 2 - p.pos.x, p.pos.z) < 20) intent = 'shot';
@@ -460,19 +521,31 @@ class Match {
     return e ? { x: e.x, z: e.z, t: e.t + Math.hypot(e.x - p.pos.x, e.z - p.pos.z) / P.maxSpeed } : null;
   }
 
-  // Cambio automatico: quando la palla passa agli avversari o torna libera,
-  // il comando va al giocatore dell'utente piu' vicino.
-  autoSwitch() {
+  // Zona della palla: fasce lungo il campo per fasce in larghezza.
+  ballZone() {
+    const b = this.ball.pos, Z = CONTROL.zones;
+    return Math.floor(clamp((b.x + PITCH.length / 2) / (PITCH.length / Z[0]), 0, Z[0] - 1)) * Z[1] +
+      Math.floor(clamp((b.z + PITCH.width / 2) / (PITCH.width / Z[1]), 0, Z[1] - 1));
+  }
+
+  // Cambio automatico in difesa: quando la palla passa agli avversari o torna
+  // libera, e quando cambia zona, il comando va al giocatore piu' vicino.
+  // Mai mentre l'utente sta pressando o marcando con il suo.
+  autoSwitch(inp) {
     const poss = this.poss;
-    if (poss.seq === this.seenSeq) return;
+    const changed = poss.seq !== this.seenSeq;
     this.seenSeq = poss.seq;
+    const zone = this.ballZone(), moved = zone !== this.seenZone;
+    this.seenZone = zone;
+    if (!changed && !moved) return;
     if (this.userAttacking() && !poss.free) return;
+    if (inp && (inp.held.press || inp.held.jockey)) return;
     const b = this.ball;
     const x = poss.flying && poss.to ? poss.to.pos.x : b.pos.x, z = poss.flying && poss.to ? poss.to.pos.z : b.pos.z;
     const best = this.nearestTo(this.squad.players, x, z);
     if (!best || best === this.ctrl) return;
     const cur = this.ctrl ? Math.hypot(this.ctrl.pos.x - x, this.ctrl.pos.z - z) : Infinity;
-    if (cur > Math.hypot(best.pos.x - x, best.pos.z - z) + 2 && !(this.ctrl && this.ctrl.action)) this.setControlled(best);
+    if (cur > Math.hypot(best.pos.x - x, best.pos.z - z) + CONTROL.switchMargin && !(this.ctrl && this.ctrl.action)) this.setControlled(best);
   }
 
   startTackle(p, manual) { return startTackle(this, p, manual); }
@@ -584,7 +657,7 @@ class Match {
 
   tick(dt) {
     const b = this.ball;
-    const inp = this.controls.read();
+    const inp = this.mapInput(this.controls.read(dt));
     this.lastInp = inp;
     const me = this.ctrl;
     if (inp.mag > 0 || inp.any) this.hud.hideHint();
@@ -648,7 +721,7 @@ class Match {
       if (!this.owner) this.contacts(inp);
     }
     this.noteOffside();
-    this.autoSwitch();
+    this.autoSwitch(inp);
     this.controls.setMode(this.userAttacking() ? 'attack' : 'defense');
 
     // Anello sul compagno che riceverebbe: mentre si carica segue la potenza,
@@ -684,20 +757,26 @@ class Match {
   // aspetta CONTROL.buffer secondi. Ogni pulsante fa una cosa sola.
   actions(dt, inp) {
     const me = this.ctrl;
-    // In difesa: Cambio, Pressing (in userMove), Scivolata, Contrasto.
+    // In difesa (PES): Pressing tenuto e jockey in userMove; X due volte
+    // contrasto, Cerchio scivolata, Quadrato raddoppio, Triangolo uscita del
+    // portiere, L1 cambio, levetta destra cambio verso la direzione.
     if (!this.userAttacking()) {
       this.charging = null;
       this.buffer = null;
-      if (inp.down.pass) this.swapToNearest();
+      this.callPress = this.phase === 'play' && !!inp.held.double;
+      this.keeperCharge = this.phase === 'play' && !!inp.held.keeper;
+      if (inp.down.swap) this.swapToNearest();
+      else if (inp.switchDir) this.switchToward(inp.switchDir.x, inp.switchDir.z);
       const p = this.ctrl;
       if (!p || p.action || p.down) return;
-      if (inp.down.cross) {
+      if (inp.down.slide) {
         const b = this.ball, L = SLIDE.lead;
         const dx = inp.mag > 0 ? inp.x : b.pos.x + b.vel.x * L - p.pos.x, dz = inp.mag > 0 ? inp.z : b.pos.z + b.vel.z * L - p.pos.z;
         startSlide(this, p, dx, dz);
-      } else if (inp.down.shot) startTackle(this, p, true);
+      } else if (inp.down.tackle) startTackle(this, p, true);
       return;
     }
+    this.callPress = this.keeperCharge = false;
     if (!this.charging) {
       const k = KICKS.find((c) => inp.down[c]);
       if (k) { this.charging = k; this.charge = 0; }
@@ -807,7 +886,8 @@ class Match {
   // Finta: skill_spin verso il lato del joystick, la palla resta al piede.
   startFeint(p, inp) {
     let side = 'right';
-    if (inp && inp.mag > 0) side = inp.x * p.rightX + inp.z * p.rightZ < 0 ? 'left' : 'right';
+    if (inp && inp.rs && inp.rs.fx !== undefined) side = inp.rs.fx * p.rightX + inp.rs.fz * p.rightZ < 0 ? 'left' : 'right';
+    else if (inp && inp.mag > 0) side = inp.x * p.rightX + inp.z * p.rightZ < 0 ? 'left' : 'right';
     else side = (p.feintSide = p.feintSide === 'right' ? 'left' : 'right');
     const clip = 'skill_spin_' + side;
     const dur = clipDuration(this.tpl, clip);
@@ -994,6 +1074,23 @@ class Match {
   swapToNearest() {
     const b = this.ball;
     const best = this.nearestTo(this.squad.players, b.pos.x, b.pos.z, this.ctrl);
+    if (best) this.setControlled(best);
+  }
+
+  // Cambio manuale (levetta destra): il compagno nella direzione indicata a
+  // partire dal giocatore comandato, il piu' vicino fra quelli nel cono.
+  switchToward(dx, dz) {
+    const c = this.ctrl, l = Math.hypot(dx, dz);
+    if (!c || l < 1e-3) return;
+    let best = null, bs = Infinity;
+    for (const q of this.squad.players) {
+      if (q === c || q.keeper || q.down) continue;
+      const vx = q.pos.x - c.pos.x, vz = q.pos.z - c.pos.z, d = Math.hypot(vx, vz) || 1;
+      const ang = Math.acos(clamp((vx * dx + vz * dz) / (d * l), -1, 1));
+      if (ang > CONTROL.switchCone) continue;
+      const score = d * (1 + 2 * ang);
+      if (score < bs) { bs = score; best = q; }
+    }
     if (best) this.setControlled(best);
   }
 

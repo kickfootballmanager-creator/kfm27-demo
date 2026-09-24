@@ -309,7 +309,8 @@ export class TeamAI {
     const userNear = m.ctrl && m.ctrl.team === this.side && target && Math.hypot(m.ctrl.pos.x - target.pos.x, m.ctrl.pos.z - target.pos.z) < 8;
     const pressers = [];
     if (target) {
-      const n = userNear ? max - 1 : max;
+      // raddoppio chiesto dall'utente (Quadrato tenuto): un compagno in piu' sul portatore
+      const n = (userNear ? max - 1 : max) + (m.callPress && this.side === m.userSide ? 1 : 0);
       const sorted = avail.filter((p) => p.aiState !== 'PRESSING').sort((a, b) => dist2(a, target) - dist2(b, target));
       for (const p of sorted.slice(0, n)) pressers.push(p);
       for (const p of pressers) this.press(p, target, dt);

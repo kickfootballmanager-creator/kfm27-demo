@@ -109,7 +109,11 @@ export const CONTROL = {
   trapSpeed: 28,          // palla libera: oltre questa velocita' relativa passa
   kickLock: 0.35,         // chi ha appena calciato non la ricontrolla subito
   reach: 1.3,             // palla abbastanza vicina per un tiro o passaggio al volo
-  buffer: 0.4             // un comando dato un attimo prima di ricevere vale lo stesso
+  buffer: 0.4,            // un comando dato un attimo prima di ricevere vale lo stesso
+  doubleTap: 0.3,         // difesa: X due volte entro tanti secondi = contrasto
+  zones: [6, 3],          // cambio automatico: fasce lungo il campo e in larghezza
+  switchMargin: 2,        // si cambia solo se il nuovo e' piu' vicino di tanti metri
+  switchCone: 1.1         // levetta destra: semiapertura del cono di ricerca (rad)
 };
 
 // Pressione prolungata: potenza 0..1 per passaggio, filtrante, cross e tiro.
@@ -332,6 +336,7 @@ export const PRESS = {
   minR: 0.9,
   maxR: 2.8,
   jockeySpeed: 4.2,       // m/s attorno al portatore con la levetta
+  jockeyMag: 0.55,        // jockey (R2): frazione della corsa, rivolti al portatore
   relax: 2.2,             // 1/s: senza levetta si torna fra portatore e porta
   autoMargin: 0.1,        // metri tenuti di riserva sulla portata del contrasto
   autoAngle: 1.0,         // rad fra il busto e la palla
@@ -401,6 +406,7 @@ export const KEEPER = {
   aim: [0.3, 0.06],       // errore (m) sul punto d'intercetto previsto [attributo basso, alto]
   claimDist: 7,           // cross che cade entro questa distanza dalla porta: esce
   rushDist: 16,           // palla libera entro questa distanza: esce a prenderla
+  chargeDist: 40,         // uscita chiesta dall'utente: solo con la palla entro tanti metri dalla porta
   holdTime: 1.4,          // secondi con la palla in mano prima del rinvio
   throwMax: 28,           // compagno libero entro questa distanza: rimessa con le mani
   // Parate. Per ogni tiro il portiere cerca, lungo la traiettoria, il punto,

@@ -76,6 +76,7 @@ export class KeeperAI {
     if (m.phase !== 'play') { this.pending = null; this.position(dt); return; }
     if (this.pending && this.waitSave(dt)) return;
     if (this.save()) return;
+    if (this.side === m.userSide && m.keeperCharge && this.charge(dt)) return;
     if (this.claim(dt)) return;
     if (this.rush(dt)) return;
     this.position(dt);
@@ -302,6 +303,19 @@ export class KeeperAI {
       }
     }
     this.moveTo(dt, land.x, land.z, true);
+    return true;
+  }
+
+  // Uscita chiesta dall'utente (Triangolo tenuto): il portiere va incontro al
+  // portatore o alla palla, se e' nella sua meta' campo; la presa la fa rush.
+  charge(dt) {
+    const m = this.m, k = this.p, b = m.ball;
+    if (Math.abs(b.pos.x - this.goalX) > KEEPER.chargeDist) return false;
+    if (this.rush(dt)) return true;
+    const o = m.owner, t = o && o.team !== this.side ? o.pos : b.pos;
+    const lead = o ? 0.35 : 0.2;
+    k.aiState = 'USCITA';
+    this.moveTo(dt, t.x + (o ? o.vel.x : b.vel.x) * lead, t.z + (o ? o.vel.z : b.vel.z) * lead, true);
     return true;
   }
 
