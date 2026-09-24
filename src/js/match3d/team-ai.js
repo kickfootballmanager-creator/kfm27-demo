@@ -361,7 +361,7 @@ export class TeamAI {
     const closing = Math.max(0, -((m.ball.vel.x - p.vel.x) * bx + (m.ball.vel.z - p.vel.z) * bz) / bd);
     const react = lerp(AI.press.delay[0], AI.press.delay[1], this.skill);
     const s = aiPressState(p, carrier);
-    s.engaged = bd < PRESS.engage + closing * (react + TACKLE.contact) ? s.engaged + dt : 0;
+    s.engaged = bd < PRESS.engage + closing * (react + TACKLE.hit) ? s.engaged + dt : 0;
     // il contrasto automatico si controlla a 60 Hz in steer: da vicino le
     // distanze cambiano troppo in fretta per le decisioni a 10 Hz
     s.react = react;

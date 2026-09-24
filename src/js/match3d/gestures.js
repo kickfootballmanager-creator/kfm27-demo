@@ -1,7 +1,7 @@
-import { TACKLE, SLIDE, DOWN, AERIAL, KEEPER, PITCH, GOAL, CONTROL, ATTR, MOVES, DUEL, FOUL } from './config.js';
+import { TACKLE, SLIDE, DOWN, AERIAL, KEEPER, PITCH, GOAL, CONTROL, ATTR, DUEL, FOUL } from './config.js';
 import { rootAt, clipDuration } from './avatar.js';
 import { headingOf } from './player.js';
-import { StandTackle, KeeperReach } from './moves.js';
+import { KeeperReach } from './moves.js';
 import { duel, stagger, beat, passFirstChance, defUnit } from './defense.js';
 
 // Contrasto, scivolata, caduta, colpo di testa, rovesciata, portiere: azioni (p.action)
@@ -22,8 +22,8 @@ export function rootAction(m, p, clip, from, end, rate, extra) {
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 const smooth = (u) => u * u * (3 - 2 * u);
 
-// --- contrasto in piedi, creato in codice (moves.StandTackle): affondo verso
-// la palla con la gamba dalla sua parte, esito al contatto del piede.
+// --- contrasto in piedi: la clip TACKLE.clip (provvisoria, vedi config) e
+// l'affondo del corpo verso la palla deciso dal codice; esito al contatto del piede.
 // `manual`: Contrasto premuto (piu' rischioso del contrasto automatico del Pressing).
 export function startTackle(m, p, manual = false) {
   if (p.action || p.down || p.stagger > 0) return false;
@@ -31,32 +31,28 @@ export function startTackle(m, p, manual = false) {
   // l'IA con palla vede arrivare il contrasto e puo' liberarsene prima
   const car = m.owner;
   if (car && car.team !== p.team && car !== m.ctrl && !car.keeper && Math.random() < passFirstChance(m, car)) m.teams[car.team].ai.passNow(car);
-  const dx = b.pos.x - p.pos.x, dz = b.pos.z - p.pos.z, d = Math.hypot(dx, dz) || 1;
-  const side = dx * p.rightX + dz * p.rightZ >= 0 ? 'Right' : 'Left';
-  const move = new StandTackle(MOVES.standTackle, side, b.pos);
-  p.avatar.playProc(move);
+  p.avatar.playOnce(T.clip, T.from, T.duration, T.rate);
   const h0 = p.heading, x0 = p.pos.x, z0 = p.pos.z;
   // l'affondo insegue dove sara' la palla al contatto e si somma allo slancio della corsa
-  const range = T.lunge + p.speed * T.contact;
+  const range = T.lunge + p.speed * T.hit;
   const pace = p.speed + T.lungeSpeed;
   p.action = {
     tackle: true, moves: true, t: 0, rate: 1, end: T.duration,
     tick: (a, dt) => {
-      move.target.copy(b.pos);
-      const left = Math.max(0, T.contact - a.t);
+      const left = Math.max(0, T.hit - a.t);
       const ax = b.pos.x + b.vel.x * left - p.pos.x, az = b.pos.z + b.vel.z * left - p.pos.z, al = Math.hypot(ax, az) || 1;
       let nx = p.pos.x, nz = p.pos.z;
-      if (a.t >= T.lungeFrom && a.t <= T.contact && al > T.contactDist) {
+      if (a.t >= T.lungeFrom && a.t <= T.hit && al > T.contactDist) {
         const stepLen = Math.min(al - T.contactDist, pace * dt);
         nx += ax / al * stepLen; nz += az / al * stepLen;
         const ox = nx - x0, oz = nz - z0, ol = Math.hypot(ox, oz);
         if (ol > range) { nx = x0 + ox / ol * range; nz = z0 + oz / ol * range; }
       }
       p.moveTo(nx, nz, dt);
-      if (a.t <= T.contact) p.heading = h0 + wrap(headingOf(ax, az) - h0) * smooth(Math.min(1, a.t / T.contact));
+      if (a.t <= T.hit) p.heading = h0 + wrap(headingOf(ax, az) - h0) * smooth(Math.min(1, a.t / T.hit));
       p.moveHeading = p.heading;
     },
-    events: [{ at: T.contact, fn: () => resolveTackle(m, p, manual) }]
+    events: [{ at: T.hit, fn: () => resolveTackle(m, p, manual) }]
   };
   return true;
 }

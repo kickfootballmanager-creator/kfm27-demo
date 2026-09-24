@@ -70,7 +70,7 @@ export function userPress(m, p, car, inp, dt) {
 // `react`: secondi in marcatura prima del primo; `pace`: cadenza (IA piu' brava = piu' alta).
 export function autoTackle(m, p, s, react, pace) {
   if (m.phase !== 'play' || p.action || p.down || p.stagger > 0 || s.engaged < react || m.poss.clock < s.next) return false;
-  const b = m.ball, T = TACKLE, t = T.contact;
+  const b = m.ball, T = TACKLE, t = T.hit;
   const bx = b.pos.x + (b.vel.x - p.vel.x) * t - p.pos.x, bz = b.pos.z + (b.vel.z - p.vel.z) * t - p.pos.z;
   const d = Math.hypot(bx, bz);
   if (d > T.contactDist + T.lunge - PRESS.autoMargin || b.pos.y > 0.6) return false;
