@@ -54,7 +54,7 @@ export class Rules {
     }
     if (m.phase === 'kickoff' || m.phase === 'restart') this.setPiece(dt, inp);
     else if (m.phase === 'goal') {
-      if (this.t > RULES.goalPause || (this.t > RULES.goalSkip && inp.any)) { m.hud.hideGoal(); this.kickoff(this.next); }
+      if (this.t > RULES.goalPause || (this.t > RULES.goalSkip && inp.any)) { m.hud.hideGoal(); this.kickoff(this.next, false); }
     } else if (m.phase === 'out') {
       if (this.t > RULES.outPause) this.restart(this.pending);
     } else if (m.phase === 'foul') {
@@ -64,20 +64,28 @@ export class Rules {
     }
   }
 
-  go(phase) { this.m.phase = phase; this.t = 0; }
+  go(phase) {
+    this.m.phase = phase;
+    this.t = 0;
+    if (phase === 'play') for (const p of this.m.everyone) p.homeTarget = null;
+  }
 
-  // --- calcio d'inizio: tutti nella propria meta', chi batte tocca all'indietro
-  kickoff(side) {
+  // --- calcio d'inizio: tutti nella propria meta', chi batte tocca all'indietro.
+  // `instant` all'inizio di un tempo; dopo un gol ognuno torna al suo posto
+  // correndo e si batte quando ci sono tutti.
+  kickoff(side, instant = true) {
     const m = this.m;
     if (!this.firstKick) this.firstKick = side;
     m.cameraFocus = null;
-    const p = m.placeKickoff(side);
+    const p = m.placeKickoff(side, instant);
+    if (!instant) for (const q of m.everyone) if (q.avatar.gestureName() === RULES.celebration.clip) q.avatar.endGesture();
     if (!m.poss.free) m.poss.loose('fischio');
+    m.ball.reset(0, 0);
     m.gain(p, "calcio d'inizio");
     m.offside = m.indirect = null;
     this.pendingFoul = null;
-    whistle('long');
-    this.set = { type: 'kickoff', side, taker: p, spot: { x: 0, z: 0 } };
+    if (instant) whistle('long');
+    this.set = { type: 'kickoff', side, taker: p, spot: { x: 0, z: 0 }, ready: instant };
     m.setControlled(side === m.userSide ? p : m.nearestTo(m.squad.players, 0, 0));
     this.go('kickoff');
   }
@@ -138,7 +146,7 @@ export class Rules {
     taker.holding = type === 'throw';
     // in attesa: fermo nel primo fotogramma della rimessa, palla in mano
     if (type === 'throw') taker.avatar.playOnce(RULES.throwIn.clip, RULES.throwIn.from, Infinity, 0);
-    this.set = { type, side, taker, spot };
+    this.set = { type, side, taker, spot, ready: true };
     if (side === m.userSide && !taker.keeper) m.setControlled(taker);
     else if (m.ctrl === taker || m.ctrl.team !== m.userSide || m.ctrl.keeper) m.setControlled(m.nearestTo(m.squad.players, spot.x, spot.z));
     this.go('restart');
@@ -148,6 +156,40 @@ export class Rules {
   userTaking() {
     const m = this.m, s = this.set;
     return (m.phase === 'restart' || m.phase === 'kickoff') && !!s && s.side === m.userSide && s.taker === m.ctrl && !s.taker.action;
+  }
+
+  // Chi batte sta ancora arrivando sulla palla: la palla resta ferma sul punto.
+  waitingTaker(p) {
+    const m = this.m, s = this.set;
+    return (m.phase === 'kickoff' || m.phase === 'restart') && !!s && s.taker === p && !p.action && !p.holding;
+  }
+
+  // Tutti al loro posto: chi batte, chi torna a centrocampo, la barriera, e
+  // sul rigore il portiere sulla linea e nessun altro in area.
+  gathered(s) {
+    const m = this.m, D = RULES.gatherDist;
+    const near = (p, t) => Math.hypot(p.pos.x - t.x, p.pos.z - t.z) < D;
+    for (const p of m.everyone) {
+      if (p.down) continue;
+      // calcio d'inizio: basta la posizione regolare (propria meta', avversari
+      // fuori dal cerchio); chi batte deve essere sulla palla
+      if (s.type === 'kickoff' && p !== s.taker && p.homeTarget) {
+        if (p.pos.x * m.dirOf(p.team) > 0.3) return false;
+        if (p.team !== s.side && Math.hypot(p.pos.x, p.pos.z) < PITCH.centerCircle - 0.3) return false;
+        continue;
+      }
+      if (p.homeTarget && !near(p, p.homeTarget)) return false;
+      if (p.aiState === 'BARRIERA' && p.aiTarget && !near(p, p.aiTarget)) return false;
+    }
+    if (s.type === 'penalty') {
+      const d = m.dirOf(s.side), k = m.teams[m.otherSide(s.side)].keeper;
+      if (Math.abs(k.pos.x - d * (HL - 0.3)) > D || Math.abs(k.pos.z) > D) return false;
+      for (const p of m.everyone) {
+        if (p === s.taker || p.keeper || p.down) continue;
+        if (p.pos.x * d > HL - RULES.penalty.edge + 0.5) return false;
+      }
+    }
+    return true;
   }
 
   // Comando dell'utente alla ripresa, con la potenza della barra: Passa e
@@ -163,6 +205,17 @@ export class Rules {
     const m = this.m, s = this.set, p = s.taker;
     if (p.action) return;
     if (!p.holding) m.ball.hold(m.ball.pos.x, BALL.radius, m.ball.pos.z);
+    // si batte quando chi batte, la barriera e il portiere sono al loro posto
+    if (!s.ready) {
+      s.wait = (s.wait || 0) + dt;
+      this.t = 0;
+      if (!this.gathered(s) && s.wait < RULES.gatherMax) return;
+      s.ready = true;
+      if (s.type === 'kickoff') whistle('long');
+      else whistle('short');
+      // la palla torna "al piede" di chi batte, da dove e' arrivato
+      m.gain(p, s.type === 'kickoff' ? "calcio d'inizio" : s.type === 'penalty' ? 'rigore' : 'punizione');
+    }
     const user = s.side === m.userSide && p === m.ctrl;
     if (user && m.charging) return;
     if (this.t > (user ? RULES.userWait : RULES.aiTake)) this.take('auto', 0.2 + Math.random() * 0.75, null);
@@ -379,8 +432,10 @@ export class Rules {
     let sp = { x: clamp(spot.x, -HL + 0.5, HL - 0.5), z: clamp(spot.z, -HW + 0.5, HW - 0.5) }, taker;
     if (type === 'penalty') {
       sp = { x: d * (HL - PITCH.penaltySpot), z: 0 };
-      // tira il migliore al tiro fra chi e' in piedi
-      taker = team.players.filter((q) => !q.keeper && !q.down).sort((a, c) => c.params.shotSpeed - a.params.shotSpeed)[0];
+      // tira il migliore al tiro fra i quattro piu' vicini al dischetto, in piedi
+      const dist = (q) => Math.hypot(q.pos.x - sp.x, q.pos.z - sp.z);
+      taker = team.players.filter((q) => !q.keeper && !q.down).sort((a, c) => dist(a) - dist(c)).slice(0, 4)
+        .sort((a, c) => c.params.shotSpeed - a.params.shotSpeed)[0];
     } else taker = m.nearestTo(team.players, sp.x, sp.z);
     if (!taker) taker = team.players.find((q) => !q.keeper) || team.keeper;
     const h = headingOf(d * HL - sp.x, -sp.z);
@@ -388,44 +443,14 @@ export class Rules {
     const back = type === 'penalty' ? RULES.penalty.back : 0.55;
     taker.action = null;
     taker.down = false;
-    taker.place(sp.x - Math.sin(h) * back, sp.z - Math.cos(h) * back, h);
+    // chi batte va sulla palla camminando; gli altri si sistemano da soli (IA)
+    taker.homeTarget = { x: sp.x - Math.sin(h) * back, z: sp.z - Math.cos(h) * back, h };
     m.gain(taker, type === 'penalty' ? 'rigore' : 'punizione');
-    if (type === 'penalty') this.penaltyPlaces(side, sp, taker);
-    else this.freeKickPlaces(side, sp, direct !== false);
-    this.set = { type, side, taker, spot: sp, direct: direct !== false };
+    this.set = { type, side, taker, spot: sp, direct: direct !== false, ready: false };
     if (side === m.userSide && !taker.keeper) m.setControlled(taker);
     else if (!m.ctrl || m.ctrl === taker || m.ctrl.team !== m.userSide || m.ctrl.keeper || m.ctrl.sentOff) m.setControlled(m.nearestTo(m.squad.players, sp.x, sp.z));
     if (type === 'freekick') m.hud.toast(direct === false ? 'Punizione indiretta' : 'Punizione');
     this.go('restart');
-  }
-
-  // Punizione: gli avversari subito a 9,15 m dalla palla e, se e' diretta e
-  // vicina alla loro porta, la barriera gia' in fila (come in PES).
-  freeKickPlaces(side, sp, direct) {
-    const m = this.m, other = m.teams[m.otherSide(side)];
-    for (const p of other.players) {
-      if (p.keeper || p.down) continue;
-      const dx = p.pos.x - sp.x, dz = p.pos.z - sp.z, d = Math.hypot(dx, dz);
-      if (d < RULES.wall) { const k = RULES.wall / Math.max(d, 0.1); p.place(sp.x + dx * k, clamp(sp.z + dz * k, -HW + 1, HW - 1), p.heading); }
-    }
-    if (!direct) return;
-    other.ai.wall(other.players.filter((q) => !q.keeper && !q.down), sp);
-    for (const p of other.players) if (p.aiState === 'BARRIERA') p.place(p.aiTarget.x, p.aiTarget.z, headingOf(sp.x - p.aiTarget.x, sp.z - p.aiTarget.z));
-  }
-
-  // Rigore: il portiere sulla linea, tutti gli altri fuori dall'area.
-  penaltyPlaces(side, sp, taker) {
-    const m = this.m, d = m.dirOf(side), other = m.teams[m.otherSide(side)], E = RULES.penalty.edge;
-    other.keeper.action = null;
-    other.keeper.place(d * (HL - 0.3), 0, headingOf(-d, 0));
-    for (const p of m.everyone) {
-      if (p === taker || p === other.keeper || p.keeper) continue;
-      if (p.pos.x * d > HL - E || Math.hypot(p.pos.x - sp.x, p.pos.z - sp.z) < RULES.wall) {
-        p.action = null;
-        p.down = false;
-        p.place(d * (HL - E - 1 - Math.random() * 4), clamp(p.pos.z, -16, 16), headingOf(d, 0));
-      }
-    }
   }
 
   // Punizione: Tiro in porta, Passa o Filtrante corto, Cross alto. L'IA tira
@@ -486,6 +511,8 @@ export class Rules {
     for (const p of m.everyone) if (p.action && !p.keeper) { p.action = null; p.avatar.endGesture(); }
     if (scorer && !scorer.down) { scorer.avatar.playOnce(C.clip, C.from, C.hold); m.cameraFocus = scorer; }
     this.next = m.otherSide(team);
+    // tutti tornano verso le posizioni del calcio d'inizio, di corsa
+    m.placeKickoff(this.next, false);
     this.go('goal');
   }
 

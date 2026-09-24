@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { PHYSICS, RENDER, RULES, PLAYER, CONTROL, DRIBBLE, SHOT, PASS, KIT, RECEIVE, FIRST_TOUCH, ANIM, POWER, FEINT, AI, AERIAL, SHAPE, PITCH, SLIDE, BALL, DUEL, OFFSIDE } from './config.js';
+import { PHYSICS, RENDER, RULES, PLAYER, CONTROL, DRIBBLE, SHOT, PASS, KIT, RECEIVE, FIRST_TOUCH, ANIM, POWER, FEINT, AI, AERIAL, SHAPE, PITCH, SLIDE, BALL, DUEL, OFFSIDE, DEBUG } from './config.js';
 import { buildPitch } from './pitch.js';
 import { Ball, shadowTexture } from './ball.js';
 import { BroadcastCamera } from './camera.js';
@@ -18,6 +18,10 @@ import { Referee } from './referee.js';
 import { unlockAudio, closeAudio } from './audio.js';
 
 const KICKS = ['pass', 'through', 'cross', 'shot'];
+
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const wrap01 = (x) => x - Math.floor(x);
+const smoothstep = (a, b, x) => { const u = clamp((x - a) / (b - a), 0, 1); return u * u * (3 - 2 * u); };
 
 function wrapAngle(a) {
   a %= Math.PI * 2;
@@ -124,6 +128,7 @@ class Match {
     this.offSeq = -1;
     this.leaving = [];         // espulsi che escono dal campo
     this.lastInp = null;
+    this.timeScale = 1;        // rallentatore di debug (F4)
   }
 
   // Chi ha la palla al piede (POSSEDUTA), altrimenti null.
@@ -243,6 +248,11 @@ class Match {
       if (down && !e.repeat) this.debug.toggle();
       return;
     }
+    if (e.code === 'F4') {
+      e.preventDefault();
+      if (down && !e.repeat) this.timeScale = this.timeScale === 1 ? DEBUG.slowMotion : 1;
+      return;
+    }
     if (this.hud.exitOpen) return;
     this.controls.key(e, down);
   }
@@ -278,7 +288,7 @@ class Match {
 
   frame(now) {
     this.raf = requestAnimationFrame((t) => this.frame(t));
-    const dt = Math.min(0.25, (now - this.last) / 1000);
+    const dt = Math.min(0.25, (now - this.last) / 1000) * this.timeScale;
     this.last = now;
     const step = 1 / PHYSICS.hz;
 
@@ -331,31 +341,46 @@ class Match {
     this.ball.shadow.position.set(v.x, 0.012, v.z);
   }
 
-  // Tutti in posizione di partenza, nella propria meta' campo; `side` batte.
-  placeKickoff(side) {
+  // Posizioni del calcio d'inizio, nella propria meta' campo; `side` batte.
+  // `instant` (inizio di un tempo): tutti al loro posto subito; altrimenti
+  // ognuno ci torna camminando o correndo (homeTarget, vedi settle).
+  placeKickoff(side, instant = true) {
+    const put = (p, x, z, h) => {
+      if (instant) { p.place(x, z, h); p.homeTarget = null; } else p.homeTarget = { x, z, h };
+    };
     for (const t of Object.values(this.teams)) {
       const d = this.dirOf(t.side);
       const block = { line: SHAPE.kickoff.line, len: SHAPE.kickoff.len, width: SHAPE.kickoff.width, ballZ: 0 };
       for (const p of t.players) {
-        p.action = null; p.down = false; p.holding = false; p.keeperBusy = false; p.dropping = false; p.holdHand = null;
-        if (p.keeper) { p.place(-d * (PITCH.length / 2 - 1.5), 0, headingOf(d, 0)); continue; }
+        if (instant) { p.action = null; p.down = false; p.holding = false; p.keeperBusy = false; p.dropping = false; p.holdHand = null; }
+        if (p.keeper) { put(p, -d * (PITCH.length / 2 - 1.5), 0, headingOf(d, 0)); continue; }
         const s = t.ai.shapeTarget(p, block);
         // nessuno dentro il cerchio di centrocampo, tranne chi batte
         const r = Math.hypot(s.x, s.z);
         if (r < PITCH.centerCircle + 0.5) { const k = (PITCH.centerCircle + 0.5) / Math.max(r, 0.1); s.x *= k; s.z *= k; }
         if (s.x * d > -0.5) s.x = -d * 0.5;
-        p.place(s.x, s.z, headingOf(d, 0));
+        put(p, s.x, s.z, headingOf(d, 0));
       }
     }
     const t = this.teams[side], d = this.dirOf(side);
     // batte l'attaccante piu' avanzato, il secondo gli sta accanto
-    const fw = t.players.filter((p) => !p.keeper).sort((a, b) => a.slot.y - b.slot.y);
-    fw[0].place(-d * 0.35, 0.25, headingOf(-d * 0.2, 1));
-    fw[1].place(-d * 1.2, -8, headingOf(d, 0.4));
-    this.ball.reset(0, 0);
+    const fw = t.players.filter((p) => !p.keeper && !p.sentOff).sort((a, b) => a.slot.y - b.slot.y);
+    put(fw[0], -d * 0.35, 0.25, headingOf(-d * 0.2, 1));
+    put(fw[1], -d * 1.2, -8, headingOf(d, 0.4));
     this.kickLock = this.buffer = null;
     this.kickTaker = fw[0];
     return fw[0];
+  }
+
+  // A gioco fermo: chi ha un posto da raggiungere ci va camminando o
+  // correndo (niente teletrasporti); chi esulta finisce l'esultanza.
+  settle(dt, p) {
+    const R = RULES;
+    const celebrating = p.avatar.gestureName() === R.celebration.clip;
+    const waiting = this.phase === 'goal' && this.rules.t < R.returnDelay;
+    const t = p.homeTarget;
+    if (!t || celebrating || waiting) { p.drive(dt, 0, 0, 0, {}); return; }
+    p.goTo(dt, t.x, t.z, t.h);
   }
 
   kickoff(side = this.userSide) { this.rules.kickoff(side); }
@@ -590,7 +615,8 @@ class Match {
         if (p.keeper) this.teams[p.team].keeperAI.position(dt);
         else if (p === me) this.userMove(dt, p, inp, false);
         else this.teams[p.team].ai.steer(dt, p);
-      } else if (p.down || !live) p.drive(dt, 0, 0, 0, {});
+      } else if (p.down) p.drive(dt, 0, 0, 0, {});
+      else if (!live) this.settle(dt, p);
       else if (p.keeper && p !== me) this.teams[p.team].keeperAI.update(dt);
       else if (this.receiver === p) { this.aerial(p, inp); if (!p.action) this.runToBall(dt, p); }
       else if (p !== me) { this.aerial(p, null); if (!p.action) this.teams[p.team].ai.steer(dt, p); }
@@ -601,6 +627,9 @@ class Match {
     this.walkOff(dt);
     separate(this.bodies, (p) => p === this.ctrl || p.down || (p.action && p.action.root) || p === this.owner);
     for (const p of this.everyone) p.confine();
+    // pesi e fase delle animazioni dopo il movimento: servono subito ai tocchi di palla
+    for (const p of this.bodies) p.animStep(dt);
+    for (const p of this.leaving) p.animStep(dt);
 
     if (live || this.rules.userTaking()) this.actions(dt, inp);
 
@@ -611,7 +640,7 @@ class Match {
       if (h.y > 0.2 && Math.hypot(h.x - k.pos.x, h.z - k.pos.z) < 2.5) b.hold(h.x, h.y, h.z);
       else b.hold(k.pos.x + k.dirX * 0.3, HELD_Y, k.pos.z + k.dirZ * 0.3);
     } else if (this.owner && this.owner.dropping) b.step(dt);   // rinvio al volo: cade dalla mano
-    else if (this.owner) this.dribble(dt);
+    else if (this.owner && !this.rules.waitingTaker(this.owner)) this.dribble(dt);
     else b.step(dt);
     if (!this.owner && b.live && live) {
       // parate: solo se la palla tocca mani o corpo veri del portiere
@@ -731,11 +760,22 @@ class Match {
     a.dx = a.aim.tx - b.pos.x; a.dz = a.aim.tz - b.pos.z;
     // Palla al piede: la clip parte da K.start. Di prima, o per liberarsi di un
     // contrasto (inp.quick): quasi al contatto.
-    const from = this.owner === p && !(inp && inp.quick) ? K.start : Math.max(0, K.contact - (inp && inp.quick ? DUEL.quickPass : ANIM.firstTime));
+    const from = this.owner === p && !(inp && inp.quick) ? this.kickFrom(p, K) : Math.max(0, K.contact - (inp && inp.quick ? DUEL.quickPass : ANIM.firstTime));
     a.contact = K.contact - from;
     a.end = a.contact + K.recover;
     p.avatar.playOnce(K.clip, from, a.end);
     p.action = a;
+  }
+
+  // Il calcio parte dalla fase del passo: il piede sinistro d'appoggio della
+  // clip appoggia quando appoggerebbe quello della corsa, niente scatti di gamba.
+  kickFrom(p, K) {
+    const info = this.tpl.gait[K.clip], lf = p.gait.leftFoot(), cyc = p.gait.cycle();
+    if (!info || !lf || p.speed < ANIM.syncMinSpeed || !Number.isFinite(cyc)) return K.start;
+    const plant = info.plantsL.filter((t) => t < K.contact).pop();
+    if (plant === undefined) return K.start;
+    const f = lf.since < lf.stance ? plant + lf.since * cyc : plant - (1 - lf.since) * cyc;
+    return clamp(f, K.early ?? 0, K.contact - ANIM.minLead);
   }
 
   // Un passo del gesto in corso. I calci si girano verso il bersaglio e
@@ -853,13 +893,19 @@ class Match {
   }
 
   // Palla in coordinate polari attorno al giocatore (angolo nel campo): lo
-  // segue a ogni passo e per cambiare lato gira attorno ai piedi, a velocita' limitata.
+  // segue a ogni passo e per cambiare lato gira attorno ai piedi, a velocita'
+  // limitata. In corsa il destro la tocca appena prima di appoggiare: la palla
+  // si allunga subito e rallenta, il giocatore la riprende al tocco dopo.
   dribble(dt) {
     const p = this.owner, b = this.ball, D = DRIBBLE;
-    p.touchPhase += p.speed * D.touchRate * dt;
     const run = Math.min(1, p.speed / p.params.maxSpeed);
-    const base = p.speed < 0.3 ? D.rest : D.walk + (D.sprint - D.walk) * run;
-    const dist = base + D.swing * Math.min(1, p.speed / 3) * (0.5 + 0.5 * Math.sin(p.touchPhase));
+    const moving = smoothstep(D.moveFrom, D.moveFull, p.speed);
+    const u = wrap01(p.gait.phase - D.touchPhase);
+    const touch = D.touch[0] + (D.touch[1] - D.touch[0]) * run;
+    const swing = (D.swing[0] + (D.swing[1] - D.swing[0]) * run) * (p.close ? D.closeSwing : 1);
+    // durante un calcio la palla aspetta il piede, niente allungo
+    const kicking = p.action && p.action.kick;
+    const dist = kicking ? D.kick : D.rest + (touch - D.rest) * moving + swing * moving * Math.sin(Math.PI * Math.pow(u, D.push));
     // sul piede che tocca (destro), o sul lato lontano dal difensore se la protegge
     const side = p.shield ? p.shield * AI.carrier.protect.shieldSide : 1;
     const want = p.heading - Math.atan2(D.side * side, dist);
@@ -934,7 +980,7 @@ class Match {
         const want = Math.atan2(inp.x, inp.z);
         p.heading = wrapAngle(p.heading + wrapAngle(want - p.heading) * FIRST_TOUCH.turn);
         p.moveHeading = want;
-        p.ballDist = DRIBBLE.sprint + DRIBBLE.swing;
+        p.ballDist = DRIBBLE.touch[1] + DRIBBLE.swing[1] * 0.5;
         return;
       }
     }

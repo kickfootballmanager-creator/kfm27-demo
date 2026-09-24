@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { PLAYER, PITCH, GOAL, PASS, SHOT, ATTR, THROUGH, CROSS, FORMATIONS, FORMATION_ROLES, KICK, BALL, DUEL } from './config.js';
 import { playerParams } from './attributes.js';
 import { Avatar } from './avatar.js';
+import { Gait } from './anim.js';
 import { rollSpeedFor, rollTime, loftFor } from './ball.js';
 
 const HL = PITCH.length / 2;
@@ -57,6 +58,10 @@ export class Player {
 
     this.avatar = new Avatar(tpl, material, data.number, kit.primary);
     this.mesh = this.avatar.object;
+    // imbardata, poi inclinazione in avanti (x) e di lato (z) attorno ai piedi
+    this.mesh.rotation.order = 'YXZ';
+    this.gait = new Gait(tpl.gait);
+    this.faceVel = 0;          // velocita' angolare del busto (rad/s)
     this.shadow = new THREE.Mesh(
       new THREE.PlaneGeometry(1, 1),
       new THREE.MeshBasicMaterial({ map: shadowTex, transparent: true, depthWrite: false })
@@ -73,6 +78,7 @@ export class Player {
     this.vel.set(0, 0, 0);
     this.speed = 0;
     this.heading = this.prevHeading = this.moveHeading = heading;
+    this.faceVel = 0;
     this.knockTimer = 0;
     this.stagger = this.burst = 0;
     this.press = null;
@@ -84,6 +90,7 @@ export class Player {
   // Un passo di movimento: (dx, dz) direzione voluta, mag 0..1.
   // o.face: il busto guarda questo vettore invece della direzione di corsa.
   // o.turnMul: sterzata piu' rapida (rincorsa del tiro). o.decel: frenata.
+  // o.close: controllo stretto (R2), passi corti e lenti.
   drive(dt, dx, dz, mag, o = {}) {
     const P = this.params;
     this.prev.copy(this.pos);
@@ -99,21 +106,43 @@ export class Player {
       const target = headingOf(dx, dz);
       this.moveHeading = wrap(this.moveHeading + clamp(wrap(target - this.moveHeading), -turn, turn));
       const left = Math.abs(wrap(target - this.moveHeading));
-      want = mag * top * (o.sprint ? 1 : PLAYER.jogFactor) * (o.withBall ? P.dribbleSpeed : 1);
+      want = mag * top * (o.sprint && !o.close ? 1 : PLAYER.jogFactor) * (o.withBall ? P.dribbleSpeed : 1) * (o.close ? PLAYER.closeSpeed : 1);
       want *= Math.max(PLAYER.turnBrake, Math.cos(Math.min(left, Math.PI / 2)));
     }
-    // Il busto segue la corsa o guarda o.face; di lato si corre piu' piano.
+    // Il busto segue la corsa o guarda o.face, come una molla con
+    // accelerazione angolare limitata: parte e si ferma senza scatti.
     const faceTo = o.face ? headingOf(o.face.x, o.face.z) : this.moveHeading;
-    const ft = turn * PLAYER.faceTurn;
-    this.heading = wrap(this.heading + clamp(wrap(faceTo - this.heading), -ft, ft));
+    const ft = turn * PLAYER.faceTurn / Math.max(dt, 1e-6);
+    const wantVel = clamp(wrap(faceTo - this.heading) * PLAYER.faceGain, -ft, ft);
+    this.faceVel += clamp(wantVel - this.faceVel, -PLAYER.faceAccel * dt, PLAYER.faceAccel * dt);
+    const turnStep = this.faceVel * dt, gap = wrap(faceTo - this.heading);
+    // mai oltre la direzione voluta
+    this.heading = wrap(this.heading + (Math.abs(turnStep) > Math.abs(gap) && Math.sign(turnStep) === Math.sign(gap) ? gap : turnStep));
     if (o.face && Math.abs(wrap(this.moveHeading - this.heading)) > Math.PI / 4) want *= PLAYER.strafeSpeed;
     if (mag === 0 && !o.face && this.speed < 0.05) this.moveHeading = this.heading;
 
     this.sprinting = !!o.sprint && mag > 0;
-    const rate = want > this.speed ? P.accel : (o.decel || PLAYER.decel);
+    // Spinta forte alla partenza e dolce vicino al massimo; frenata piena in
+    // corsa e piu' morbida all'ultimo passo.
+    const run = Math.min(1, this.speed / Math.max(1, top));
+    const rate = want > this.speed ? P.accel * (PLAYER.accelLow + (PLAYER.accelHigh - PLAYER.accelLow) * run)
+      : (o.decel || PLAYER.decel) * (PLAYER.decelLow + (1 - PLAYER.decelLow) * run);
     this.speed += clamp(want - this.speed, -rate * dt, rate * dt);
     this.vel.set(Math.sin(this.moveHeading) * this.speed, 0, Math.cos(this.moveHeading) * this.speed);
     this.pos.addScaledVector(this.vel, dt);
+  }
+
+  // Verso un punto: a passo da vicino, di corsa da lontano, in scatto da
+  // molto lontano; frena per fermarsi li' e poi si gira verso `h`. true se arrivato.
+  goTo(dt, x, z, h) {
+    const dx = x - this.pos.x, dz = z - this.pos.z, d = Math.hypot(dx, dz);
+    const face = h === undefined || h === null ? undefined : { x: Math.sin(h), z: Math.cos(h) };
+    if (d < 0.2) { this.drive(dt, 0, 0, 0, face ? { face } : {}); return true; }
+    const R = PLAYER.runBack;
+    const pace = d > R[1] ? 1 : d > R[0] ? 0.8 : R[2];
+    const brake = Math.sqrt(2 * PLAYER.decel * PLAYER.decelLow * d) / (this.params.maxSpeed * PLAYER.jogFactor);
+    this.drive(dt, dx, dz, Math.min(pace, Math.max(0.12, brake)), { sprint: d > R[1], face: d < 1.5 ? face : undefined });
+    return false;
   }
 
   // Dentro il recinto dei cartelloni e fuori dalla scatola delle porte.
@@ -135,10 +164,15 @@ export class Player {
   sync(alpha, dt) {
     const m = this.mesh;
     m.position.lerpVectors(this.prev, this.pos, alpha);
-    m.rotation.y = this.prevHeading + wrap(this.heading - this.prevHeading) * alpha;
+    // inclinazione solo in corsa libera: durante un gesto comanda la clip
+    const lean = this.gait.leanAt(alpha), free = this.avatar.one ? 0 : 1;
+    m.rotation.set(lean.pitch * free, this.prevHeading + wrap(this.heading - this.prevHeading) * alpha, lean.roll * free);
     this.shadow.position.set(m.position.x, 0.011, m.position.z);
-    this.avatar.update(dt, this.speed, wrap(this.moveHeading - this.heading), this.sideSpeed);
+    this.avatar.update(dt, this.gait, alpha);
   }
+
+  // Dopo il movimento del passo di fisica: pesi e fase delle animazioni.
+  animStep(dt) { this.gait.step(dt, this); }
 
   // Sposta il giocatore senza passare dalla corsa (radice di una clip,
   // riposizionamento): la velocita' resta coerente per le animazioni.

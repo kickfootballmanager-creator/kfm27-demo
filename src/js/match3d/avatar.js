@@ -4,6 +4,7 @@ import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { MODEL, ANIM } from './config.js';
 import { boneMap, solveTwoBone, palm } from './rig.js';
+import { measureGait, SLOTS, slotTime, IDLE_SLOT, FootLock } from './anim.js';
 
 const GLB_URL = new URL('../../assets/match3d/player.glb', import.meta.url).href;
 // Spostamento della radice e fotogrammi chiave misurati sugli FBX originali
@@ -107,7 +108,8 @@ function buildTemplate(gltf) {
     hair: fixed.hair ? fixed.hair.color.clone() : new THREE.Color(0x3a302a),
     center,
     poses: samplePoses(holder, clips),
-    plate: platePlacement(holder, body, clips.idle)
+    plate: platePlacement(holder, body, clips.idle),
+    gait: measureGait(holder, clips)
   };
 }
 
@@ -266,8 +268,6 @@ function numberTexture(number, shirt) {
   return t;
 }
 
-const wrapPhase = (x) => x - Math.floor(x);
-
 const _hl = new THREE.Vector3(), _hr = new THREE.Vector3(), _lat = new THREE.Vector3();
 const _tl = new THREE.Vector3(), _tr = new THREE.Vector3();
 const _hq = new THREE.Quaternion();
@@ -307,40 +307,26 @@ export class Avatar {
     }
 
     this.mixer = new THREE.AnimationMixer(this.object);
-    const act = (name) => {
+    // Una azione per fessura del blend tree (anim.js); le corse hanno il tempo
+    // deciso dalla fase comune, l'idle va per conto suo.
+    this.slots = SLOTS.map((name, i) => {
       const clip = tpl.clips[name];
       if (!clip) return null;
       const a = this.mixer.clipAction(clip);
       a.setEffectiveWeight(0);
       a.play();
+      if (i !== IDLE_SLOT) a.timeScale = 0;
       return a;
-    };
-    // Corse sincronizzate su una fase comune; l'idle va per conto suo.
-    this.loco = ANIM.loco.map((d) => ({ d, a: act(d.clip), w: 0, dur: tpl.clips[d.clip] ? tpl.clips[d.clip].duration : 1 }));
-    this.dirs = [];
-    for (const d of ANIM.dir) {
-      for (const side of ['left', 'right']) {
-        const a = act(d[side]);
-        this.dirs.push({ d: { ...d, phase: 0 }, a, w: 0, dur: a ? a.getClip().duration : 1, side, from: d.from });
-      }
-    }
-    for (const e of [...this.loco, ...this.dirs]) if (e.a && e.d.natural) e.a.timeScale = 0;
-    this.all = [...this.loco, ...this.dirs].filter((e) => e.a);
+    });
+    this.feet = new FootLock(this.rig);
     this.tpl = tpl;
-    this.phase = 0;
     this.one = null;
     this.prevOne = null;       // gesto precedente che sfuma sotto quello nuovo
-    this.target = new Array(this.loco.length).fill(0);
-    // corsa laterale del portiere al posto delle corse normali
-    this.keeperStep = act('gk_sidestep');
-    if (this.keeperStep) this.keeperStep.timeScale = 0;
-    this.sideW = 0;
-    this.side = 0;
   }
 
   // Gesto sopra la corsa da `from`; dopo `hold` secondi sfuma verso la corsa.
   // Un gesto gia' in corso sfuma sotto il nuovo: niente pose in piedi fra due gesti a terra.
-  playOnce(name, from, hold, rate = 1) {
+  playOnce(name, from, hold, rate = 1, fade = ANIM.fadeIn) {
     const clip = this.tpl.clips[name];
     if (!clip) return;
     if (this.prevOne) { this.prevOne.a.stop(); this.prevOne = null; }
@@ -358,7 +344,7 @@ export class Avatar {
     a.timeScale = rate;
     a.setEffectiveWeight(0);
     a.play();
-    this.one = { a, t: 0, hold, fade: chained ? ANIM.chainFade : ANIM.fadeIn };
+    this.one = { a, t: 0, hold, fade: chained ? ANIM.chainFade : fade };
   }
 
   // Gesto in ciclo (a terra, in attesa) finche' non se ne chiede un altro.
@@ -441,9 +427,9 @@ export class Avatar {
     return b.getWorldPosition(out);
   }
 
-  // speed in m/s del mondo, turn = angolo fra direzione di corsa e busto.
-  // side: velocita' laterale del portiere (m/s, + a destra), 0 per gli altri.
-  update(dt, speed, turn, side = 0) {
+  // Pesi e fase della locomozione da `gait` (interpolati con `alpha` fra gli
+  // ultimi due passi di fisica), il gesto sopra, poi i piedi fermi a terra.
+  update(dt, gait, alpha = 1) {
     let oneW = 0;
     if (this.one) {
       const o = this.one;
@@ -459,59 +445,16 @@ export class Avatar {
       if (w <= 0 || !this.one) { p.a.stop(); this.prevOne = null; }
       else { p.a.setEffectiveWeight(w); oneW = Math.min(1, oneW + w); }
     }
-
-    // Pesi obiettivo delle corse in avanti, a tratti lineari fra le velocita' di riferimento.
-    const L = this.loco, n = L.length;
-    const target = this.target;
-    target.fill(0);
-    if (speed <= L[0].d.speed) target[0] = 1;
-    else if (speed >= L[n - 1].d.speed) target[n - 1] = 1;
-    else {
-      for (let i = 0; i < n - 1; i++) {
-        const a = L[i].d.speed, b = L[i + 1].d.speed;
-        if (speed >= a && speed < b) { const t = (speed - a) / (b - a); target[i] = 1 - t; target[i + 1] = t; break; }
-      }
-    }
-    // Corsa laterale o all'indietro: la parte "in movimento" passa alla clip direzionale.
-    const at = Math.abs(turn);
-    let dir = null;
-    if (speed > ANIM.dirMinSpeed) {
-      for (const e of this.dirs) if (at >= e.from && e.side === (turn > 0 ? 'left' : 'right') && e.a) dir = e;
-    }
-    const dirTarget = dir ? 1 - target[0] : 0;
-    if (dir) for (let i = 1; i < n; i++) target[i] = 0;
-
-    // Portiere che si sposta di lato: passo laterale al posto della corsa.
-    const k = 1 - Math.exp(-ANIM.blend * dt);
-    const sideTarget = this.keeperStep && Math.abs(side) > ANIM.keeperSideMin ? Math.min(1, Math.abs(side) / ANIM.keeperSideFull) : 0;
-    this.sideW += (sideTarget - this.sideW) * k;
-    if (sideTarget > 0) for (let i = 0; i < n; i++) target[i] *= 1 - sideTarget;
-
-    for (let i = 0; i < n; i++) L[i].w += (target[i] - L[i].w) * k;
-    for (const e of this.dirs) e.w += ((e === dir ? dirTarget : 0) - e.w) * k;
-
-    // Una sola fase per tutte le corse: avanza con la media pesata dei ritmi.
-    let wsum = 0, rate = 0;
-    for (const e of this.all) {
-      if (!e.d.natural || e.w <= 1e-3) continue;
-      const r = Math.min(ANIM.maxRate, Math.max(ANIM.minRate, speed / e.d.natural));
-      rate += e.w * r / e.dur;
-      wsum += e.w;
-    }
-    if (wsum > 0) this.phase = wrapPhase(this.phase + dt * rate / wsum);
-    for (const e of this.all) {
-      if (e.d.natural) e.a.time = wrapPhase(this.phase + e.d.phase) * e.dur;
-      e.a.setEffectiveWeight(e.w * (1 - oneW));
-    }
-    if (this.keeperStep) {
-      // la clip va verso destra: all'indietro per andare a sinistra
-      const d = this.keeperStep.getClip().duration;
-      if (Math.abs(side) > 1e-3) this.side = wrapPhase(this.side + dt * Math.sign(side) * Math.min(ANIM.maxRate, Math.abs(side) / ANIM.keeperStepNatural) / d);
-      this.keeperStep.time = this.side * d;
-      this.keeperStep.setEffectiveWeight(this.sideW * (1 - oneW));
+    const phase = gait.phaseAt(alpha);
+    for (let i = 0; i < this.slots.length; i++) {
+      const a = this.slots[i];
+      if (!a) continue;
+      if (i !== IDLE_SLOT) a.time = slotTime(gait, i, phase, gait.keeperLeft);
+      a.setEffectiveWeight(gait.weightAt(i, alpha) * (1 - oneW));
     }
     this.mixer.update(dt);
     this.lastDt = dt;
+    if (dt > 0) this.feet.apply(dt, gait, phase, oneW, this.object);
     if (this.proc && !this.proc.update(this, dt)) this.proc = null;
   }
 

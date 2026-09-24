@@ -104,7 +104,7 @@ export function tackleFoulChance(def, car, manual) {
 // Esito del contrasto di `def` sul portatore `car`: 'won', 'foul' o 'beaten'.
 export function duel(m, def, car, manual) {
   const b = m.ball;
-  const exposed = clamp((Math.hypot(b.pos.x - car.pos.x, b.pos.z - car.pos.z) - DRIBBLE.rest) / (DRIBBLE.swing + 0.15), 0, 1);
+  const exposed = clamp((Math.hypot(b.pos.x - car.pos.x, b.pos.z - car.pos.z) - DRIBBLE.rest) / (DRIBBLE.swing[1] + 0.15), 0, 1);
   const shield = car.action && car.action.feint ? FEINT.shield : 1;
   const win = lerp2(DUEL.win, defUnit(def)) * (1 - DUEL.dribbleResist * driUnit(car)) * lerp2(DUEL.timing, exposed) *
     DUEL.angle[approach(def, car)] * (1 + DUEL.skillGap * (skillOf(m, def) - skillOf(m, car))) * (manual ? DUEL.manual : 1) * shield;
@@ -122,7 +122,7 @@ export function stagger(p, secs, manual) {
 // difensore, e lui accelera.
 export function beat(m, car, def) {
   car.burst = DUEL.burst;
-  car.ballDist = Math.min(car.ballDist + DUEL.knock, DRIBBLE.sprint + DUEL.knock);
+  car.ballDist = Math.min(car.ballDist + DUEL.knock, DRIBBLE.touch[1] + DUEL.knock);
   if (m.teams[car.team].ai && car !== m.ctrl) {
     const ax = car.pos.x - def.pos.x, az = car.pos.z - def.pos.z, l = Math.hypot(ax, az) || 1;
     const d = m.dirOf(car.team);

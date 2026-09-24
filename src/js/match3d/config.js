@@ -61,12 +61,19 @@ export const KICK = {
 export const PLAYER = {
   radius: 0.34,           // ingombro per le collisioni fra giocatori
   jogFactor: 0.74,        // corsa normale rispetto alla velocita' massima
-  decel: 14,              // m/s^2 quando si molla il joystick
+  decel: 15,              // m/s^2 quando si molla il joystick, alla velocita' massima
+  decelLow: 0.45,         // frazione della frenata vicino a fermi: l'arresto si ammorbidisce
+  accelLow: 1.35,         // spinta alla partenza rispetto all'accelerazione media...
+  accelHigh: 0.55,        // ...e vicino alla velocita' massima
   coastDecel: 5,          // chi ha appena passato finisce la corsa rallentando
   faceTurn: 2,            // rotazione del busto verso la palla rispetto alla sterzata
-  strafeSpeed: 0.7,       // corsa laterale o all'indietro: frazione della velocita' massima
+  faceGain: 14,           // 1/s: il busto insegue la direzione voluta come una molla...
+  faceAccel: 70,          // ...con un'accelerazione angolare massima (rad/s^2): niente scatti
+  strafeSpeed: 0.6,       // corsa laterale o all'indietro: frazione della velocita' massima
+  closeSpeed: 0.55,       // controllo stretto (R2): frazione della velocita'
   turnSlowBoost: 2,       // da fermo si gira fino a 3 volte piu' in fretta
   turnBrake: 0.35,        // velocita' minima conservata in una curva a 90 gradi
+  runBack: [6, 22, 0.35],  // a gioco fermo verso il proprio posto: corsa oltre 6 m, scatto oltre 22, sotto al passo (frazione)
   fieldMargin: 0.6,       // distanza minima dai cartelloni
   ringInner: 0.62,
   ringOuter: 0.8,
@@ -76,13 +83,19 @@ export const PLAYER = {
 
 // Palla al piede: distanza dal centro del giocatore (m). Il piede sta circa
 // 0,1 m avanti al centro, quindi la palla resta fra 0,4 e 0,7 m dal piede.
+// In corsa la palla si tocca col destro appena prima che appoggi (fase del
+// passo, anim.js): si allunga di `swing` e il giocatore la riprende al tocco dopo.
 export const DRIBBLE = {
   rest: 0.5,              // da fermo
-  walk: 0.56,
-  sprint: 0.66,
-  swing: 0.12,            // il tocco allunga la palla di tanto, poi torna
+  touch: [0.46, 0.56],    // al tocco, davanti alla punta del destro: al passo, in scatto
+  swing: [0.14, 0.5],     // quanto si allunga dopo il tocco: al passo, in scatto
+  closeSwing: 0.45,       // controllo stretto (R2): tocchi piu' corti
+  kick: 0.5,              // durante un calcio: la palla davanti al piede che calcia
+  touchPhase: 0.94,       // fase del passo del tocco (0 = appoggio del destro)
+  push: 0.7,              // forma dell'allungo: <1 la palla scatta via subito e poi rallenta
+  moveFrom: 0.3,          // m/s: sotto, palla ferma davanti ai piedi
+  moveFull: 1.6,
   side: 0.1,              // spostata verso il piede destro, quello che tocca
-  touchRate: 1.9,         // tocchi per metro percorso (rad/m)
   turnRate: 14,           // rad/s: la palla gira attorno al giocatore, mai attraverso le gambe
   follow: 22,             // 1/s: quanto in fretta la distanza si adegua
   maxRel: 9               // m/s: velocita' massima della palla rispetto al giocatore
@@ -478,42 +491,57 @@ export const MODEL = {
   attachRate: 18          // 1/s: palla che passa a una mano sola e si appoggia sul palmo
 };
 
-// Animazioni. `natural`: velocita' (m/s, modello alto 1,80) a cui la clip non
-// fa scivolare i piedi. `phase`: frazione del ciclo con il piede sinistro
-// avanti, per tenere allineate le clip che si fondono.
+// Animazioni. Locomozione come blend tree continuo per velocita' e direzione:
+// le clip in avanti si fondono per velocita' (idle, camminata, corsa, scatto),
+// quelle direzionali per l'angolo fra corsa e busto. Tempi d'appoggio dei
+// piedi, velocita' naturali e verso di ogni clip si misurano sulle clip al
+// caricamento (anim.js, measureGait): tutte le clip hanno la fase 0 quando
+// appoggia il piede destro, cosi' nella fusione le gambe non si incrociano.
 export const ANIM = {
-  loco: [
-    { clip: 'idle', speed: 0 },
-    { clip: 'walk', speed: 1.6, natural: 2.32, phase: 0.2 },
-    { clip: 'run', speed: 4.5, natural: 2.74, phase: 0.227 },
-    { clip: 'sprint', speed: 7.5, natural: 5.02, phase: 0.234 }
+  // m/s a cui ogni clip in avanti pesa 1: scelte perche' il playback resti
+  // vicino a 1 (la corsa lenta va a 2,4 m/s, quella veloce a 4,8).
+  speeds: { walk: 1.8, run: 3.3, sprint: 6 },
+  forward: ['idle', 'walk', 'run', 'sprint'],
+  // corsa guardando altrove: [sinistra, destra], dalla diagonale avanti all'indietro
+  sides: [
+    ['jog_diag_fwd_left', 'jog_diag_fwd_right'],
+    ['strafe_left', 'strafe_right'],
+    ['jog_diag_back_left', 'jog_diag_back_right']
   ],
-  // corsa guardando altrove (ricezione): angolo fra busto e direzione di corsa
-  dir: [
-    { from: 0.6, left: 'jog_diag_fwd_left', right: 'jog_diag_fwd_right', natural: 2.38 },
-    { from: 1.2, left: 'strafe_left', right: 'strafe_right', natural: 2.4 },
-    { from: 2.2, left: 'jog_diag_back_left', right: 'jog_diag_back_right', natural: 2.03 }
-  ],
-  dirMinSpeed: 1,
-  keeperSideMin: 0.3,     // m/s laterali oltre cui il portiere fa il passo laterale
-  keeperSideFull: 1.2,
-  keeperStepNatural: 2.11,
+  keeperStep: 'gk_sidestep',  // il portiere di lato, rivolto alla palla
+  keeperStepMax: 3.5,     // m/s: oltre, anche il portiere corre di lato come gli altri
+  kicks: ['pass', 'shot', 'penalty'],   // clip dei calci: tempi d'appoggio del piede sinistro
+  gaitSamples: 48,        // campioni per clip nella misura dei passi
+  contactBand: 0.035,     // m sopra la caviglia piu' bassa: il piede e' a terra
+  speedBand: 0.02,        // appoggio stretto su cui si misura la velocita' naturale
   minRate: 0.6,           // playback minimo e massimo delle clip di corsa
-  maxRate: 1.8,
-  blend: 10,              // 1/s: velocita' della fusione fra clip
-  fadeIn: 0.08,
+  maxRate: 2,
+  dirMaxRate: 2.1,        // clip direzionali (sono corsette): un po' piu' accelerate
+  blend: 9,               // 1/s: filtro dei pesi del blend tree
+  angleRate: 7,           // 1/s: filtro dell'angolo fra corsa e busto
+  turnStep: 0.45,         // m/s di passo per rad/s di rotazione da fermi: girandosi si fanno piccoli passi
+  // Inclinazione di tutto il corpo, dai piedi: nelle curve verso l'interno,
+  // in avanti quando accelera, indietro quando frena. rad per m/s^2.
+  lean: { roll: 0.02, maxRoll: 0.2, pitch: 0.012, maxPitch: 0.07, maxBack: 0.05, rate: 8 },
+  // Piedi fermi a terra nell'appoggio (IK sulle gambe), finche' la clip non
+  // li porterebbe troppo lontano.
+  footLock: { on: true, maxSpeed: 3.6, minMove: 0.25, ramp: 0.08, release: 0.12, drift: 0.22, liftEarly: 0.25 },
+  fadeIn: 0.15,           // cross-fade verso un gesto (0,15-0,25 s)
   fadeOut: 0.22,
+  syncMinSpeed: 1.2,      // sotto questa velocita' il calcio parte dall'inizio, senza cercare il passo
+  minLead: 0.1,           // secondi minimi fra l'inizio della clip e il contatto del piede
   // Secondi della clip: si parte da `start`, la palla parte a `contact`, il
   // fotogramma in cui il piede destro e' piu' veloce (player.motion.json).
   // Di prima la clip parte `firstTime` secondi prima del contatto.
-  pass: { clip: 'pass', start: 0.2, contact: 0.417, recover: 0.3, moveMag: 0.35, turn: 4 },
-  through: { clip: 'pass', start: 0.2, contact: 0.417, recover: 0.3, moveMag: 0.35, turn: 4 },
-  cross: { clip: 'pass', start: 0.15, contact: 0.417, recover: 0.35, moveMag: 0.3, turn: 4 },
-  shot: { clip: 'shot', start: 0.2, contact: 0.45, recover: 0.4, moveMag: 0.3, turn: 4 },
+  // `early`: da qui al massimo si puo' anticipare l'inizio per agganciare il passo.
+  pass: { clip: 'pass', start: 0.2, early: 0.04, contact: 0.417, recover: 0.3, moveMag: 0.35, turn: 4 },
+  through: { clip: 'pass', start: 0.2, early: 0.04, contact: 0.417, recover: 0.3, moveMag: 0.35, turn: 4 },
+  cross: { clip: 'pass', start: 0.15, early: 0.04, contact: 0.417, recover: 0.35, moveMag: 0.3, turn: 4 },
+  shot: { clip: 'shot', start: 0.2, early: 0.02, contact: 0.45, recover: 0.4, moveMag: 0.3, turn: 4 },
   firstTime: 0.08,
   recoverMove: 0.35,      // joystick ridotto mentre si finisce il tiro
   receive: { clip: 'receive', start: 0.1, length: 0.6 },
-  chainFade: 0.15,        // due gesti di fila: il primo sfuma sotto il secondo
+  chainFade: 0.18,        // due gesti di fila: il primo sfuma sotto il secondo
   poseFps: 30             // campioni al secondo delle tabelle delle pose del portiere
 };
 
@@ -551,6 +579,9 @@ export const RULES = {
   goalPause: 5.5,         // esultanza, poi calcio d'inizio
   goalSkip: 1.5,          // da qui un pulsante salta l'esultanza
   halfPause: 3,
+  returnDelay: 1,         // dopo un gol si torna verso il centrocampo dopo tanti secondi
+  gatherMax: 9,           // ripresa: al massimo si aspetta tanto che tutti siano al loro posto
+  gatherDist: 0.6,        // entro questa distanza dal proprio posto si e' pronti
   celebration: { clip: 'celebration', from: 0, hold: 4.6 },
   kickoff: { clip: 'kickoff', from: 0, contact: 0.517, end: 0.567, arrive: 7 },
   // Rimessa: in attesa si resta fermi nel primo fotogramma (palla in mano),
@@ -615,6 +646,9 @@ export const REFEREE = {
 export const SOUND = {
   whistle: { f1: 2950, f2: 3180, trill: 28, depth: 110, gain: 0.12, short: 0.32, long: 0.9, gap: 0.15 }
 };
+
+// Rallentatore di debug (F4): per guardare transizioni e contatti piede-palla.
+export const DEBUG = { slowMotion: 0.25 };
 
 export const RENDER = {
   maxPixelRatio: 2,
