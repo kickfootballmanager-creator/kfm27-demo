@@ -647,11 +647,12 @@ class Match {
       const da = (r.a - a.r0.a) * (a.scaleA ?? 1), ds = (r.s - a.r0.s) * (a.scaleS ?? 1);
       const fx = Math.sin(a.h0), fz = Math.cos(a.h0);
       p.moveTo(a.x0 + fx * da - fz * ds, a.z0 + fz * da + fx * ds, dt);
-    } else {
+    } else if (!a.moves) {
       p.drive(dt, 0, 0, 0, {});
     }
+    // a.moves: il gesto sposta da se' il giocatore (tick), prima degli eventi
+    if (a.tick) a.tick(a, dt);
     if (a.events) for (const e of a.events) if (!e.done && a.t >= e.at) { e.done = true; e.fn(); }
-    if (a.tick) a.tick(a);
     if (p.action === a && a.t >= a.end) {
       p.action = null;
       if (a.root) { p.speed = Math.min(p.speed, p.params.maxSpeed * PLAYER.jogFactor); p.moveHeading = p.heading; }

@@ -1,6 +1,7 @@
-import { TACKLE, SLIDE, DOWN, AERIAL, FEINT, KEEPER, PITCH, GOAL, CONTROL, ATTR } from './config.js';
+import { TACKLE, SLIDE, DOWN, AERIAL, FEINT, KEEPER, PITCH, GOAL, CONTROL, ATTR, MOVES } from './config.js';
 import { rootAt, clipDuration } from './avatar.js';
 import { headingOf } from './player.js';
+import { StandTackle } from './moves.js';
 
 // Contrasto, scivolata, caduta, colpo di testa, rovesciata, portiere: azioni (p.action)
 // che main.stepAction fa avanzare; gli eventi scattano al fotogramma misurato in player.motion.json.
@@ -21,22 +22,39 @@ export function rootAction(m, p, clip, from, end, rate, extra) {
 function defUnit(p) { return unit(p.params.tackle, ATTR.tackle[0], ATTR.tackle[1]); }
 function driUnit(p) { return unit(p.params.dribbleSpeed, ATTR.dribbleSpeed[0], ATTR.dribbleSpeed[1]); }
 
-// --- contrasto in piedi
+const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+const smooth = (u) => u * u * (3 - 2 * u);
+
+// --- contrasto in piedi, creato in codice (moves.StandTackle): affondo verso
+// la palla con la gamba dalla sua parte, esito al contatto del piede.
 export function startTackle(m, p) {
-  if (p.action || p.down) return;
+  if (p.action || p.down) return false;
   const T = TACKLE, b = m.ball;
-  p.heading = headingOf(b.pos.x - p.pos.x, b.pos.z - p.pos.z);
-  p.avatar.playOnce(T.clip, T.from, (T.until - T.from) / T.rate, T.rate);
-  p.action = rootAction(m, p, T.clip, T.from, T.until, T.rate, {
-    tackle: true,
-    events: [{ at: T.contact - T.from, fn: () => resolveTackle(m, p) }]
-  });
+  const dx = b.pos.x - p.pos.x, dz = b.pos.z - p.pos.z, d = Math.hypot(dx, dz) || 1;
+  const side = dx * p.rightX + dz * p.rightZ >= 0 ? 'Right' : 'Left';
+  const move = new StandTackle(MOVES.standTackle, side, b.pos);
+  p.avatar.playProc(move);
+  const h0 = p.heading, h1 = headingOf(dx, dz);
+  const x0 = p.pos.x, z0 = p.pos.z, ux = dx / d, uz = dz / d;
+  const lunge = clamp(d - T.contactDist, 0, T.lunge);
+  p.action = {
+    tackle: true, moves: true, t: 0, rate: 1, end: T.duration,
+    tick: (a, dt) => {
+      move.target.copy(b.pos);
+      const s = smooth(clamp((a.t - T.lungeFrom) / (T.contact - T.lungeFrom), 0, 1));
+      p.moveTo(x0 + ux * lunge * s, z0 + uz * lunge * s, dt);
+      p.heading = h0 + wrap(h1 - h0) * smooth(Math.min(1, a.t / T.contact));
+      p.moveHeading = h1;
+    },
+    events: [{ at: T.contact, fn: () => resolveTackle(m, p) }]
+  };
+  return true;
 }
 
 function resolveTackle(m, p) {
   const T = TACKLE, b = m.ball;
-  const fx = p.pos.x + p.dirX * T.foot, fz = p.pos.z + p.dirZ * T.foot;
-  if (Math.hypot(b.pos.x - fx, b.pos.z - fz) > T.reach || b.pos.y > 0.8 || !b.live) return;
+  // il piede arriva solo fin dove arriva la gamba tesa
+  if (!b.live || b.pos.y > 0.8 || Math.hypot(b.pos.x - p.pos.x, b.pos.z - p.pos.z) > T.legReach) return;
   const owner = m.owner;
   if (owner && owner.team === p.team) return;
   if (owner) {

@@ -279,11 +279,35 @@ export const AI = {
   intercept: { base: 0.3, def: 0.5, speed: 0.012 }    // probabilita' d'intercetto: base + def*attr - speed*v
 };
 
-// Contrasto in piedi (tackle): affondo breve, la palla parte al contatto.
+// Animazioni create in codice (moves.js): curve [secondi, valore] applicate
+// sopra la clip di corsa, piu' IK sulle gambe e sulle braccia.
+export const MOVES = {
+  // Contrasto in piedi: nessuna clip adatta (tackle e' una caduta dopo fallo).
+  // Il bacino scende, il piede d'appoggio resta piantato, l'altra gamba entra
+  // sulla palla con l'interno del piede; busto indietro, braccia larghe.
+  standTackle: {
+    duration: 0.56,
+    contact: 0.24,
+    reach: [[0, 0], [0.1, 0.35], [0.2, 1], [0.3, 1], [0.52, 0]],   // peso dell'IK del piede sulla palla
+    plant: [[0, 0], [0.08, 1], [0.42, 1], [0.56, 0]],              // piede d'appoggio fermo
+    drop: [[0, 0], [0.18, 0.14], [0.32, 0.13], [0.56, 0]],         // metri di abbassamento del bacino
+    lean: [[0, 0], [0.22, 0.22], [0.34, 0.14], [0.56, 0]],         // rad, busto all'indietro
+    side: [[0, 0], [0.22, 0.18], [0.56, 0]],                       // rad, busto lontano dalla gamba che entra
+    foot: [[0, 0], [0.16, 0.9], [0.34, 0.9], [0.52, 0]],           // rad, piede aperto verso l'esterno
+    arms: [[0, 0], [0.2, 0.85], [0.4, 0.6], [0.56, 0]],            // rad, braccia aperte
+    ankle: 0.09,          // altezza della caviglia sul pallone
+    footGap: 0.05         // dal centro della palla alla caviglia, oltre il raggio
+  }
+};
+
+// Contrasto in piedi: affondo breve verso la palla, esito al contatto del piede.
 export const TACKLE = {
-  clip: 'tackle', from: 0.1, contact: 0.45, until: 0.7, rate: 1.25,
-  reach: 1.35,            // dal piede di chi entra alla palla
-  foot: 0.7,              // il piede e' a questa distanza davanti al giocatore
+  contact: MOVES.standTackle.contact,
+  duration: MOVES.standTackle.duration,
+  legReach: 0.95,         // dal centro del giocatore al pallone, gamba tesa
+  contactDist: 0.62,      // l'affondo porta il corpo a questa distanza dalla palla
+  lunge: 0.75,            // metri massimi dell'affondo verso la palla
+  lungeFrom: 0.04,        // l'affondo va da qui al contatto (secondi)
   poke: 4.5,              // m/s della palla tolta
   keep: 0.45,             // probabilita' di tenerla invece di allontanarla
   dribbleResist: 0.35,    // quanto il dribbling di chi ha palla riduce la riuscita

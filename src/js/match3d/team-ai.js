@@ -310,12 +310,13 @@ export class TeamAI {
     p.aiFace = { x: m.ball.pos.x - p.pos.x, z: m.ball.pos.z - p.pos.z };
 
     const bd = Math.hypot(m.ball.pos.x - p.pos.x, m.ball.pos.z - p.pos.z);
-    const t = (this.pressSince.get(p) || 0) + (bd < TACKLE.reach + TACKLE.foot + 0.4 ? dt : -dt);
+    const reach = TACKLE.legReach + TACKLE.lunge;
+    const t = (this.pressSince.get(p) || 0) + (bd < reach + 0.4 ? dt : -dt);
     this.pressSince.set(p, Math.max(0, t));
     const delay = lerp(AI.press.delay[0], AI.press.delay[1], this.skill);
     if (t < delay || p.action || carrier.keeper) return;
     const rate = lerp(AI.tackleRate[0], AI.tackleRate[1], this.skill);
-    if (bd < TACKLE.reach + TACKLE.foot && Math.random() < rate * dt) { m.startTackle(p); return; }
+    if (bd < reach && Math.random() < rate * dt) { m.startTackle(p); return; }
     // Scivolata: da dietro o di lato, quando il portatore scappa.
     const cv = Math.hypot(carrier.vel.x, carrier.vel.z);
     if (bd > 1.8 && bd < 3.6 && cv > 4 && Math.random() < lerp(AI.slideChance[0], AI.slideChance[1], this.skill) * dt) {

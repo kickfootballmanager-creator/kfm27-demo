@@ -368,7 +368,10 @@ export class Avatar {
     return out;
   }
 
-  get busy() { return !!this.one; }
+  get busy() { return !!this.one || !!this.proc; }
+
+  // Animazione creata in codice (moves.js) sopra la clip in corso.
+  playProc(move) { this.proc = move; }
 
   gestureName() { return this.one ? this.one.a.getClip().name : null; }
 
@@ -449,6 +452,7 @@ export class Avatar {
       this.keeperStep.setEffectiveWeight(this.sideW * (1 - oneW));
     }
     this.mixer.update(dt);
+    if (this.proc && !this.proc.update(this, dt)) this.proc = null;
   }
 
   dispose() {
