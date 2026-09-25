@@ -82,6 +82,20 @@ lontano.
 Da noi: `THROUGH.lead` passa da 4 a 16 metri davanti alla corsa del compagno
 con la potenza; la palla arriva lenta nello spazio (`THROUGH.arrive`).
 
+Chi riceve il filtrante (`main.runOnto`) corre nello spazio, non verso la
+palla: sulla traiettoria prevista sceglie il primo punto davanti a lui dove
+arriva insieme al pallone correndo ad almeno il 60% della sua velocita'
+massima, e ci va a quella velocita'. Non arriva prima per poi fermarsi ad
+aspettare, prende la palla in corsa. Il test di durata segnala il ricevente
+fermo con la palla ancora lontana.
+
+Inserimenti a tempo (`team-ai.runner`, numeri in `AI.run`): ogni pochi
+secondi uno o due attaccanti si mettono sulla linea del fuorigioco, 1,8 m
+dietro, pronti a partire. Il portatore IA gioca il filtrante a chi aspetta
+sulla linea e l'inserimento parte in quel momento, cosi' al passaggio e'
+ancora in gioco. Con la palla all'utente l'attaccante parte da solo quando
+lui guarda avanti: il passaggio va dato subito, o scatta il fuorigioco.
+
 ## Cross
 
 - Cerchio dalla fascia. La barra sceglie il punto: 1/4 primo palo, 1/2 centro

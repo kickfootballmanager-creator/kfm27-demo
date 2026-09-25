@@ -42,11 +42,21 @@ async function main() {
     collectErrors(cdp, errors);
     try {
       for (let k = next++; k <= MATCHES; k = next++) {
-        errors.length = 0;
         const t0 = Date.now();
-        await openMatch(cdp, BASE, errors);
-        await evaluate(cdp, page);
-        const init = await evaluate(cdp, 'window.__soak.init()');
+        // la pagina a volte non e' ancora stabile quando si iniettano i
+        // controlli: si riapre la partita, al massimo due volte
+        let init = null;
+        for (let attempt = 1; !init; attempt++) {
+          errors.length = 0;
+          try {
+            await openMatch(cdp, BASE, errors);
+            await evaluate(cdp, page);
+            init = await evaluate(cdp, 'window.__soak.init()');
+          } catch (e) {
+            if (attempt >= 3) throw e;
+            console.log(`\npartita ${k}: preparazione non riuscita (${e.message.split('\n')[0]}), riprovo`);
+          }
+        }
         if (!calibrated) {
           calibrated = true;
           console.log('calibrazione: piede piu\' alto in appoggio ' + init.feetMax.toFixed(3) + ' m, anca ' + init.hipsRange.map((v) => v.toFixed(2)).join('-') + ' m' +

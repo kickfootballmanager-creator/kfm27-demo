@@ -369,6 +369,12 @@
       }
     }
     S.persist(st, 'crowd', crowd > 2, 60, 'difesa: piu\' di due in pressione sul portatore', car, { in_pressione: crowd });
+    // filtrante: chi lo riceve corre fino alla palla, non si ferma ad aspettarla
+    // (quasi fermo con la palla lontana; girarsi piano verso di lei e' permesso)
+    const to = poss.flying && poss.kind === 'filtrante' ? poss.to : null;
+    const b = m.ball;
+    const waiting = !!to && !to.down && !to.action && m.phase === 'play' && Math.hypot(b.pos.x - to.pos.x, b.pos.z - to.pos.z) > 3 && to.speed < 1;
+    S.persist(st, 'throughStop', waiting, 20, 'filtrante: il ricevente si ferma prima della palla', to, { distanza_palla: to ? +Math.hypot(b.pos.x - to.pos.x, b.pos.z - to.pos.z).toFixed(1) : null });
   };
 
   // Avanza di `n` passi controllando dopo ognuno; si ferma a fine partita.
@@ -412,7 +418,8 @@
         tackleMiss: S.stats.duels.vuoto || 0,
         throughBalls: S.stats.through,
         throughDone: S.stats.throughDone,
-        throughLost: S.stats.throughLost
+        throughLost: S.stats.throughLost,
+        offsides: m.stats.offsides.home + m.stats.offsides.away
       },
       foulKinds: S.stats.foulKinds,
       slideFrom: S.stats.slideFrom,

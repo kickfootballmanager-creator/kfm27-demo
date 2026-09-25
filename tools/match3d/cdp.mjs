@@ -52,6 +52,9 @@ export async function launch({ width = 1280, height = 720 } = {}) {
     '--headless=new', '--remote-debugging-port=' + port, '--user-data-dir=' + profile,
     '--enable-unsafe-swiftshader', '--use-angle=swiftshader', '--mute-audio', '--no-first-run',
     '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disk-cache-size=1',
+    // niente download di Chrome nel profilo temporaneo (estensioni, modelli, aggiornamenti): 200 MB per Chrome
+    '--disable-extensions', '--disable-component-update', '--disable-background-networking',
+    '--disable-features=OptimizationGuideModelDownloading,OptimizationHintsFetching,OptimizationTargetPrediction,OptimizationHints',
     `--window-size=${width},${height}`, 'about:blank'
   ], { stdio: 'ignore' });
   let closed = false;

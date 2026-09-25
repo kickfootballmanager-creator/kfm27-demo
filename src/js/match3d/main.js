@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { PHYSICS, RENDER, RULES, PLAYER, CONTROL, DRIBBLE, SHOT, PASS, KIT, RECEIVE, FIRST_TOUCH, ANIM, POWER, FEINT, AI, AERIAL, SHAPE, PITCH, SLIDE, BALL, DUEL, OFFSIDE, DEBUG, PRESS } from './config.js';
+import { PHYSICS, RENDER, RULES, PLAYER, CONTROL, DRIBBLE, SHOT, PASS, KIT, RECEIVE, FIRST_TOUCH, ANIM, POWER, FEINT, AI, AERIAL, SHAPE, PITCH, SLIDE, BALL, DUEL, OFFSIDE, DEBUG, PRESS, THROUGH } from './config.js';
 import { buildPitch } from './pitch.js';
 import { Ball, shadowTexture } from './ball.js';
 import { BroadcastCamera } from './camera.js';
@@ -998,6 +998,8 @@ class Match {
     } else if (a.kind === 'through') {
       b.rollAt(aim.tx, aim.tz, throughSpeed(d, a.power));
       this.poss.fly('filtrante', p, a.target);
+      // chi aspettava sulla linea parte adesso
+      if (a.target && a.target.run) this.teams[a.target.team].ai.goRun(a.target);
     } else if (a.kind === 'cross') {
       b.lobTo(aim.tx, aim.tz, a.apex);
       this.poss.fly(a.cross, p, a.target);
@@ -1032,6 +1034,7 @@ class Match {
   // Si corre al massimo sul punto d'intercetto, frenando solo per non
   // superarlo; da vicino il busto guarda la palla.
   runToBall(dt, p) {
+    if (this.poss.flying && this.poss.kind === 'filtrante' && this.poss.to === p) { this.runOnto(dt, p); return; }
     const b = this.ball, s = this.intercept(p);
     const dx = s.x - p.pos.x, dz = s.z - p.pos.z, d = Math.hypot(dx, dz);
     const bx = b.pos.x - p.pos.x, bz = b.pos.z - p.pos.z;
@@ -1039,6 +1042,35 @@ class Match {
     const brake = Math.sqrt(2 * PLAYER.decel * d) / p.params.maxSpeed;
     if (d > 0.15) p.drive(dt, dx, dz, Math.min(1, brake), { sprint: true, face });
     else p.drive(dt, 0, 0, 0, { face: face || { x: bx, z: bz } });
+  }
+
+  // Filtrante (skill: "Filtranti e inserimenti"): il ricevente corre nello
+  // spazio, non verso la palla. Sulla traiettoria prevista cerca il primo
+  // punto davanti a lui dove arriva insieme al pallone correndo ad almeno
+  // THROUGH.runMin della velocita' massima, e ci va a quella velocita': non
+  // arriva prima per poi fermarsi ad aspettare, prende la palla in corsa.
+  runOnto(dt, p) {
+    const b = this.ball, T = THROUGH, top = p.params.maxSpeed;
+    const path = b.predict(this.path, RECEIVE.step, RECEIVE.horizon);
+    const d = this.dirOf(p.team);
+    let pick = null, first = null;
+    for (const s of path) {
+      if (s.y > CONTROL.trapHeight) continue;
+      // mai indietro verso la propria porta
+      if ((s.x - p.pos.x) * d < -T.behind) continue;
+      const dist = Math.max(0, Math.hypot(s.x - p.pos.x, s.z - p.pos.z) - CONTROL.receiveRadius * 0.6);
+      const v = dist / Math.max(0.05, s.t - RECEIVE.reaction);
+      if (v > top) continue;
+      if (!first) first = { s, v };
+      if (v >= top * T.runMin) { pick = { s, v }; break; }
+    }
+    pick = pick || first;
+    const s = pick ? pick.s : path[path.length - 1];
+    const dx = s.x - p.pos.x, dz = s.z - p.pos.z, dd = Math.hypot(dx, dz);
+    const bx = b.pos.x - p.pos.x, bz = b.pos.z - p.pos.z;
+    if (dd < 0.15) { p.drive(dt, bx, bz, T.runMin, { sprint: true }); return; }
+    const mag = Math.max(T.runMin, Math.min(1, (pick ? pick.v : top) / top));
+    p.drive(dt, dx, dz, mag, { sprint: true, face: Math.hypot(bx, bz) < 2.5 ? { x: bx, z: bz } : null });
   }
 
   // Palla in coordinate polari attorno al giocatore (angolo nel campo): lo

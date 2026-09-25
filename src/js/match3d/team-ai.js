@@ -180,18 +180,44 @@ export class TeamAI {
     const onside = RULES.offside ? Math.max(defs.length > 1 ? defs[1] : HL, ball.a) - AI.run.onside : HL;
     for (const p of field) {
       if (p === carrier || !this.free(p)) continue;
-      if (this.runners.has(p)) {
-        const s = clamp(this.rel(p.aiTarget.x, p.aiTarget.z).s * 0.7, -HW + 4, HW - 4);
-        p.aiTarget = this.world(clamp(Math.min(onside, Math.max(last + 5, ball.a + AI.run.depth)), -HL + 10, HL - 7), s);
-        p.aiState = 'INSERIMENTO';
-        p.aiSprint = true;
-      } else if (carrier) {
-        p.aiTarget = this.openSpace(p, p.aiTarget, carrier);
+      if (this.runners.has(p)) this.runner(p, carrier, onside, Math.max(last, ball.a), dt);
+      else {
+        p.run = null;
+        if (carrier) p.aiTarget = this.openSpace(p, p.aiTarget, carrier);
       }
       const r = this.rel(p.aiTarget.x, p.aiTarget.z);
-      if (r.a > onside) p.aiTarget = this.world(onside, r.s);
+      if (r.a > onside && !(p.run && p.run.go)) p.aiTarget = this.world(onside, r.s);
     }
     if (carrier && carrier !== m.ctrl && !carrier.keeper) this.carrierThink(carrier, dt);
+  }
+
+  // Inserimento a tempo: in attesa sulla linea del fuorigioco (un po' dietro,
+  // per restare in gioco quando parte), poi di scatto nello spazio oltre la
+  // difesa. `line`: la linea da attaccare (ultimo difensore o palla).
+  runner(p, carrier, onside, line, dt) {
+    const m = this.m, R = AI.run;
+    const run = p.run || (p.run = { go: false, t: 0, wait: rand(...R.wait) });
+    run.t += dt;
+    const s = clamp(this.rel(p.aiTarget.x, p.aiTarget.z).s * 0.7, -HW + 4, HW - 4);
+    p.aiState = 'INSERIMENTO';
+    if (!run.go) {
+      p.aiTarget = this.world(clamp(onside - (R.hold - R.onside), -HL + 10, HL - 7), s);
+      p.aiSprint = Math.hypot(p.aiTarget.x - p.pos.x, p.aiTarget.z - p.pos.z) > AI.sprintDist;
+      // con la palla all'utente parte da solo, quando lui guarda avanti
+      if (carrier && carrier === m.ctrl && run.t > run.wait && carrier.dirX * this.dir > 0.5) this.goRun(p);
+      return;
+    }
+    p.aiTarget = this.world(clamp(line + R.depth, -HL + 10, HL - 7), s);
+    p.aiSprint = true;
+    // il pallone non e' arrivato: si torna in linea, pronti a ripartire
+    if (run.t > R.goMax && m.receiver !== p) { run.go = false; run.t = 0; run.wait = rand(...R.wait); }
+  }
+
+  // Parte l'inserimento: adesso, cosi' al passaggio e' ancora in gioco.
+  goRun(p) {
+    if (!p.run) p.run = { go: false, t: 0, wait: 0 };
+    p.run.go = true;
+    p.run.t = 0;
   }
 
   // Il punto vicino alla posizione del modulo piu' lontano dagli avversari e
@@ -229,6 +255,8 @@ export class TeamAI {
 
     const d = this.dir, opp = this.opponents;
     const me = this.rel(p.pos.x, p.pos.z);
+    let last = -HL;
+    for (const o of opp) if (!o.keeper) last = Math.max(last, this.rel(o.pos.x, o.pos.z).a);
     let press = Infinity;
     for (const o of opp) press = Math.min(press, Math.hypot(o.pos.x - p.pos.x, o.pos.z - p.pos.z));
     const pressed = press < C.pressedAt;
@@ -256,7 +284,11 @@ export class TeamAI {
       const free = freeness(q.pos.x, q.pos.z, opp);
       const base = gain * C.passProgress + 0.6 * free - 0.9 * risk - dist * 0.006 + (pressed ? 0.25 : 0);
       options.push({ kind: 'pass', to: q, score: base + noise() });
-      if (q.aiState === 'INSERIMENTO' && gain > 4) options.push({ kind: 'through', to: q, score: base + 0.35 + noise() });
+      // filtrante a chi aspetta sulla linea: parte adesso e la palla va nello spazio dietro la difesa
+      if (q.aiState === 'INSERIMENTO' && q.run && !q.run.go && gain > 0) {
+        const space = HL - Math.max(last, this.rel(q.pos.x, q.pos.z).a);
+        options.push({ kind: 'through', to: q, score: base + AI.run.bonus * (space > AI.run.space ? 1.5 : 1) + noise() });
+      }
     }
     // Cross dalla fascia se in area c'e' qualcuno.
     if (Math.abs(p.pos.z) > CROSS.wingZ && me.a > CROSS.finalThird && !passOnly) {
@@ -271,6 +303,7 @@ export class TeamAI {
 
     options.sort((a, b) => b.score - a.score);
     const pick = options[0];
+    if (pick.kind === 'through' && pick.to) this.goRun(pick.to);
     if (pick.kind === 'dribble') {
       p.dribbleDir = this.dribbleDir(p);
       if (pressed && press < 2.6 && Math.random() < C.feintChance) m.startFeint(p, null);
@@ -579,9 +612,15 @@ export class TeamAI {
     const t = p.aiTarget;
     const dx = t.x - p.pos.x, dz = t.z - p.pos.z, d = Math.hypot(dx, dz);
     const bx = m.ball.pos.x - p.pos.x, bz = m.ball.pos.z - p.pos.z;
-    // si guarda la palla (o aiFace) solo vicino al proprio posto: da lontano si
-    // corre guardando dove si va, non di lato (le corse laterali veloci scivolano)
-    const face = d < AI.faceNear ? (p.aiFace || { x: bx, z: bz }) : null;
+    // si guarda la palla (o aiFace) solo vicino al proprio posto, e correndo di
+    // lato o all'indietro solo per aggiustarsi: altrimenti ci si gira e si corre
+    // (le corse laterali veloci fanno scivolare i piedi)
+    let face = null;
+    if (d < AI.faceNear) {
+      const f = p.aiFace || { x: bx, z: bz };
+      const off = Math.abs(Math.atan2(Math.sin(Math.atan2(f.x, f.z) - Math.atan2(dx, dz)), Math.cos(Math.atan2(f.x, f.z) - Math.atan2(dx, dz))));
+      if (d < AI.faceStep || off < AI.faceAngle) face = f;
+    }
     if (d < 0.3) { p.drive(dt, 0, 0, 0, { face: { x: bx, z: bz } }); return; }
     const mag = Math.min(1, d / AI.arrive);
     p.drive(dt, dx, dz, mag, { sprint: p.aiSprint || d > AI.sprintDist, face });

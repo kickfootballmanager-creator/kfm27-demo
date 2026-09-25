@@ -182,7 +182,11 @@ export const THROUGH = {
   speedMax: 26,
   wReach: 1.1,            // come nel passaggio la barra sceglie anche il compagno, ma conta lo spazio
   wSpace: 0.8,            // peso dello spazio libero davanti al compagno
-  goalGap: 7              // il punto d'arrivo resta almeno a tanti metri dalla linea di porta
+  goalGap: 7,             // il punto d'arrivo resta almeno a tanti metri dalla linea di porta
+  // chi lo riceve corre nello spazio incontro al pallone, mai sotto runMin
+  // della velocita' massima, senza tornare indietro di oltre `behind` m
+  runMin: 0.6,
+  behind: 1.5
 };
 
 // Cross dalle fasce verso l'area, lancio lungo altrove. Palla alta che
@@ -285,9 +289,18 @@ export const AI = {
   targetSmooth: 0.35,     // a ogni decisione il posto di zona si avvicina di questa frazione a quello nuovo
   targetReset: 40,        // m: oltre, il posto filtrato riparte dal nuovo (riposizionamenti)
   sprintDist: 9,          // oltre questa distanza dalla posizione si scatta
-  faceNear: 4,            // entro questa distanza dalla posizione si guarda la palla
+  faceNear: 4,            // entro questa distanza dalla posizione si guarda la palla...
+  faceStep: 1.5,          // ...ma di lato o all'indietro solo entro questa (piccoli aggiustamenti)
+  faceAngle: 1,           // o se la palla e' a meno di tanti rad dalla direzione di corsa
   space: { samples: 8, radius: 6, wOpp: 1.4, wLane: 1.2, wHome: 0.08 },
-  run: { every: [2.5, 5], depth: 12, max: 2, onside: 0.8 },  // inserimenti: ogni quanto, quanto oltre, quanti insieme; onside: m prima della linea del fuorigioco
+  // Inserimenti a tempo (skill: "Filtranti e inserimenti"): ogni `every` s uno o
+  // due attaccanti si mettono sulla linea del fuorigioco, `hold` m dietro, pronti
+  // a partire. Partono quando il portatore IA gioca il filtrante (bonus al suo
+  // punteggio, di piu' con `space` m liberi dietro la difesa) o da soli dopo
+  // `wait` s se la palla ce l'ha l'utente e guarda avanti. In corsa fino a
+  // `depth` m oltre la linea; dopo goMax s senza pallone tornano in linea.
+  // onside: m prima della linea del fuorigioco per tutti gli altri.
+  run: { every: [2.5, 5], depth: 14, onside: 0.8, hold: 1.8, wait: [0.8, 2], goMax: 1.8, space: 12, bonus: 0.35 },
   press: { tight: 0.85, delay: [0.45, 0.12] },   // delay: reazione in marcatura [difficulty 0, 1]; tight: m dalla palla quando stringe per il contrasto
   mark: { radius: 14, goalSide: 1.8 },
   wall: { maxDist: 32, gap: 0.7, postAim: 1.6 },  // barriera: uomini a 0,7 m (piu' dell'ingombro di due giocatori), mirata al palo vicino
@@ -347,7 +360,7 @@ export const AI = {
   // toGoal quota della corsa verso la porta) entro goalDist, arrivo di lato o
   // di fronte, nessun compagno in copertura (entro coverWidth dalla linea
   // portatore-porta). chance: probabilita' al secondo [difficulty 0, 1].
-  slide: { chance: [2, 3.2], range: [1.7, 3.3], speed: 3.5, toGoal: 0.4, goalDist: 45, coverWidth: 4 }
+  slide: { chance: [2.8, 4.4], range: [1.7, 3.3], speed: 3.5, toGoal: 0.4, goalDist: 45, coverWidth: 4 }
 };
 
 // Contrasto in piedi: affondo breve verso la palla, esito al contatto del piede.
