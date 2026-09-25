@@ -69,9 +69,12 @@ export const PLAYER = {
   faceTurn: 2,            // rotazione del busto verso la palla rispetto alla sterzata
   faceGain: 14,           // 1/s: il busto insegue la direzione voluta come una molla...
   faceAccel: 70,          // ...con un'accelerazione angolare massima (rad/s^2): niente scatti
+  faceMax: 9,             // rad/s massimi del busto: mezzo giro in 0,35 s
   strafeSpeed: 0.6,       // corsa laterale o all'indietro: frazione della velocita' massima
   closeSpeed: 0.55,       // controllo stretto (R2): frazione della velocita'
   turnSlowBoost: 2,       // da fermo si gira fino a 3 volte piu' in fretta
+  pivotSpeed: 0.8,        // m/s: sotto, il primo passo va subito nella direzione voluta
+  lateralAccel: 20,       // m/s^2 massimi in curva: a 5 m/s si gira a 4 rad/s, a 8 m/s a 2,5
   turnBrake: 0.35,        // velocita' minima conservata in una curva a 90 gradi
   runBack: [6, 22, 0.35],  // a gioco fermo verso il proprio posto: corsa oltre 6 m, scatto oltre 22, sotto al passo (frazione)
   fieldMargin: 0.6,       // distanza minima dai cartelloni
@@ -401,6 +404,7 @@ export const KEEPER = {
   depth: [1.2, 6],        // distanza dalla linea: palla lontana, palla vicina
   depthRange: [45, 12],   // distanza della palla a cui si passa da un valore all'altro
   maxZ: 3.2,              // non si sposta oltre questa distanza dal centro della porta
+  alertDist: 32,          // palla entro tanti metri dalla porta: in guardia (animazione)
   react: [0.28, 0.12],    // secondi di reazione a un tiro [difficulty 0, 1]
   penaltyReact: 0.04,     // sul rigore il lato e' gia' scelto: parte subito
   aim: [0.3, 0.06],       // errore (m) sul punto d'intercetto previsto [attributo basso, alto]
@@ -501,11 +505,11 @@ export const MODEL = {
 // le clip in avanti si fondono per velocita' (idle, camminata, corsa, scatto),
 // quelle direzionali per l'angolo fra corsa e busto. Tempi d'appoggio dei
 // piedi, velocita' naturali e verso di ogni clip si misurano sulle clip al
-// caricamento (anim.js, measureGait): tutte le clip hanno la fase 0 quando
-// appoggia il piede destro, cosi' nella fusione le gambe non si incrociano.
+// caricamento (anim.js, measureClips): in tutte le clip la fase 0 e'
+// l'appoggio del destro e 0,5 quello del sinistro, cosi' nella fusione i piedi non scivolano.
 export const ANIM = {
   // m/s a cui ogni clip in avanti pesa 1: scelte perche' il playback resti
-  // vicino a 1 (la corsa lenta va a 2,4 m/s, quella veloce a 4,8).
+  // vicino a 1 (la corsa lenta va a 2,5 m/s, quella veloce a 4,8).
   speeds: { walk: 1.8, run: 3.3, sprint: 6 },
   forward: ['idle', 'walk', 'run', 'sprint'],
   // corsa guardando altrove: [sinistra, destra], dalla diagonale avanti all'indietro
@@ -516,22 +520,39 @@ export const ANIM = {
   ],
   keeperStep: 'gk_sidestep',  // il portiere di lato, rivolto alla palla
   keeperStepMax: 3.5,     // m/s: oltre, anche il portiere corre di lato come gli altri
-  kicks: ['pass', 'shot', 'penalty'],   // clip dei calci: tempi d'appoggio del piede sinistro
-  gaitSamples: 48,        // campioni per clip nella misura dei passi
+  keeperStepBlend: 1,     // m/s in cui il passo laterale lascia il posto alla corsa di lato
+  // Portiere in guardia quando la palla e' vicina (KEEPER.alertDist) e sta
+  // fermo: il fotogramma del passo laterale con i piedi a terra piu' larghi.
+  keeperReady: { clip: 'gk_sidestep', rate: 4 },
+  // Gesti che partono dal fotogramma con i piedi piu' simili al passo in corso.
+  match: ['pass', 'shot', 'penalty', 'receive'],
+  matchBias: 0.3,         // quanto conta allontanarsi dall'istante preferito (m^2 al secondo)
+  gaitSamples: 120,       // campioni per clip nella misura dei passi
   contactBand: 0.035,     // m sopra la caviglia piu' bassa: il piede e' a terra
   speedBand: 0.02,        // appoggio stretto su cui si misura la velocita' naturale
+  plantHeight: 0.06,      // m sopra il punto piu' basso: il piede puo' essere in appoggio
+  plantSlip: 0.35,        // ...se nel mondo si muove meno di questa frazione della velocita' naturale
   minRate: 0.6,           // playback minimo e massimo delle clip di corsa
   maxRate: 2,
   dirMaxRate: 2.1,        // clip direzionali (sono corsette): un po' piu' accelerate
-  blend: 9,               // 1/s: filtro dei pesi del blend tree
-  angleRate: 7,           // 1/s: filtro dell'angolo fra corsa e busto
+  blend: 40,              // 1/s: filtro dei pesi del blend tree
+  speedSpring: 14,        // 1/s: molla critica della velocita' che decide i pesi (partenze, arresti)
+  angleRate: 30,          // 1/s: filtro dell'angolo fra corsa e busto
+  maxSpeed: 12,           // m/s: oltre, uno spostamento e' un riposizionamento, non una corsa
+  dirHold: 0.3,           // m/s: sotto, la direzione della corsa resta quella di prima
+  dirSnap: 0.3,           // quota di corsa sotto cui la direzione si prende subito, senza filtro
+  // Corpo visibile: da `from` a `to` m/s l'angolo fra corsa e corpo scende da
+  // pi a minAngle (twist: rad del busto verso lo sguardo); turnSlow/turnFast/
+  // gestureTurn: rad/s massimi da fermi, in corsa, durante un gesto.
+  warp: { from: 3.6, to: 6, minAngle: 0.35, twist: 0.55, turnSlow: 7, turnFast: 5, gestureTurn: 20 },
+  liftRelease: 0.6,       // m/s: il corpo alzato perche' i piedi non entrino nell'erba riscende piano
   turnStep: 0.45,         // m/s di passo per rad/s di rotazione da fermi: girandosi si fanno piccoli passi
   // Inclinazione di tutto il corpo, dai piedi: nelle curve verso l'interno,
   // in avanti quando accelera, indietro quando frena. rad per m/s^2.
   lean: { roll: 0.02, maxRoll: 0.2, pitch: 0.012, maxPitch: 0.07, maxBack: 0.05, rate: 8 },
   // Piedi fermi a terra nell'appoggio (IK sulle gambe), finche' la clip non
   // li porterebbe troppo lontano.
-  footLock: { on: true, maxSpeed: 3.6, minMove: 0.25, ramp: 0.08, release: 0.12, drift: 0.22, liftEarly: 0.25 },
+  footLock: { on: true, maxSpeed: 9, minMove: 0.25, ramp: 0.08, release: 0.12, drift: 0.22, liftEarly: 0.25 },
   fadeIn: 0.15,           // cross-fade verso un gesto (0,15-0,25 s)
   fadeOut: 0.22,
   syncMinSpeed: 1.2,      // sotto questa velocita' il calcio parte dall'inizio, senza cercare il passo
@@ -546,7 +567,7 @@ export const ANIM = {
   shot: { clip: 'shot', start: 0.2, early: 0.02, contact: 0.45, recover: 0.4, moveMag: 0.3, turn: 4 },
   firstTime: 0.08,
   recoverMove: 0.35,      // joystick ridotto mentre si finisce il tiro
-  receive: { clip: 'receive', start: 0.1, length: 0.6 },
+  receive: { clip: 'receive', start: 0.1, early: 0.15, length: 0.6 },
   chainFade: 0.18,        // due gesti di fila: il primo sfuma sotto il secondo
   poseFps: 30             // campioni al secondo delle tabelle delle pose del portiere
 };
@@ -702,12 +723,45 @@ export const SOUND = {
 // Rallentatore di debug (F4): per guardare transizioni e contatti piede-palla.
 export const DEBUG = { slowMotion: 0.25 };
 
+// Livelli di qualita' (render.js). pixelRatio: massimo; shadow: lato della
+// shadow map dei giocatori (0 = ombre blob); aa: antialiasing in post.
 export const RENDER = {
-  maxPixelRatio: 2,
+  levels: {
+    low: { pixelRatio: 1, shadow: 0, aa: 'none', bloom: false },
+    medium: { pixelRatio: 1.5, shadow: 1024, aa: 'fxaa', bloom: false },
+    high: { pixelRatio: 2, shadow: 2048, aa: 'smaa', bloom: true }
+  },
+  exposure: 1.05,         // tone mapping ACES
+  envIntensity: 0.55,     // riflessi dell'environment map (RoomEnvironment)
+  shadowBox: 24,          // metri attorno alla palla coperti dall'ombra dinamica
+  shadowBias: -0.0004,
+  shadowNormalBias: 0.02,
+  blobFade: [0.7, 1],     // fuori dal riquadro dell'ombra (frazione del lato) tornano le ombre blob
+  bloom: { strength: 0.45, radius: 0.35, threshold: 1.8 },   // soglia sopra l'erba illuminata: brillano solo i fari
   minPixelRatio: 0.6,
-  lowFps: 48,
+  lowFps: 50,             // sotto, per lowSamples campioni di fila, si scende di livello
+  lowSamples: 2,
   highFps: 58,
   resStep: 0.15,
   sampleSeconds: 1.5,
   background: 0x0a111c
+};
+
+// Contorno dello stadio (stadium.js e pitch.js).
+export const STADIUM = {
+  skyRadius: 480,
+  sky: { top: 0x02050b, horizon: 0x16233a, glow: 0x1e2e4a },
+  stands: { depth: 26, rise: 14 },
+  floodlights: { out: 30, height: 40, poleRadius: 0.9, panel: [12, 6], tilt: 0.55, intensity: 4 },
+  crowd: {
+    row: 0.95,            // metri fra due file, lungo la tribuna
+    seat: 0.62,           // metri fra due posti
+    fill: 0.72,           // posti occupati
+    size: [0.55, 1.05],   // sagoma: larghezza e altezza
+    skin: 0xc9a07e,
+    light: 0.5,           // luminosita' del pubblico (i riflettori guardano il campo)
+    cheerTime: 7,         // secondi di esultanza dopo un gol
+    neutral: ['#39414d', '#5a6270', '#7a6a58', '#2d3f55', '#6b3b3b', '#4c5a3c', '#8a8d93'],
+    density: { low: 0.35, medium: 0.65, high: 1 }
+  }
 };

@@ -69,6 +69,8 @@ export class KeeperAI {
 
   update(dt) {
     const m = this.m, k = this.p;
+    // in guardia (animazione) quando la palla e' vicina alla sua porta
+    k.alert = m.owner !== k && Math.hypot(m.ball.pos.x - this.goalX, m.ball.pos.z) < KEEPER.alertDist;
     if (k.action || k.down) return;
     if (m.owner === k) { this.distribute(dt); return; }
     this.hold = 0;
@@ -85,12 +87,13 @@ export class KeeperAI {
   // Sulla linea fra palla e centro della porta, piu' fuori quando la palla si avvicina.
   position(dt) {
     const m = this.m, k = this.p, b = m.ball.pos;
+    k.alert = m.owner !== k && Math.hypot(b.x - this.goalX, b.z) < KEEPER.alertDist;
     k.aiState = 'POSIZIONE';
     // rigore contro: fermo sulla linea, al centro, rivolto al tiratore
     const set = m.rules.set;
     if (m.phase === 'restart' && set && set.type === 'penalty' && set.side !== this.side) {
       // il portiere dell'utente sceglie il tuffo durante la rincorsa
-      if (this.side === m.userSide && set.taker.action) { this.penaltyWatch(dt); return; }
+      if (m.human(this.side) && set.taker.action) { this.penaltyWatch(dt); return; }
       this.dive = null;
       this.moveTo(dt, this.goalX + this.dir * 0.3, 0, false);
       return;
@@ -423,7 +426,7 @@ export class KeeperAI {
   penaltyKicked(side) {
     const m = this.m, T = RULES.penalty;
     let guess;
-    if (this.side === m.userSide) guess = this.dive ? this.dive.side : null;
+    if (m.human(this.side)) guess = this.dive ? this.dive.side : null;
     else if (Math.random() < lerp(T.guess[0], T.guess[1], (this.skill + this.attr) / 2)) guess = side;
     else { const other = [-1, 0, 1].filter((v) => v !== side); guess = other[Math.floor(Math.random() * other.length)]; }
     this.penalty = { guess, real: side };

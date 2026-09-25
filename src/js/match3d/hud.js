@@ -147,8 +147,40 @@ export class Hud {
     resume.addEventListener('click', () => this.on.resume());
     panel.appendChild(resume);
     this.resumeBtn = resume;
+    panel.appendChild(this._quality());
     wrap.appendChild(panel);
     return wrap;
+  }
+
+  // Qualita' grafica (render.js): il livello scelto e' pieno, come le scelte
+  // sopra; la nota compare solo se il gioco l'ha abbassato da solo.
+  _quality() {
+    const box = el('div', 'm3d-quality');
+    const label = el('span', 'm3d-quality-l', 'Qualità grafica');
+    label.id = 'm3d-quality-l';
+    const seg = el('div', 'm3d-seg');
+    seg.setAttribute('role', 'radiogroup');
+    seg.setAttribute('aria-labelledby', label.id);
+    this.qualityBtns = {};
+    for (const [level, text] of [['low', 'Bassa'], ['medium', 'Media'], ['high', 'Alta']]) {
+      const b = el('button', null, text);
+      b.type = 'button';
+      b.setAttribute('role', 'radio');
+      b.setAttribute('aria-checked', 'false');
+      b.addEventListener('click', () => { if (this.on.quality) this.on.quality(level); });
+      seg.appendChild(b);
+      this.qualityBtns[level] = b;
+    }
+    this.qualityNote = el('p', 'm3d-quality-n');
+    box.append(label, seg, this.qualityNote);
+    return box;
+  }
+
+  // `chosen`: livello scelto (o proposto per il dispositivo); `level`: quello in uso.
+  setQuality(level, chosen) {
+    const names = { low: 'bassa', medium: 'media', high: 'alta' };
+    for (const k in this.qualityBtns) this.qualityBtns[k].setAttribute('aria-checked', String(k === chosen));
+    this.qualityNote.textContent = level !== chosen ? 'In uso la qualità ' + names[level] + ': con la ' + names[chosen] + ' la partita scendeva sotto i 50 fps.' : '';
   }
 
   setScore(h, a) {

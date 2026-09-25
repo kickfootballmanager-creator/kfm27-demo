@@ -3,8 +3,8 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { MODEL, ANIM } from './config.js';
-import { boneMap, solveTwoBone, palm } from './rig.js';
-import { measureGait, SLOTS, slotTime, IDLE_SLOT, FootLock } from './anim.js';
+import { boneMap, solveTwoBone, palm, rotateWorld } from './rig.js';
+import { measureClips, SLOTS, slotTime, IDLE_SLOT, FootLock, feetPose, matchPose } from './anim.js';
 
 const GLB_URL = new URL('../../assets/match3d/player.glb', import.meta.url).href;
 // Spostamento della radice e fotogrammi chiave misurati sugli FBX originali
@@ -109,7 +109,9 @@ function buildTemplate(gltf) {
     center,
     poses: samplePoses(holder, clips),
     plate: platePlacement(holder, body, clips.idle),
-    gait: measureGait(holder, clips)
+    gait: measureClips(holder, clips),
+    // copie delle clip usate da due azioni diverse (vedi Avatar.gestureClip)
+    copies: {}
   };
 }
 
@@ -270,6 +272,7 @@ function numberTexture(number, shirt) {
 
 const _hl = new THREE.Vector3(), _hr = new THREE.Vector3(), _lat = new THREE.Vector3();
 const _tl = new THREE.Vector3(), _tr = new THREE.Vector3();
+const _twist = new THREE.Quaternion(), _up = new THREE.Vector3(0, 1, 0);
 const _hq = new THREE.Quaternion();
 
 // Un calciatore in scena: copia dello scheletro, clip condivise, fusione
@@ -291,6 +294,7 @@ export class Avatar {
       if (o.isBone && o.name === tpl.plate.bone) bone = o;
     });
     body.material = material;
+    this.body = body;
     // Il volume di legatura non segue le animazioni: niente sparizioni ai bordi.
     body.frustumCulled = false;
 
@@ -306,12 +310,17 @@ export class Avatar {
       bone.add(plate);
     }
 
+    this.tpl = tpl;
     this.mixer = new THREE.AnimationMixer(this.object);
     // Una azione per fessura del blend tree (anim.js); le corse hanno il tempo
-    // deciso dalla fase comune, l'idle va per conto suo.
+    // deciso dalla fase comune, l'idle va per conto suo. Una clip in due
+    // fessure (passo laterale e guardia del portiere) ha due azioni distinte.
+    const seen = new Set();
     this.slots = SLOTS.map((name, i) => {
-      const clip = tpl.clips[name];
+      let clip = tpl.clips[name];
       if (!clip) return null;
+      if (seen.has(name)) clip = tpl.copies['slot' + i] || (tpl.copies['slot' + i] = clip.clone());
+      seen.add(name);
       const a = this.mixer.clipAction(clip);
       a.setEffectiveWeight(0);
       a.play();
@@ -319,15 +328,32 @@ export class Avatar {
       return a;
     });
     this.feet = new FootLock(this.rig);
-    this.tpl = tpl;
     this.one = null;
     this.prevOne = null;       // gesto precedente che sfuma sotto quello nuovo
+    this.feat = new Float32Array(6);
+    this.resyncDue = false;
+    this.lift = 0;              // metri di cui il corpo e' alzato perche' i piedi non entrino nell'erba
+  }
+
+  // Clip di un gesto: mai la stessa azione di una fessura della corsa, che
+  // fermata a fine gesto lascerebbe la corsa senza animazione.
+  gestureClip(name) {
+    const tpl = this.tpl, c = tpl.clips[name];
+    if (!c || !SLOTS.includes(name)) return c;
+    return tpl.copies[name] || (tpl.copies[name] = c.clone());
+  }
+
+  // Istante da cui far partire il gesto `name` (fra lo e hi, secondi della
+  // clip) perche' i piedi siano dove li ha il passo in corso.
+  matchStart(name, lo, hi, pref) {
+    this.object.updateMatrixWorld(true);
+    return matchPose(this.tpl.gait[name], feetPose(this.rig, this.object.rotation.y, this.feat), lo, hi, pref);
   }
 
   // Gesto sopra la corsa da `from`; dopo `hold` secondi sfuma verso la corsa.
   // Un gesto gia' in corso sfuma sotto il nuovo: niente pose in piedi fra due gesti a terra.
   playOnce(name, from, hold, rate = 1, fade = ANIM.fadeIn) {
-    const clip = this.tpl.clips[name];
+    const clip = this.gestureClip(name);
     if (!clip) return;
     if (this.prevOne) { this.prevOne.a.stop(); this.prevOne = null; }
     let chained = false;
@@ -350,7 +376,7 @@ export class Avatar {
   // Gesto in ciclo (a terra, in attesa) finche' non se ne chiede un altro.
   playLoop(name) {
     this.playOnce(name, 0, Infinity);
-    if (this.one && this.one.a.getClip() === this.tpl.clips[name]) this.one.a.setLoop(THREE.LoopRepeat, Infinity);
+    if (this.one && this.one.a.getClip() === this.gestureClip(name)) this.one.a.setLoop(THREE.LoopRepeat, Infinity);
   }
 
   // Ferma il gesto in corso: sfuma subito verso la corsa.
@@ -362,7 +388,7 @@ export class Avatar {
   // fotogramma: nessun salto di posa. false se il gesto in corso e' un altro.
   resume(name, rate, hold) {
     const o = this.one;
-    if (!o || o.a.getClip() !== this.tpl.clips[name]) return false;
+    if (!o || o.a.getClip() !== this.gestureClip(name)) return false;
     o.a.timeScale = rate;
     o.hold = o.t + hold;
     return true;
@@ -427,35 +453,81 @@ export class Avatar {
     return b.getWorldPosition(out);
   }
 
-  // Pesi e fase della locomozione da `gait` (interpolati con `alpha` fra gli
+  // Pesi e fase della corsa da `loco` (interpolati con `alpha` fra gli
   // ultimi due passi di fisica), il gesto sopra, poi i piedi fermi a terra.
-  update(dt, gait, alpha = 1) {
-    let oneW = 0;
+  // Corsa, gesto e gesto precedente pesano sempre 1 in tutto: con meno
+  // entrerebbe la posa di riposo del modello, girata rispetto alle clip.
+  update(dt, loco, alpha = 1) {
+    let gw = 0, pw = 0;
     if (this.one) {
-      const o = this.one;
+      const o = this.one, was = o.t;
       o.t += dt;
-      oneW = o.t < o.hold ? Math.min(1, o.t / o.fade) : Math.max(0, 1 - (o.t - o.hold) / ANIM.fadeOut);
-      if (o.t >= o.hold && oneW <= 0) { o.a.stop(); this.one = null; }
-      else o.a.setEffectiveWeight(oneW);
+      gw = o.t < o.hold ? Math.min(1, o.t / o.fade) : Math.max(0, 1 - (o.t - o.hold) / ANIM.fadeOut);
+      // il gesto comincia a sfumare: la corsa riparte dalla fase con i piedi dove sono
+      if (was < o.hold && o.t >= o.hold && gw > 0.5) this.resyncDue = true;
+      if (o.t >= o.hold && gw <= 0) { o.a.stop(); this.one = null; gw = 0; }
     }
     if (this.prevOne) {
       const p = this.prevOne;
       p.t += dt;
-      const w = p.w * Math.max(0, 1 - p.t / ANIM.chainFade);
-      if (w <= 0 || !this.one) { p.a.stop(); this.prevOne = null; }
-      else { p.a.setEffectiveWeight(w); oneW = Math.min(1, oneW + w); }
+      pw = p.w * Math.max(0, 1 - p.t / ANIM.chainFade);
+      if (pw <= 0 || !this.one) { p.a.stop(); this.prevOne = null; pw = 0; }
     }
-    const phase = gait.phaseAt(alpha);
+    const g = gw + pw;
+    if (g > 1) { gw /= g; pw /= g; }
+    const base = 1 - Math.min(1, gw + pw);
+    if (this.one) this.one.a.setEffectiveWeight(gw);
+    if (this.prevOne) this.prevOne.a.setEffectiveWeight(pw);
+    const phase = loco.phaseAt(alpha);
     for (let i = 0; i < this.slots.length; i++) {
       const a = this.slots[i];
       if (!a) continue;
-      if (i !== IDLE_SLOT) a.time = slotTime(gait, i, phase, gait.keeperLeft);
-      a.setEffectiveWeight(gait.weightAt(i, alpha) * (1 - oneW));
+      if (i !== IDLE_SLOT) a.time = slotTime(loco, i, phase);
+      a.setEffectiveWeight(loco.weightAt(i, alpha) * base);
     }
     this.mixer.update(dt);
     this.lastDt = dt;
-    if (dt > 0) this.feet.apply(dt, gait, phase, oneW, this.object);
+    this.twist(-loco.yawAt(alpha) * base);
+    if (this.resyncDue) {
+      this.resyncDue = false;
+      this.object.updateMatrixWorld(true);
+      loco.resync(feetPose(this.rig, this.object.rotation.y, this.feat));
+    }
+    if (dt > 0) this.feet.apply(dt, loco, phase, gw + pw, this.object);
     if (this.proc && !this.proc.update(this, dt)) this.proc = null;
+    this.ground(dt);
+  }
+
+  // Busto verso dove guarda il giocatore quando il corpo e' girato verso la
+  // corsa: rotazione attorno alla verticale, divisa sulle tre vertebre.
+  twist(a) {
+    const T = ANIM.warp.twist;
+    a = Math.max(-T, Math.min(T, a));
+    if (Math.abs(a) < 1e-3) return;
+    this.object.updateMatrixWorld(true);
+    const r = this.rig;
+    for (const [bone, share] of [[r.Spine, 0.3], [r.Spine1, 0.3], [r.Spine2, 0.4]]) {
+      if (!bone) continue;
+      _twist.setFromAxisAngle(_up, a * share);
+      rotateWorld(bone, _twist);
+    }
+  }
+
+  // Piedi mai dentro l'erba: fondere pose diverse (due corse, corsa e gesto)
+  // puo' abbassare un piede sotto il terreno. Si alza il corpo di quanto
+  // serve, subito, e lo si riabbassa piano.
+  ground(dt) {
+    const G = this.tpl.gait.ground, r = this.rig;
+    if (!G) return;
+    this.object.updateMatrixWorld(true);
+    const y = (b) => b.matrixWorld.elements[13];
+    const sink = -Math.min(y(r.LeftToeBase) - G.toe, y(r.RightToeBase) - G.toe, y(r.LeftFoot) - G.ankle, y(r.RightFoot) - G.ankle);
+    const want = Math.max(0, sink);
+    this.lift = want >= this.lift ? want : Math.max(want, this.lift - ANIM.liftRelease * dt);
+    if (this.lift > 1e-4) {
+      this.object.position.y += this.lift;
+      this.object.updateMatrixWorld(true);
+    }
   }
 
   dispose() {

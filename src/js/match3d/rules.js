@@ -124,7 +124,8 @@ export class Rules {
     const { type, side, spot } = pending;
     if (type === 'freekick' || type === 'penalty') { this.freeKick(pending); return; }
     const m = this.m, b = m.ball, team = m.teams[side];
-    for (const p of m.everyone) { p.action = null; p.holding = false; p.dropping = false; p.holdHand = null; p.homeTarget = null; }
+    // via azioni e gesti in corso: anche le pose senza fine (palla in mano del portiere)
+    for (const p of m.everyone) { p.action = null; p.avatar.endGesture(); p.holding = false; p.dropping = false; p.holdHand = null; p.homeTarget = null; }
     m.offside = m.indirect = null;
     let taker;
     if (type === 'goalkick') taker = team.keeper;
@@ -145,7 +146,7 @@ export class Rules {
     if (type === 'throw') taker.avatar.playOnce(RULES.throwIn.clip, RULES.throwIn.from, Infinity, 0);
     this.set = { type, side, taker, spot, ready: true };
     if (side === m.userSide && !taker.keeper) m.setControlled(taker);
-    else if (m.ctrl === taker || m.ctrl.team !== m.userSide || m.ctrl.keeper) m.setControlled(m.nearestTo(m.squad.players, spot.x, spot.z));
+    else if (!m.ctrl || m.ctrl === taker || m.ctrl.team !== m.userSide || m.ctrl.keeper) m.setControlled(m.nearestTo(m.squad.players, spot.x, spot.z));
     this.go('restart');
   }
 
@@ -427,7 +428,7 @@ export class Rules {
   // --- punizione o rigore: palla sul punto, chi batte dietro, verso la porta.
   freeKick({ type, side, spot, direct }) {
     const m = this.m, b = m.ball, team = m.teams[side], d = m.dirOf(side);
-    for (const p of m.everyone) { if (!p.down) p.action = null; p.holding = false; p.dropping = false; p.holdHand = null; p.homeTarget = null; }
+    for (const p of m.everyone) { if (!p.down) { p.action = null; p.avatar.endGesture(); } p.holding = false; p.dropping = false; p.holdHand = null; p.homeTarget = null; }
     m.offside = m.indirect = null;
     let sp = { x: clamp(spot.x, -HL + 0.5, HL - 0.5), z: clamp(spot.z, -HW + 0.5, HW - 0.5) }, taker;
     if (type === 'penalty') {
@@ -443,6 +444,8 @@ export class Rules {
     const back = type === 'penalty' ? RULES.penalty.back : 0.55;
     taker.action = null;
     taker.down = false;
+    // fischio: la palla e' ferma, poi la tiene chi batte (come nel calcio d'inizio)
+    if (!m.poss.free) m.poss.loose('fischio');
     m.gain(taker, type === 'penalty' ? 'rigore' : 'punizione');
     this.set = { type, side, taker, spot: sp, direct: direct !== false, ready: false };
     // diretta vicina, da lontano o rigore: mira, telecamera e posto di chi batte
@@ -503,7 +506,7 @@ export class Rules {
     whistle('end');
     this.pendingFoul = null;
     this.flushCards();
-    for (const p of m.everyone) { p.action = null; p.down = false; }
+    for (const p of m.everyone) { p.action = null; p.down = false; p.holding = false; p.avatar.endGesture(); }
     if (!m.poss.free) m.poss.loose('fine tempo');
     if (this.half === 1) {
       m.hud.showBanner('Intervallo', m.home.name + ' ' + m.goals.home + ' - ' + m.goals.away + ' ' + m.away.name);

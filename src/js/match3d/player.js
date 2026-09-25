@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { PLAYER, PITCH, GOAL, PASS, SHOT, ATTR, THROUGH, CROSS, FORMATIONS, FORMATION_ROLES, KICK, BALL, DUEL } from './config.js';
 import { playerParams } from './attributes.js';
 import { Avatar } from './avatar.js';
-import { Gait } from './anim.js';
+import { Locomotion } from './anim.js';
 import { rollSpeedFor, rollTime, loftFor } from './ball.js';
 
 const HL = PITCH.length / 2;
@@ -60,7 +60,7 @@ export class Player {
     this.mesh = this.avatar.object;
     // imbardata, poi inclinazione in avanti (x) e di lato (z) attorno ai piedi
     this.mesh.rotation.order = 'YXZ';
-    this.gait = new Gait(tpl.gait);
+    this.gait = new Locomotion(tpl.gait);   // blend space della corsa
     this.faceVel = 0;          // velocita' angolare del busto (rad/s)
     this.shadow = new THREE.Mesh(
       new THREE.PlaneGeometry(1, 1),
@@ -82,6 +82,7 @@ export class Player {
     this.knockTimer = 0;
     this.stagger = this.burst = 0;
     this.press = null;
+    this.gait.reset();
   }
 
   get dirX() { return Math.sin(this.heading); }
@@ -104,7 +105,11 @@ export class Player {
     let want = 0;
     if (mag > 0) {
       const target = headingOf(dx, dz);
-      this.moveHeading = wrap(this.moveHeading + clamp(wrap(target - this.moveHeading), -turn, turn));
+      // da fermi il primo passo va subito dove si vuole andare, anche all'indietro;
+      // in corsa la curva ha un raggio credibile (accelerazione laterale massima)
+      const bend = Math.min(turn, PLAYER.lateralAccel / Math.max(this.speed, 0.5) * dt);
+      if (this.speed < PLAYER.pivotSpeed) this.moveHeading = target;
+      else this.moveHeading = wrap(this.moveHeading + clamp(wrap(target - this.moveHeading), -bend, bend));
       const left = Math.abs(wrap(target - this.moveHeading));
       want = mag * top * (o.sprint && !o.close ? 1 : PLAYER.jogFactor) * (o.withBall ? P.dribbleSpeed : 1) * (o.close ? PLAYER.closeSpeed : 1);
       want *= Math.max(PLAYER.turnBrake, Math.cos(Math.min(left, Math.PI / 2)));
@@ -112,7 +117,7 @@ export class Player {
     // Il busto segue la corsa o guarda o.face, come una molla con
     // accelerazione angolare limitata: parte e si ferma senza scatti.
     const faceTo = o.face ? headingOf(o.face.x, o.face.z) : this.moveHeading;
-    const ft = turn * PLAYER.faceTurn / Math.max(dt, 1e-6);
+    const ft = Math.min(PLAYER.faceMax, turn * PLAYER.faceTurn / Math.max(dt, 1e-6));
     const wantVel = clamp(wrap(faceTo - this.heading) * PLAYER.faceGain, -ft, ft);
     this.faceVel += clamp(wantVel - this.faceVel, -PLAYER.faceAccel * dt, PLAYER.faceAccel * dt);
     const turnStep = this.faceVel * dt, gap = wrap(faceTo - this.heading);
@@ -166,7 +171,8 @@ export class Player {
     m.position.lerpVectors(this.prev, this.pos, alpha);
     // inclinazione solo in corsa libera: durante un gesto comanda la clip
     const lean = this.gait.leanAt(alpha), free = this.avatar.one ? 0 : 1;
-    m.rotation.set(lean.pitch * free, this.prevHeading + wrap(this.heading - this.prevHeading) * alpha, lean.roll * free);
+    // il corpo puo' girarsi verso la corsa (anim.js, orientation warping)
+    m.rotation.set(lean.pitch * free, this.prevHeading + wrap(this.heading - this.prevHeading) * alpha + this.gait.yawAt(alpha), lean.roll * free);
     this.shadow.position.set(m.position.x, 0.011, m.position.z);
     this.avatar.update(dt, this.gait, alpha);
   }

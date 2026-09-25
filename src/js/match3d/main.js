@@ -17,6 +17,8 @@ import { userPress, stagger, beat } from './defense.js';
 import { Referee } from './referee.js';
 import { unlockAudio, closeAudio } from './audio.js';
 import { SetPieces } from './setpieces.js';
+import { Graphics } from './render.js';
+import { Stadium } from './stadium.js';
 
 const KICKS = ['pass', 'through', 'cross', 'shot'];
 // Legenda: una riga per l'attacco e una per la difesa, un elemento per comando.
@@ -107,8 +109,6 @@ class Match {
     this.acc = 0;
     this.last = 0;
     this.raf = 0;
-    this.pixelRatio = Math.min(window.devicePixelRatio || 1, RENDER.maxPixelRatio);
-    this.fps = { t: 0, n: 0 };
     this.handlers = [];
     this.userSide = opts.userSide === 'away' ? 'away' : 'home';
     // Primo tempo: la squadra di casa attacca la porta a destra (x > 0).
@@ -135,7 +135,14 @@ class Match {
     this.leaving = [];         // espulsi che escono dal campo
     this.lastInp = null;
     this.timeScale = 1;        // rallentatore di debug (F4)
+    // IA contro IA (?match3d=auto, test di durata): nessun giocatore comandato
+    this.auto = !!opts.auto;
   }
+
+  get pixelRatio() { return this.gfx ? this.gfx.pixelRatio : 1; }
+
+  // La squadra `side` e' comandata da una persona (non nel test IA contro IA).
+  human(side) { return !this.auto && side === this.userSide; }
 
   // Chi ha la palla al piede (POSSEDUTA), altrimenti null.
   get owner() { return this.poss.owned ? this.poss.owner : null; }
@@ -155,9 +162,7 @@ class Match {
     this.root = root;
 
     const r = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-    r.setPixelRatio(this.pixelRatio);
     r.setSize(window.innerWidth, window.innerHeight);
-    r.outputColorSpace = THREE.SRGBColorSpace;
     r.domElement.tabIndex = 0;
     root.appendChild(r.domElement);
     this.renderer = r;
@@ -168,7 +173,10 @@ class Match {
     const sun = new THREE.DirectionalLight(0xffffff, 1.6);
     sun.position.set(-30, 60, 25);
     scene.add(sun);
+    this.sun = sun;
     scene.add(buildPitch(r));
+    this.stadium = new Stadium({ home: kitOf(this.home, 'home'), away: kitOf(this.away, 'away') });
+    scene.add(this.stadium.group);
     this.scene = scene;
 
     this.ball = new Ball();
@@ -208,7 +216,8 @@ class Match {
       openExit: () => this.openExit(),
       resume: () => this.closeExit(),
       simulate: () => this.finish('simulate'),
-      back: () => this.finish('back')
+      back: () => this.finish('back'),
+      quality: (level) => this.gfx.setLevel(level)
     });
     this.controls = new Controls(root, this.hud.layer, {
       onPad: (type) => this.onPad(type),
@@ -223,6 +232,7 @@ class Match {
     this.rules.kickoff(this.userSide);
     this.camera = new BroadcastCamera(window.innerWidth / window.innerHeight);
     this.camera.snap(this.ball);
+    this.gfx = new Graphics(r, scene, this.camera.cam, this.sun, (level, shadows, chosen) => this.applyLevel(level, shadows, chosen));
     this.ball.sync(1, 0);
     for (const p of this.everyone) p.sync(1, 0);
     this.referee.sync(1, 0, this.camera.cam);
@@ -285,9 +295,33 @@ class Match {
     this.hud.setPower(null);
   }
 
+  // Livello di qualita' appena scelto: ombre vere o blob, densita' del pubblico.
+  applyLevel(level, shadows, chosen) {
+    this.shadows = shadows;
+    for (const p of [...this.everyone, ...this.leaving, this.referee.p]) p.avatar.body.castShadow = shadows;
+    this.ball.mesh.castShadow = shadows;
+    this.stadium.setLevel(level);
+    this.hud.setQuality(level, chosen);
+  }
+
+  // Con l'ombra dinamica le ombre blob restano solo fuori dal suo riquadro.
+  blobShadows() {
+    const B = RENDER.shadowBox, [a, b] = RENDER.blobFade, f = this.ball.pos;
+    for (const p of [...this.everyone, this.referee.p]) {
+      let o = 1;
+      if (this.shadows) {
+        const d = Math.max(Math.abs(p.mesh.position.x - f.x), Math.abs(p.mesh.position.z - f.z)) / B;
+        o = Math.min(1, Math.max(0, (d - a) / (b - a)));
+      }
+      p.shadow.material.opacity = o;
+      p.shadow.visible = o > 0.01;
+    }
+    this.ball.shadow.visible = !this.shadows;
+  }
+
   onResize() {
     const w = window.innerWidth, h = window.innerHeight;
-    this.renderer.setSize(w, h);
+    this.gfx.resize(w, h);
     this.camera.resize(w / h);
   }
 
@@ -305,6 +339,15 @@ class Match {
     this.raf = requestAnimationFrame((t) => this.frame(t));
     const dt = Math.min(0.25, (now - this.last) / 1000) * this.timeScale;
     this.last = now;
+    this.advance(dt);
+    this.gfx.update(dt, this.ball.pos);
+    this.gfx.render();
+    this.debug.update(dt);
+  }
+
+  // Fisica a passo fisso per `dt` secondi reali, poi pose e animazioni
+  // interpolate: tutto tranne il disegno. Il test di durata la chiama da solo.
+  advance(dt) {
     const step = 1 / PHYSICS.hz;
 
     if (this.paused) this.controls.pollMenu();
@@ -330,9 +373,8 @@ class Match {
     this.setpieces.render(this.ctrl);
     this.hud.setPrompt(this.setpieces.prompt(glyph, this.controls.device, this.controls.padKind));
     this.syncMarkers(dt);
-    this.renderer.render(this.scene, this.camera.cam);
-    this.adaptResolution(dt);
-    this.debug.update(dt);
+    this.blobShadows();
+    this.stadium.update(this.paused ? 0 : dt);
   }
 
   syncMarkers(dt) {
@@ -371,7 +413,7 @@ class Match {
       const d = this.dirOf(t.side);
       const block = { line: SHAPE.kickoff.line, len: SHAPE.kickoff.len, width: SHAPE.kickoff.width, ballZ: 0 };
       for (const p of t.players) {
-        if (instant) { p.action = null; p.down = false; p.holding = false; p.keeperBusy = false; p.dropping = false; p.holdHand = null; }
+        if (instant) { p.action = null; p.avatar.endGesture(); p.down = false; p.holding = false; p.keeperBusy = false; p.dropping = false; p.holdHand = null; }
         if (p.keeper) { put(p, -d * (PITCH.length / 2 - 1.5), 0, headingOf(d, 0)); continue; }
         const s = t.ai.shapeTarget(p, block);
         // nessuno dentro il cerchio di centrocampo, tranne chi batte
@@ -633,6 +675,7 @@ class Match {
   aiSummary() { return this.teams.home.ai.summary() + '\n' + this.teams.away.ai.summary(); }
 
   setControlled(p) {
+    if (this.auto || !p) { this.ctrl = null; return; }
     this.ctrl = p;
     this.hud.setPlayer(p.number, p.name);
   }
@@ -744,7 +787,7 @@ class Match {
     this.passTarget = null;
     const w = this.windup;
     if (w) this.passTarget = w.target || null;
-    else if (this.owner === this.ctrl && b.live && !this.ctrl.holding) {
+    else if (this.ctrl && this.owner === this.ctrl && b.live && !this.ctrl.holding) {
       const c = this.ctrl, k = this.charging, pw = k ? this.charge : 0;
       const ax = inp.mag > 0 ? inp.x : c.dirX, az = inp.mag > 0 ? inp.z : c.dirZ;
       if (k === 'through') this.passTarget = chooseThrough(c, ax, az, this.squad.players, this.opponents, pw).mate;
@@ -861,15 +904,11 @@ class Match {
     p.action = a;
   }
 
-  // Il calcio parte dalla fase del passo: il piede sinistro d'appoggio della
-  // clip appoggia quando appoggerebbe quello della corsa, niente scatti di gamba.
+  // Il calcio parte dal fotogramma della clip con i piedi dove li ha il passo
+  // in corso (fra K.early e il contatto): niente scatti di gamba.
   kickFrom(p, K) {
-    const info = this.tpl.gait[K.clip], lf = p.gait.leftFoot(), cyc = p.gait.cycle();
-    if (!info || !lf || p.speed < ANIM.syncMinSpeed || !Number.isFinite(cyc)) return K.start;
-    const plant = info.plantsL.filter((t) => t < K.contact).pop();
-    if (plant === undefined) return K.start;
-    const f = lf.since < lf.stance ? plant + lf.since * cyc : plant - (1 - lf.since) * cyc;
-    return clamp(f, K.early ?? 0, K.contact - ANIM.minLead);
+    if (p.speed < ANIM.syncMinSpeed) return K.start;
+    return p.avatar.matchStart(K.clip, K.early ?? 0, K.contact - ANIM.minLead, K.start);
   }
 
   // Un passo del gesto in corso. I calci si girano verso il bersaglio e
@@ -1081,7 +1120,7 @@ class Match {
     }
     if (p.speed < FIRST_TOUCH.receiveBelow && !p.avatar.busy) {
       const R = ANIM.receive;
-      p.avatar.playOnce(R.clip, R.start, R.length);
+      p.avatar.playOnce(R.clip, p.avatar.matchStart(R.clip, 0, R.start + R.early, R.start), R.length);
     }
   }
 
@@ -1130,24 +1169,7 @@ class Match {
     this.hud.showGoal((home ? this.home : this.away).name, scorer ? scorer.name : '');
     this.rules.goal(team, scorer);
     this.teams[this.otherSide(team)].keeperAI.concede();
-  }
-
-  // Risoluzione dinamica: sotto i 48 fps si scende, sopra i 58 si risale.
-  adaptResolution(dt) {
-    const f = this.fps;
-    f.t += dt; f.n++;
-    if (f.t < RENDER.sampleSeconds) return;
-    const fps = f.n / f.t;
-    f.t = 0; f.n = 0;
-    const max = Math.min(window.devicePixelRatio || 1, RENDER.maxPixelRatio);
-    let pr = this.pixelRatio;
-    if (fps < RENDER.lowFps) pr = Math.max(RENDER.minPixelRatio, pr - RENDER.resStep);
-    else if (fps > RENDER.highFps) pr = Math.min(max, pr + RENDER.resStep / 2);
-    if (Math.abs(pr - this.pixelRatio) > 1e-3) {
-      this.pixelRatio = pr;
-      this.renderer.setPixelRatio(pr);
-      this.renderer.setSize(window.innerWidth, window.innerHeight);
-    }
+    this.stadium.cheer(team);
   }
 
   finish(exit) {
@@ -1161,6 +1183,7 @@ class Match {
     for (const p of [...this.everyone, ...this.leaving, this.referee.p]) p.avatar.dispose();
     closeAudio();
     this.setpieces.dispose();
+    this.gfx.dispose();
     disposeScene(this.scene);
     this.renderer.dispose();
     this.renderer.forceContextLoss();

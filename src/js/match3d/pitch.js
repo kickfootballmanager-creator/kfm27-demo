@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { PITCH, GOAL } from './config.js';
+import { PITCH, GOAL, STADIUM } from './config.js';
 
 const TEX = new URL('../../assets/match3d/textures/', import.meta.url).href;
 
@@ -22,14 +22,18 @@ function grass(renderer) {
   const mat = new THREE.MeshStandardMaterial({
     map: loadTex(loader, 'Grass003_1K-JPG_Color.jpg', true, rx, rz, aniso),
     normalMap: loadTex(loader, 'Grass003_1K-JPG_NormalGL.jpg', false, rx, rz, aniso),
-    roughnessMap: loadTex(loader, 'Grass003_1K-JPG_Roughness.jpg', false, rx, rz, aniso),
     normalScale: new THREE.Vector2(0.6, 0.6),
+    // erba opaca: con la mappa di rugosita' (0,5-0,7) il riflesso dei fari la sbiancava
     roughness: 1,
-    metalness: 0
+    metalness: 0,
+    // l'erba non riflette la stanza dell'environment map: di taglio diventerebbe bianca
+    envMapIntensity: 0.12
   });
   const geo = new THREE.PlaneGeometry(sx, sz);
   geo.rotateX(-Math.PI / 2);
-  return new THREE.Mesh(geo, mat);
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.receiveShadow = true;
+  return mesh;
 }
 
 // Il campo e' simmetrico: si disegna un quarto (x>=0, z>=0) e lo si
@@ -95,6 +99,7 @@ function lines(renderer) {
     polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2
   });
   const mesh = new THREE.Mesh(geo, mat);
+  mesh.receiveShadow = true;
   mesh.position.y = 0.004;
   mesh.renderOrder = 1;
   return mesh;
@@ -227,7 +232,7 @@ function crowdTexture() {
 // Tribune: quattro piani inclinati dietro i cartelloni.
 function stands() {
   const hl = PITCH.length / 2 + PITCH.runoff + 2, hw = PITCH.width / 2 + PITCH.runoff + 2;
-  const depth = 26, rise = 14, tilt = Math.atan2(rise, depth), len = Math.hypot(depth, rise);
+  const { depth, rise } = STADIUM.stands, tilt = Math.atan2(rise, depth), len = Math.hypot(depth, rise);
   const parts = [];
   const add = (w, rotY, dist) => {
     const g = new THREE.PlaneGeometry(w, len);
