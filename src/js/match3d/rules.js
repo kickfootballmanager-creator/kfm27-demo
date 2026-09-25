@@ -1,5 +1,6 @@
 import { RULES, PITCH, BALL, CONTROL, PASS, FOUL, ADVANTAGE, FK, REPLAY } from './config.js';
 import { headingOf, choosePass, freeness } from './player.js';
+import { rollSpeedFor } from './ball.js';
 import { rootAction, standFall } from './gestures.js';
 import { whistle } from './audio.js';
 
@@ -241,10 +242,10 @@ export class Rules {
 
   kickoffTap(p) {
     const m = this.m, K = RULES.kickoff, d = m.dirOf(p.team);
-    // al compagno piu' vicino dietro la palla
-    let to = null, bd = Infinity;
-    for (const q of m.teams[p.team].players) {
-      if (q === p || q.keeper || q.pos.x * d > -2) continue;
+    // al compagno accanto (placeKickoff); se non c'e', al piu' vicino dietro la palla
+    let to = m.kickMate && m.kickMate.team === p.team && !m.kickMate.sentOff && !m.kickMate.down ? m.kickMate : null, bd = Infinity;
+    if (!to) for (const q of m.teams[p.team].players) {
+      if (q === p || q.keeper || q.pos.x * d > -0.5) continue;
       const dd = Math.hypot(q.pos.x, q.pos.z);
       if (dd < bd) { bd = dd; to = q; }
     }
@@ -253,7 +254,8 @@ export class Rules {
     p.action = {
       clip: K.clip, t: 0, rate: 1, end: K.end - K.from,
       events: [{ at: K.contact - K.from, fn: () => {
-        if (to) m.ball.rollTo(to.pos.x, to.pos.z, K.arrive);
+        // tocco corto: arriva al compagno a K.arrive m/s, non un rasoterra da passaggio lungo
+        if (to) m.ball.rollAt(to.pos.x, to.pos.z, rollSpeedFor(Math.hypot(to.pos.x - m.ball.pos.x, to.pos.z - m.ball.pos.z), K.arrive));
         else m.ball.kick(-d * 6, 0, 0);
         m.poss.fly('passaggio', p, to, "calcio d'inizio");
         m.kickLock = { p, t: CONTROL.kickLock };

@@ -419,7 +419,7 @@ export const DUEL = {
   skillGap: 0.4,          // peso della differenza di difficolta' fra le squadre
   manual: 1.05,           // contrasto premuto: poco piu' efficace, molto piu' rischioso
   // fallo: base, di lato, da dietro, per m/s di chi entra e del portatore (lanciato si inciampa di piu')
-  foul: { auto: 0.15, manual: 0.14, side: 0.15, back: 0.45, speed: 0.012, carrier: 0.05 },
+  foul: { auto: 0.15, manual: 0.22, side: 0.15, back: 0.45, speed: 0.012, carrier: 0.05 },
   missFoul: { front: 0.5, side: 0.75, back: 0.9 },
   // carica o spinta di corsa sul portatore (defense.bodyContact): oltre `speed` m/s
   // di avvicinamento, probabilita' per provenienza, piena a `full` m/s; gap: m oltre il contatto dei corpi
@@ -711,7 +711,11 @@ export const RULES = {
   gatherMax: 9,           // ripresa: al massimo si aspetta tanto che tutti siano al loro posto
   gatherDist: 0.6,        // entro questa distanza dal proprio posto si e' pronti
   celebration: { clip: 'celebration', from: 0, hold: 4.6 },
-  kickoff: { clip: 'kickoff', from: 0, contact: 0.517, end: 0.567, arrive: 7 },
+  // Calcio d'inizio come in PES: chi batte tocca corto al compagno accanto,
+  // mateBack m dietro la linea e mateSide m di lato; la palla gli arriva a
+  // `arrive` m/s. Chi batte ha la palla `ahead` m davanti e `foot` m a sinistra
+  // (la clip calcia di sinistro, contatto a `contact` s).
+  kickoff: { clip: 'kickoff', from: 0, contact: 0.517, end: 0.567, arrive: 3, mateBack: 1.2, mateSide: 2, ahead: 0.5, foot: 0.1 },
   // Rimessa: in attesa si resta fermi nel primo fotogramma (palla in mano),
   // poi la clip riparte da li'; la rincorsa della radice (2,07 m fino al
   // rilascio) riporta il battitore sulla linea.

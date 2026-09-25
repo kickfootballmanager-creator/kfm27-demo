@@ -486,13 +486,20 @@ class Match {
         put(p, s.x, s.z, headingOf(d, 0));
       }
     }
-    const t = this.teams[side], d = this.dirOf(side);
-    // batte l'attaccante piu' avanzato, il secondo gli sta accanto
+    const t = this.teams[side], d = this.dirOf(side), K = RULES.kickoff;
+    // due al centro, come in PES: batte l'attaccante piu' avanzato, il
+    // secondo gli sta accanto, un passo dietro la linea, dalla sua parte
     const fw = t.players.filter((p) => !p.keeper && !p.sentOff).sort((a, b) => a.slot.y - b.slot.y);
-    put(fw[0], -d * 0.35, 0.25, headingOf(-d * 0.2, 1));
-    put(fw[1], -d * 1.2, -8, headingOf(d, 0.4));
+    const side2 = fw[1].slot.x >= fw[0].slot.x ? 1 : -1;
+    const mate = { x: -d * K.mateBack, z: d * side2 * K.mateSide };
+    put(fw[1], mate.x, mate.z, headingOf(d, 0));
+    // chi batte guarda il compagno, con la palla davanti al piede sinistro
+    const ml = Math.hypot(mate.x, mate.z), ux = mate.x / ml, uz = mate.z / ml, h = headingOf(ux, uz);
+    const lx = Math.cos(h), lz = -Math.sin(h);
+    put(fw[0], -ux * K.ahead - lx * K.foot, -uz * K.ahead - lz * K.foot, h);
     this.kickLock = this.buffer = null;
     this.kickTaker = fw[0];
+    this.kickMate = fw[1];
     return fw[0];
   }
 

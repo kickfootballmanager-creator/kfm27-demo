@@ -235,6 +235,21 @@ regista rigioca gli ultimi 5 s prima del gol: prima laterale bassa dal bordo
 campo con lo zoom che segue la distanza, poi dietro la porta al
 rallentatore (0,45) negli ultimi 1,5 s, fino a 0,7 s dopo il gol.
 
+## Calcio d'inizio
+
+- Regolamento (IFAB, Regola 8): dal 2016 la palla puo' andare in ogni
+  direzione e basta un solo giocatore; tutti gli altri nella propria meta',
+  gli avversari fuori dal cerchio di centrocampo. PES 2021 mette comunque due
+  giocatori al centro: chi batte tocca corto al compagno accanto.
+
+Da noi (`main.placeKickoff`, `rules.kickoffTap`, numeri in
+`RULES.kickoff`): posizioni dal modulo, ognuno nella sua meta', avversari
+fuori dal cerchio. Batte l'attaccante piu' avanzato, rivolto al compagno che
+gli sta accanto, 1,2 m dietro la linea e 2 m di lato, con la palla davanti
+al piede sinistro. La clip kickoff tocca la palla nel fotogramma del
+contatto e il tocco corto arriva al compagno a 3 m/s. Il test di durata
+controlla posizioni, due giocatori al centro e che il compagno riceva.
+
 ## Arbitro, falli, cartellini, rigori, fuorigioco
 
 - L'arbitro di PES 2020/2021 e' noto per fischiare molto, anche falli leggeri
@@ -264,3 +279,6 @@ rallentatore (0,45) negli ultimi 1,5 s, fino a 0,7 s dopo il gol.
 - PES Mastery, punizioni: https://pesmastery.com/pes-free-kick-tutorial/
 - Discussione Steam sull'arbitro di PES 2020/2021: https://steamcommunity.com/app/996470/discussions/0/2518023667588674849/
 - IFAB, vantaggio: https://www.footballrules.com/offences-sanctions/advantage/
+- IFAB, Regola 8 (calcio d'inizio): https://www.theifab.com/laws/latest/the-start-and-restart-of-play/
+- Calcio d'inizio, storia della regola: https://en.wikipedia.org/wiki/Kick-off_(association_football)
+- Il calcio d'inizio a due giocatori: https://thesefootballtimes.co/2019/06/25/a-requiem-for-a-two-player-kick-off-why-football-is-poorer-without-it/

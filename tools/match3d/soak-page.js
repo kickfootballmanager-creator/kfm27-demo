@@ -55,7 +55,7 @@
     S.stats = {
       shots: { home: 0, away: 0 }, slides: 0, tackles: 0, possession: { home: 0, away: 0 },
       noReach: 0, gestures: {}, runGestures: {}, kicks: {}, skateSum: 0, skateN: 0,
-      duels: {}, foulKinds: {}, slideFrom: {}, through: 0, throughDone: 0, throughLost: 0, goalShots: [], replays: 0
+      duels: {}, foulKinds: {}, slideFrom: {}, through: 0, throughDone: 0, throughLost: 0, goalShots: [], replays: 0, kickoffs: 0, kickoffReceived: 0
     };
     S.byAvatar = new Map();
     for (const p of [...m.everyone, m.referee.p]) S.byAvatar.set(p.avatar, p);
@@ -401,6 +401,35 @@
     }
   };
 
+  // Calcio d'inizio (skill: "Calcio d'inizio"): all'avvio ognuno nella sua
+  // meta' (chi batte puo' stare sulla linea), avversari fuori dal cerchio, due
+  // di chi batte al centro; poi il tocco corto arriva al compagno.
+  S.checkKickoff = () => {
+    const m = S.m, st = S.koSt || (S.koSt = {});
+    const ko = m.phase === 'kickoff' && m.rules.set && m.rules.set.ready;
+    if (ko && !st.ko) {
+      st.ko = true;
+      const s = m.rules.set, R = 9.15;
+      let center = 0;
+      for (const p of m.everyone) {
+        if (p.down) continue;
+        const own = p.pos.x * m.dirOf(p.team), r = Math.hypot(p.pos.x, p.pos.z);
+        if (own > 0.3 && p !== s.taker) { S.flag('calcio d\'inizio: giocatore nella meta\' avversaria', p, { x: +p.pos.x.toFixed(2) }); break; }
+        if (p.team !== s.side && r < R - 0.3) { S.flag('calcio d\'inizio: avversario nel cerchio', p, { distanza: +r.toFixed(2) }); break; }
+        if (p.team === s.side && r < 3.5) center++;
+      }
+      if (center < 2) S.flag('calcio d\'inizio: meno di due giocatori al centro', s.taker, { al_centro: center });
+      S.stats.kickoffs++;
+    } else if (m.phase !== 'kickoff') st.ko = false;
+    const poss = m.poss, last = poss.log[poss.log.length - 1];
+    if (poss.flying && last && last.cause === 'calcio d\'inizio' && st.seq !== poss.seq) { st.seq = poss.seq; st.to = poss.to; st.t = 0; }
+    if (st.to) {
+      st.t += DT;
+      if (poss.owned && poss.owner === st.to) { S.stats.kickoffReceived++; st.to = null; }
+      else if (st.t > 3 || (poss.owned && poss.owner !== st.to)) { S.flag('calcio d\'inizio: il compagno non riceve il tocco', st.to); st.to = null; }
+    }
+  };
+
   // Avanza di `n` passi controllando dopo ognuno; si ferma a fine partita.
   S.run = (n, maxClock) => {
     const m = S.m;
@@ -416,6 +445,7 @@
       S.checkActions();
       S.checkDefense();
       S.checkGoal();
+      S.checkKickoff();
       if (maxClock && m.poss.clock >= maxClock) break;
     }
     return { done: m.phase === 'end' || (maxClock && m.poss.clock >= maxClock), frames: S.frames, clock: S.clock(), phase: m.phase, goals: { ...m.goals }, violations: Object.values(S.v).reduce((s, v) => s + v.count, 0) };
@@ -448,7 +478,9 @@
         throughDone: S.stats.throughDone,
         throughLost: S.stats.throughLost,
         offsides: m.stats.offsides.home + m.stats.offsides.away,
-        replays: S.stats.replays
+        replays: S.stats.replays,
+        kickoffs: S.stats.kickoffs,
+        kickoffReceived: S.stats.kickoffReceived
       },
       foulKinds: S.stats.foulKinds,
       slideFrom: S.stats.slideFrom,
