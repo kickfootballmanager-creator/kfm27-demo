@@ -43,6 +43,11 @@
     cancelAnimationFrame(m.raf);
     m.frame = () => {};          // niente disegno: il test avanza da solo
     m.controls.pollMenu = () => {};
+    // niente controller veri: un pad collegato alla macchina (o che si
+    // scollega, o Start premuto) metterebbe la partita in pausa
+    m.controls.pad = null;
+    m.controls._pollPad = () => null;
+    m.onPad = m.onPadLost = () => {};
     S.m = m;
     S.frames = 0;
     S.v = {};
@@ -50,7 +55,7 @@
     S.stats = {
       shots: { home: 0, away: 0 }, slides: 0, tackles: 0, possession: { home: 0, away: 0 },
       noReach: 0, gestures: {}, runGestures: {}, kicks: {}, skateSum: 0, skateN: 0,
-      duels: {}, foulKinds: {}, slideFrom: {}, through: 0, throughDone: 0, throughLost: 0, goalShots: []
+      duels: {}, foulKinds: {}, slideFrom: {}, through: 0, throughDone: 0, throughLost: 0, goalShots: [], replays: 0
     };
     S.byAvatar = new Map();
     for (const p of [...m.everyone, m.referee.p]) S.byAvatar.set(p.avatar, p);
@@ -377,17 +382,40 @@
     S.persist(st, 'throughStop', waiting, 20, 'filtrante: il ricevente si ferma prima della palla', to, { distanza_palla: to ? +Math.hypot(b.pos.x - to.pos.x, b.pos.z - to.pos.z).toFixed(1) : null });
   };
 
+  // Dopo il gol (skill: "Dopo il gol"): il replay parte, finisce e non
+  // rompe le pose; poi calcio d'inizio senza attesa, gia' pronto.
+  S.checkGoal = () => {
+    const m = S.m, st = S.goalSt || (S.goalSt = {});
+    if (m.phase === 'goal' && !st.goal) { st.goal = true; st.t = 0; st.sawReplay = false; }
+    if (st.goal) {
+      st.t += DT;
+      if (m.replay) {
+        if (!st.sawReplay) { st.sawReplay = true; S.stats.replays++; }
+        for (const p of m.everyone) if (!Number.isFinite(p.mesh.position.x) || !Number.isFinite(p.avatar.rig.Hips.quaternion.w)) { S.flag('replay: posa non valida', p); break; }
+      }
+      if (m.phase !== 'goal') {
+        st.goal = false;
+        if (!st.sawReplay) S.flag('replay: il gol non ha avuto il replay', null, { secondi: +st.t.toFixed(1) });
+        if (m.phase !== 'kickoff' || !m.rules.set || !m.rules.set.ready) S.flag('dopo il gol: calcio d\'inizio non pronto', null, { fase: m.phase });
+      } else if (st.t > 20) { S.flag('dopo il gol: la sequenza non finisce', null, { secondi: +st.t.toFixed(1) }); st.t = -1e9; }
+    }
+  };
+
   // Avanza di `n` passi controllando dopo ognuno; si ferma a fine partita.
   S.run = (n, maxClock) => {
     const m = S.m;
     for (let i = 0; i < n && m.phase !== 'end'; i++) {
       m.advance(DT);
       S.frames++;
-      for (const p of m.everyone) S.checkPlayer(p);
-      S.checkPlayer(m.referee.p);
+      // durante il replay le pose sono quelle registrate: la corsa non si controlla
+      if (!m.replay) {
+        for (const p of m.everyone) S.checkPlayer(p);
+        S.checkPlayer(m.referee.p);
+      }
       S.checkBall();
       S.checkActions();
       S.checkDefense();
+      S.checkGoal();
       if (maxClock && m.poss.clock >= maxClock) break;
     }
     return { done: m.phase === 'end' || (maxClock && m.poss.clock >= maxClock), frames: S.frames, clock: S.clock(), phase: m.phase, goals: { ...m.goals }, violations: Object.values(S.v).reduce((s, v) => s + v.count, 0) };
@@ -419,7 +447,8 @@
         throughBalls: S.stats.through,
         throughDone: S.stats.throughDone,
         throughLost: S.stats.throughLost,
-        offsides: m.stats.offsides.home + m.stats.offsides.away
+        offsides: m.stats.offsides.home + m.stats.offsides.away,
+        replays: S.stats.replays
       },
       foulKinds: S.stats.foulKinds,
       slideFrom: S.stats.slideFrom,

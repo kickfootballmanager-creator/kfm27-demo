@@ -1,4 +1,4 @@
-import { RULES, PITCH, BALL, CONTROL, PASS, FOUL, ADVANTAGE, FK } from './config.js';
+import { RULES, PITCH, BALL, CONTROL, PASS, FOUL, ADVANTAGE, FK, REPLAY } from './config.js';
 import { headingOf, choosePass, freeness } from './player.js';
 import { rootAction, standFall } from './gestures.js';
 import { whistle } from './audio.js';
@@ -51,7 +51,8 @@ export class Rules {
     }
     if (m.phase === 'kickoff' || m.phase === 'restart') this.setPiece(dt, inp);
     else if (m.phase === 'goal') {
-      if (this.t > RULES.goalPause || (this.t > RULES.goalSkip && inp.any)) { m.hud.hideGoal(); this.kickoff(this.next, false); }
+      // esultanza dal vivo, poi il replay; il calcio d'inizio lo fa partire main.endGoal
+      if (this.t > REPLAY.celebrate) m.startReplay();
     } else if (m.phase === 'out') {
       if (this.t > RULES.outPause) this.restart(this.pending);
     } else if (m.phase === 'foul') {
@@ -511,8 +512,7 @@ export class Rules {
     for (const p of m.everyone) if (p.action && !p.keeper) { p.action = null; p.avatar.endGesture(); }
     if (scorer && !scorer.down) { scorer.avatar.playOnce(C.clip, C.from, C.hold); m.cameraFocus = scorer; }
     this.next = m.otherSide(team);
-    // tutti tornano verso le posizioni del calcio d'inizio, di corsa
-    m.placeKickoff(this.next, false);
+    // niente rientro a centrocampo: dopo esultanza e replay le squadre sono gia' schierate
     this.go('goal');
   }
 

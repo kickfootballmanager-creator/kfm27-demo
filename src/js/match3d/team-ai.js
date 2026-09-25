@@ -615,15 +615,17 @@ export class TeamAI {
     // si guarda la palla (o aiFace) solo vicino al proprio posto, e correndo di
     // lato o all'indietro solo per aggiustarsi: altrimenti ci si gira e si corre
     // (le corse laterali veloci fanno scivolare i piedi)
-    let face = null;
+    let face = null, sidestep = false;
     if (d < AI.faceNear) {
       const f = p.aiFace || { x: bx, z: bz };
       const off = Math.abs(Math.atan2(Math.sin(Math.atan2(f.x, f.z) - Math.atan2(dx, dz)), Math.cos(Math.atan2(f.x, f.z) - Math.atan2(dx, dz))));
-      if (d < AI.faceStep || off < AI.faceAngle) face = f;
+      if (off < AI.faceAngle) face = f;
+      else if (d < AI.faceStep) { face = f; sidestep = true; }
     }
     if (d < 0.3) { p.drive(dt, 0, 0, 0, { face: { x: bx, z: bz } }); return; }
-    const mag = Math.min(1, d / AI.arrive);
-    p.drive(dt, dx, dz, mag, { sprint: p.aiSprint || d > AI.sprintDist, face });
+    // l'aggiustamento di lato o all'indietro e' un passo laterale, non una corsa
+    const mag = Math.min(1, d / AI.arrive, sidestep ? AI.sidestepMag : 1);
+    p.drive(dt, dx, dz, mag, { sprint: !sidestep && (p.aiSprint || d > AI.sprintDist), face });
   }
 
   summary() {

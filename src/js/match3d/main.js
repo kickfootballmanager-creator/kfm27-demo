@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { PHYSICS, RENDER, RULES, PLAYER, CONTROL, DRIBBLE, SHOT, PASS, KIT, RECEIVE, FIRST_TOUCH, ANIM, POWER, FEINT, AI, AERIAL, SHAPE, PITCH, SLIDE, BALL, DUEL, OFFSIDE, DEBUG, PRESS, THROUGH } from './config.js';
+import { PHYSICS, RENDER, REPLAY, RULES, PLAYER, CONTROL, DRIBBLE, SHOT, PASS, KIT, RECEIVE, FIRST_TOUCH, ANIM, POWER, FEINT, AI, AERIAL, SHAPE, PITCH, SLIDE, BALL, DUEL, OFFSIDE, DEBUG, PRESS, THROUGH } from './config.js';
 import { buildPitch } from './pitch.js';
 import { Ball, shadowTexture } from './ball.js';
 import { BroadcastCamera } from './camera.js';
@@ -19,6 +19,7 @@ import { unlockAudio, closeAudio } from './audio.js';
 import { SetPieces } from './setpieces.js';
 import { Graphics } from './render.js';
 import { Stadium } from './stadium.js';
+import { Recorder, Replay } from './replay.js';
 
 const KICKS = ['pass', 'through', 'cross', 'shot'];
 // Legenda: una riga per l'attacco e una per la difesa, un elemento per comando.
@@ -213,6 +214,8 @@ class Match {
     this.referee.place(0, -12);
     scene.add(this.referee.shadow, this.referee.mesh, this.referee.card);
     this.bodies = [...this.everyone, this.referee.p];
+    // replay dopo il gol: gli ultimi secondi di tutti i corpi e della palla
+    this.recorder = new Recorder([...this.bodies], this.ball);
     // calci piazzati: mira, traiettoria, barriera, telecamera
     this.setpieces = new SetPieces(this);
     scene.add(this.setpieces.mesh);
@@ -225,12 +228,14 @@ class Match {
       resume: () => this.closeExit(),
       simulate: () => this.finish('simulate'),
       back: () => this.finish('back'),
+      skip: () => this.skipGoal(),
       quality: (level) => this.gfx.setLevel(level)
     });
     this.controls = new Controls(root, this.hud.layer, {
       onPad: (type) => this.onPad(type),
       onPadLost: () => this.onPadLost(),
-      onPause: () => { if (this.phase === 'end') return; if (this.hud.exitOpen) this.closeExit(); else this.openExit(); },
+      // Options/Start (PlayStation), Menu (Xbox): durante gol e replay salta
+      onPause: () => { if (this.phase === 'end') return; if (this.phase === 'goal' && !this.hud.exitOpen) { this.skipGoal(); return; } if (this.hud.exitOpen) this.closeExit(); else this.openExit(); },
       onMenu: (a) => { if (this.hud.exitOpen) this.hud.menu(a); }
     });
     this.hud.setHint(this.controls.padKind ? this.padHint(this.controls.padKind) : KEY_HINT);
@@ -271,6 +276,12 @@ class Match {
   // I tasti non arrivano al manager che sta sotto la partita.
   onKey(e, down) {
     e.stopImmediatePropagation();
+    // Invio salta esultanza e replay
+    if (e.key === 'Enter' && this.phase === 'goal' && !this.hud.exitOpen) {
+      e.preventDefault();
+      if (down && !e.repeat) this.skipGoal();
+      return;
+    }
     if (e.key === 'Escape') {
       e.preventDefault();
       if (down) { if (this.hud.exitOpen) this.closeExit(); else this.openExit(); }
@@ -348,7 +359,7 @@ class Match {
     const dt = Math.min(0.25, (now - this.last) / 1000) * this.timeScale;
     this.last = now;
     this.advance(dt);
-    this.gfx.update(dt, this.ball.pos);
+    this.gfx.update(dt, this.replay ? this.ball.mesh.position : this.ball.pos);
     this.gfx.render();
     this.debug.update(dt);
   }
@@ -357,6 +368,9 @@ class Match {
   // interpolate: tutto tranne il disegno. Il test di durata la chiama da solo.
   advance(dt) {
     const step = 1 / PHYSICS.hz;
+    // dissolvenza al nero dopo il gol: a nero si schierano le squadre
+    if (this.fadeOut && !this.paused && (this.fadeOut.t += dt) >= REPLAY.fade) { const f = this.fadeOut; this.fadeOut = null; f.then(); }
+    if (this.replay) { this.replayFrame(dt); return; }
 
     if (this.paused) this.controls.pollMenu();
     if (!this.paused) {
@@ -383,6 +397,47 @@ class Match {
     this.syncMarkers(dt);
     this.blobShadows();
     this.stadium.update(this.paused ? 0 : dt);
+    if (!this.paused && this.phase !== 'end') this.recorder.tick(dt);
+  }
+
+  // Replay dopo il gol: la partita e' ferma, si rigiocano le pose registrate.
+  replayFrame(dt) {
+    const r = this.replay, d = this.paused ? 0 : dt;
+    if (this.paused) this.controls.pollMenu();
+    else this.controls.read(dt);
+    if (d > 0 && !r.step(d) && !this.fadeOut) this.skipGoal();
+    r.apply(this.camera.cam, d);
+    this.stadium.update(d);
+  }
+
+  // Dopo l'esultanza: replay dell'azione del gol, se c'e' abbastanza registrato.
+  startReplay() {
+    if (this.replay || this.fadeOut || this.phase !== 'goal') return;
+    const rec = this.recorder, goalFrame = rec.length - 1 - (rec.count - this.goalMark);
+    if (goalFrame < REPLAY.hz) { this.skipGoal(); return; }
+    this.replay = new Replay(rec, goalFrame, this.goalSide);
+    this.hud.hideGoal();
+    this.hud.showReplay(true);
+    this.ctrlRing.visible = this.targetRing.visible = false;
+    this.referee.card.visible = false;
+  }
+
+  // Salta esultanza o replay: dissolvenza al nero, poi calcio d'inizio.
+  skipGoal() {
+    if (this.phase !== 'goal' || this.fadeOut) return;
+    this.hud.fade(true);
+    this.fadeOut = { t: 0, then: () => this.endGoal() };
+  }
+
+  // A nero: niente attesa dei giocatori che rientrano, sono gia' schierati.
+  endGoal() {
+    this.replay = null;
+    this.hud.showReplay(false);
+    this.hud.hideGoal();
+    this.recorder.clear();
+    this.rules.kickoff(this.rules.next, true);
+    this.camera.snap(this.ball);
+    this.hud.fade(false);
   }
 
   syncMarkers(dt) {
@@ -1207,6 +1262,9 @@ class Match {
       return;
     }
     const team = side === this.attackDir ? this.userSide : (this.userSide === 'home' ? 'away' : 'home');
+    // per il replay: fotogramma del gol e porta
+    this.goalMark = this.recorder.count;
+    this.goalSide = side;
     const home = team === 'home';
     if (home) this.goals.home++; else this.goals.away++;
     const last = this.lastTouch;

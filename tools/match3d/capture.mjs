@@ -25,12 +25,17 @@ const [W, H] = opt('size', '960x540').split('x').map(Number);
 const QUALITY = opt('quality', 'medium');     // low | medium | high
 const VIEW = opt('view', 'close');            // close: vicino a chi si segue; tv: telecamera della partita
 const SET = opt('set', '');                   // es. KEEPER.alertDist=200: cambia una costante di config per la cattura
+const UNTIL = opt('until', '');               // replay: si simula (fino a --warm secondi) finche' non parte il replay di un gol
 
 const page = `(() => {
   const m = window.__m3d;
   cancelAnimationFrame(m.raf);
   m.frame = () => {};
   m.controls.pollMenu = () => {};
+  // niente controller veri: un pad della macchina metterebbe in pausa la partita
+  m.controls.pad = null;
+  m.controls._pollPad = () => null;
+  m.onPad = m.onPadLost = () => {};
   const DT = 1 / 60;
   const pick = (spec) => {
     if (spec === 'ball') return null;
@@ -38,7 +43,7 @@ const page = `(() => {
     return m.teams[team].players.find((p) => String(p.number) === num) || null;
   };
   window.__cap = {
-    warm(sec) { for (let i = 0; i < sec * 60 && m.phase !== 'end'; i++) m.advance(DT); return m.rules.clockText(); },
+    warm(sec, until) { for (let i = 0; i < sec * 60 && m.phase !== 'end' && !(until === 'replay' && m.replay); i++) m.advance(DT); return m.rules.clockText() + (m.replay ? ' (replay)' : ''); },
     step(n, spec, dist, height) {
       for (let i = 0; i < n; i++) m.advance(DT);
       const p = pick(spec);
@@ -48,11 +53,11 @@ const page = `(() => {
         cam.fov = 40; cam.updateProjectionMatrix();
         cam.position.set(t.x, height, t.z + dist);
         cam.lookAt(t.x, p ? 0.9 : 0.5, t.z);
-      } else m.camera.update(m.ball, n / 60);
+      } else if (!m.replay) m.camera.update(m.ball, n / 60);   // durante il replay la telecamera e' la sua
       m.gfx.update(n / 60, m.ball.pos);
       m.gfx.render();
       const g = p ? p.gait : null;
-      return { clock: m.rules.clockText(), phase: m.phase, speed: p ? +p.speed.toFixed(2) : 0,
+      return { clock: m.rules.clockText(), phase: m.phase, replay: !!m.replay, speed: p ? +p.speed.toFixed(2) : 0,
         gesture: p && p.avatar.one ? p.avatar.one.a.getClip().name : null,
         weights: g ? Array.from(g.w).map((w) => +w.toFixed(2)) : null };
     }
@@ -80,7 +85,7 @@ async function main() {
   }
   await evaluate(cdp, page);
   await new Promise((r) => setTimeout(r, 1500));   // effetti di post-produzione caricati
-  const at = await evaluate(cdp, `__cap.warm(${WARM})`);
+  const at = await evaluate(cdp, `__cap.warm(${WARM}, ${JSON.stringify(UNTIL)})`);
   console.log('inizio cattura a ' + at);
   const log = [];
   const n = Math.round(SECONDS * 60 / EVERY);

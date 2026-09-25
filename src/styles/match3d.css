@@ -83,6 +83,21 @@ html.m3d-test #kfm-intro, html.m3d-test #kfm-esc{display:none!important}
 .m3d-banner[hidden]{display:none}
 .m3d-banner-t{font-family:Anton,Impact,sans-serif; font-size:34px; line-height:1; text-transform:uppercase}
 .m3d-banner-team{font-size:16px; color:var(--m3d-ink-2)}
+/* replay dopo il gol */
+.m3d-replay{
+  position:absolute; left:50%; top:calc(64px + env(safe-area-inset-top)); transform:translateX(-50%);
+  padding:8px 16px; border-radius:16px; background:var(--m3d-panel); border:1px solid var(--m3d-line);
+  font-family:Anton,Impact,sans-serif; font-size:16px; line-height:1; text-transform:uppercase;
+}
+.m3d-skip{
+  position:absolute; right:calc(24px + env(safe-area-inset-right)); bottom:calc(24px + env(safe-area-inset-bottom));
+  display:flex; align-items:center; gap:8px; min-height:44px; padding:8px 16px;
+  border-radius:16px; background:var(--m3d-panel); border:1px solid var(--m3d-line); font-size:13px;
+}
+.m3d-skip:hover{border-color:var(--m3d-line-2)}
+.m3d-replay[hidden], .m3d-skip[hidden]{display:none}
+.m3d-fade{position:absolute; inset:0; background:#000; opacity:0; pointer-events:none; transition:opacity .35s ease}
+.m3d-fade.on{opacity:1}
 @keyframes m3d-in{from{opacity:0; transform:translate(-50%,8px) scale(.96)} to{opacity:1; transform:translateX(-50%)}}
 
 .m3d-hint{

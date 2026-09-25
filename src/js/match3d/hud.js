@@ -1,6 +1,7 @@
 // Punteggio, pulsante Esci, scelta di uscita e avvisi. DOM + SVG, niente emoji.
 
 const ICON_EXIT = '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M10 8l-4 4 4 4M6 12h10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const ICON_SKIP = '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M6 6l8 6-8 6z" fill="currentColor"/><path d="M17 6v12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
 const ICON_ROTATE = '<svg viewBox="0 0 48 48" width="48" height="48" aria-hidden="true"><rect x="14" y="6" width="20" height="36" rx="4" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M40 30a14 14 0 0 1-10 12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><path d="M29 38l1 4 4-1" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
 function el(tag, cls, text) {
@@ -98,6 +99,18 @@ export class Hud {
 
     this.layer = el('div', 'm3d-controls');
 
+    // replay dopo il gol: etichetta e pulsante Salta (anche Options, Menu, Invio)
+    this.replayTag = el('div', 'm3d-replay', 'Replay');
+    this.replayTag.hidden = true;
+    this.skipBtn = el('button', 'm3d-skip');
+    this.skipBtn.type = 'button';
+    this.skipBtn.hidden = true;
+    this.skipBtn.innerHTML = ICON_SKIP;
+    this.skipBtn.appendChild(el('span', null, 'Salta'));
+    this.skipBtn.addEventListener('click', () => { if (on.skip) on.skip(); });
+    // dissolvenza al nero fra replay e calcio d'inizio
+    this.fadeEl = el('div', 'm3d-fade');
+
     this.dialog = this._dialog(exitMode);
     this.dialog.hidden = true;
 
@@ -105,7 +118,7 @@ export class Hud {
     rotate.innerHTML = ICON_ROTATE;
     rotate.appendChild(el('span', null, 'Gira il telefono in orizzontale'));
 
-    hud.append(score, this.tag, exit, this.layer, this.power, this.prompt, this.banner, this.toastEl, this.hint, this.dialog, rotate);
+    hud.append(this.fadeEl, score, this.tag, exit, this.layer, this.power, this.prompt, this.banner, this.replayTag, this.skipBtn, this.toastEl, this.hint, this.dialog, rotate);
     root.appendChild(hud);
     this.node = hud;
   }
@@ -213,6 +226,14 @@ export class Hud {
   }
 
   hideGoal() { this.banner.hidden = true; }
+
+  showReplay(on) {
+    this.replayTag.hidden = !on;
+    this.skipBtn.hidden = !on;
+  }
+
+  // true: verso il nero; false: di nuovo in chiaro
+  fade(on) { this.fadeEl.classList.toggle('on', !!on); }
 
   toast(text) {
     this.toastEl.textContent = text;

@@ -220,6 +220,21 @@ presto (oltre 0,35 s prima del calcio) puo' essere visto dal tiratore IA, che
 cambia lato; entro 0,3 s dopo il calcio ci si puo' ancora tuffare in
 ritardo; senza levetta il portiere resta al centro.
 
+## Dopo il gol
+
+Come nella skill ("Dopo il gol"): 3 s di esultanza dal vivo, poi il replay,
+poi dissolvenza al nero e calcio d'inizio con le squadre gia' schierate,
+senza aspettare chi rientra. Options/Start (PlayStation), Menu (Xbox), Invio
+(tastiera) e il pulsante Salta (touch e mouse) saltano esultanza e replay.
+
+Da noi (`replay.js`, numeri in `REPLAY`): un registratore tiene gli ultimi
+10 s a 30 fotogrammi al secondo, con posizione, rotazione e pose di tutte le
+ossa di ogni corpo (giocatori, portieri, arbitro) e la palla. Cosi' il
+replay mostra esattamente quello che si e' visto, IK e fusioni comprese. Il
+regista rigioca gli ultimi 5 s prima del gol: prima laterale bassa dal bordo
+campo con lo zoom che segue la distanza, poi dietro la porta al
+rallentatore (0,45) negli ultimi 1,5 s, fino a 0,7 s dopo il gol.
+
 ## Arbitro, falli, cartellini, rigori, fuorigioco
 
 - L'arbitro di PES 2020/2021 e' noto per fischiare molto, anche falli leggeri

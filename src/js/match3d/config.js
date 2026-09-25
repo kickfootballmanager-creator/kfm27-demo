@@ -291,7 +291,8 @@ export const AI = {
   sprintDist: 9,          // oltre questa distanza dalla posizione si scatta
   faceNear: 4,            // entro questa distanza dalla posizione si guarda la palla...
   faceStep: 1.5,          // ...ma di lato o all'indietro solo entro questa (piccoli aggiustamenti)
-  faceAngle: 1,           // o se la palla e' a meno di tanti rad dalla direzione di corsa
+  faceAngle: 0.6,         // o se la palla e' a meno di tanti rad dalla direzione di corsa
+  sidestepMag: 0.25,      // aggiustamento di lato o all'indietro: frazione della corsa (passo laterale, 1,5 m/s)
   space: { samples: 8, radius: 6, wOpp: 1.4, wLane: 1.2, wHome: 0.08 },
   // Inserimenti a tempo (skill: "Filtranti e inserimenti"): ogni `every` s uno o
   // due attaccanti si mettono sulla linea del fuorigioco, `hold` m dietro, pronti
@@ -418,11 +419,11 @@ export const DUEL = {
   skillGap: 0.4,          // peso della differenza di difficolta' fra le squadre
   manual: 1.05,           // contrasto premuto: poco piu' efficace, molto piu' rischioso
   // fallo: base, di lato, da dietro, per m/s di chi entra e del portatore (lanciato si inciampa di piu')
-  foul: { auto: 0.12, manual: 0.14, side: 0.15, back: 0.45, speed: 0.012, carrier: 0.05 },
+  foul: { auto: 0.15, manual: 0.14, side: 0.15, back: 0.45, speed: 0.012, carrier: 0.05 },
   missFoul: { front: 0.5, side: 0.75, back: 0.9 },
   // carica o spinta di corsa sul portatore (defense.bodyContact): oltre `speed` m/s
   // di avvicinamento, probabilita' per provenienza, piena a `full` m/s; gap: m oltre il contatto dei corpi
-  contact: { gap: 0.06, speed: 1.2, full: 4, front: 0.05, side: 0.7, back: 1 },   // contrasto che manca la palla e prende l'uomo (a portata: TACKLE.manReach)
+  contact: { gap: 0.06, speed: 1, full: 4, front: 0.05, side: 0.9, back: 1 },   // contrasto che manca la palla e prende l'uomo (a portata: TACKLE.manReach)
   passFirst: [0.15, 0.5], // IA con palla: la passa prima del contrasto [difficolta' 0, 1]
   quickPass: 0.1,         // secondi fra la decisione e il piede sulla palla
   stagger: { miss: 0.45, beaten: 0.8 }, // secondi sbilanciato dopo un contrasto a vuoto
@@ -705,8 +706,6 @@ export const RULES = {
   aiTake: 1.8,            // l'IA batte dopo tanti secondi
   userWait: 6,            // l'utente non batte: dopo tanti secondi batte l'IA per lui
   wall: 9.15,             // distanza degli avversari dalla palla alle riprese
-  goalPause: 5.5,         // esultanza, poi calcio d'inizio
-  goalSkip: 1.5,          // da qui un pulsante salta l'esultanza
   halfPause: 3,
   returnDelay: 1,         // dopo un gol si torna verso il centrocampo dopo tanti secondi
   gatherMax: 9,           // ripresa: al massimo si aspetta tanto che tutti siano al loro posto
@@ -794,6 +793,23 @@ export const SOUND = {
 
 // Rallentatore di debug (F4): per guardare transizioni e contatti piede-palla.
 export const DEBUG = { slowMotion: 0.25 };
+
+// Dopo il gol (replay.js): esultanza dal vivo per `celebrate` s, poi il
+// replay degli ultimi `pre` s prima del gol, laterale basso a velocita'
+// normale e dietro la porta al rallentatore (slowSpeed) negli ultimi `slow`
+// s, fino a `post` s dopo. Buffer di `seconds` s registrato a `hz`. Poi
+// dissolvenza al nero di `fade` s e calcio d'inizio con le squadre schierate.
+// camRate, lookRate: 1/s, quanto in fretta la telecamera segue la palla.
+// Laterale bassa dal bordo campo, con lo zoom che segue la distanza.
+export const REPLAY = {
+  hz: 30, seconds: 10,
+  celebrate: 3,
+  pre: 5, slow: 1.5, post: 0.7, slowSpeed: 0.45, maxTime: 11,
+  fade: 0.35,
+  sideCam: { height: 4, dist: 14, edge: 3, lead: 5, frame: 14, fov: [10, 30] },   // frame: m visibili in altezza sull'azione, fov min e max
+  goalCam: { back: 6, height: 2.6, follow: 0.4, fov: 38 },
+  camRate: 3, lookRate: 8
+};
 
 // Livelli di qualita' (render.js). pixelRatio: massimo; shadow: lato della
 // shadow map dei giocatori (0 = ombre blob); aa: antialiasing in post.
