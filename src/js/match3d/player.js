@@ -113,6 +113,9 @@ export class Player {
       const left = Math.abs(wrap(target - this.moveHeading));
       want = mag * top * (o.sprint && !o.close ? 1 : PLAYER.jogFactor) * (o.withBall ? P.dribbleSpeed : 1) * (o.close ? PLAYER.closeSpeed : 1);
       want *= Math.max(PLAYER.turnBrake, Math.cos(Math.min(left, Math.PI / 2)));
+      // da fermi, verso un punto alle proprie spalle: prima ci si gira quasi
+      // sul posto, poi si accelera (girarsi accelerando fa strisciare il piede)
+      if (!o.face && this.speed < PLAYER.pivotRun && Math.abs(wrap(target - this.heading)) > PLAYER.pivotAngle) want = Math.min(want, PLAYER.pivotCap);
     }
     // Il busto segue la corsa o guarda o.face, come una molla con
     // accelerazione angolare limitata: parte e si ferma senza scatti.

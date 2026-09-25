@@ -127,6 +127,40 @@ distanza e angolo lo permettono. L'esito (palla recuperata, il portatore la
 passa prima, il portatore salta l'uomo, fallo) dipende da difesa del
 difensore, dribbling del portatore, tempismo e difficolta'.
 
+### Difesa dell'IA e disciplina
+
+Come una squadra vera (skill match3d, "Difesa IA e disciplina"), in
+`team-ai.js` (`defend`) con i numeri in `AI.defense`, `AI.tackle`, `AI.rash`,
+`AI.slide`, `DUEL` e `FOUL`:
+
+- Un solo difensore in pressione, scelto fra chi sta lato porta (chi e'
+  dietro al portatore costa `behindCost` metri in piu'): temporeggia a
+  1,5-2 m fra il portatore e la porta, spostato verso la sua corsa, rivolto
+  alla palla. Un secondo in copertura 6 m dietro di lui. Chi e' stato saltato
+  insegue il portatore affiancandolo. Gli altri in zona: la linea difensiva
+  tiene la linea (sempre almeno 7 m dietro la palla) e marca lato porta chi
+  le arriva addosso; i centrocampisti si mettono sulle linee dei passaggi in
+  avanti. Chi e' davanti alla palla rientra di scatto. I posti cambiano con un
+  filtro, niente inversioni di corsa a ogni decisione.
+- Contrasto solo quando conviene: mai da dietro, palla dalla parte del
+  difensore e lontana dal piede, appena ricevuta, oppure sul tentativo di
+  dribbling. Finita la pazienza si entra anche su chi protegge palla di
+  spalle, con molto rischio di fallo.
+- Scivolata solo come ultima risorsa: portatore lanciato verso la porta,
+  arrivo di lato o di fronte, nessun compagno in copertura.
+- Falli come nel regolamento: contrasto che prende l'uomo invece del pallone,
+  carica o spinta alle spalle di chi corre addosso al portatore, scivolata
+  sull'uomo. Giallo da dietro, in scivolata o per fermare un'azione
+  promettente; rosso per la chiara occasione da gol o per un intervento
+  violento. Un ammonito e l'ultimo uomo rischiano meno (niente scivolate,
+  meno contatti).
+- Il giocatore dell'utente, dopo 0,6 s senza comandi in difesa, difende da
+  solo con le stesse regole.
+
+Obiettivi per partita, entrambe le squadre, verificati con
+`node tools/match3d/soak.mjs`: scivolate 4-10, falli 18-28, gialli 2-6, rossi
+circa uno ogni 8-10 partite.
+
 ## Punizioni
 
 - In PES la punizione vicina alla porta si batte con la telecamera dietro al

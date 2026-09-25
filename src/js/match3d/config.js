@@ -65,7 +65,7 @@ export const PLAYER = {
   decelLow: 0.45,         // frazione della frenata vicino a fermi: l'arresto si ammorbidisce
   accelLow: 1.35,         // spinta alla partenza rispetto all'accelerazione media...
   accelHigh: 0.55,        // ...e vicino alla velocita' massima
-  coastDecel: 5,          // chi ha appena passato finisce la corsa rallentando
+  coastDecel: 5,          // m/s^2: chi ha appena passato, o sente un fischio, finisce la corsa rallentando
   faceTurn: 2,            // rotazione del busto verso la palla rispetto alla sterzata
   faceGain: 14,           // 1/s: il busto insegue la direzione voluta come una molla...
   faceAccel: 70,          // ...con un'accelerazione angolare massima (rad/s^2): niente scatti
@@ -74,6 +74,9 @@ export const PLAYER = {
   closeSpeed: 0.55,       // controllo stretto (R2): frazione della velocita'
   turnSlowBoost: 2,       // da fermo si gira fino a 3 volte piu' in fretta
   pivotSpeed: 0.8,        // m/s: sotto, il primo passo va subito nella direzione voluta
+  pivotRun: 2.5,          // m/s: sotto, verso un punto a piu' di pivotAngle rad dal busto...
+  pivotAngle: 1.2,
+  pivotCap: 1.2,          // ...non si va oltre questi m/s finche' il busto non si e' girato
   lateralAccel: 20,       // m/s^2 massimi in curva: a 5 m/s si gira a 4 rad/s, a 8 m/s a 2,5
   turnBrake: 0.35,        // velocita' minima conservata in una curva a 90 gradi
   runBack: [6, 22, 0.35],  // a gioco fermo verso il proprio posto: corsa oltre 6 m, scatto oltre 22, sotto al passo (frazione)
@@ -140,7 +143,8 @@ export const RECEIVE = {
 export const FIRST_TOUCH = {
   minAngle: 0.5,          // rad fra joystick e busto oltre cui il tocco orienta
   turn: 0.6,              // frazione della rotazione fatta subito dal busto
-  receiveBelow: 1.5       // sotto questa velocita' si vede l'animazione di ricezione
+  receiveBelow: 1.5,      // sotto questa velocita' si vede l'animazione di ricezione...
+  cancelAbove: 2.5        // ...che sfuma nella corsa se chi ha ricevuto riparte oltre questa
 };
 
 // Potenza = distanza, come in PES: la barra sceglie quale compagno raggiungere
@@ -266,7 +270,8 @@ export const SHAPE = {
   defY: 73,               // y del modulo che sta sulla linea difensiva
   attY: 15,               // y del modulo che sta sulla linea delle punte
   attack: { lineOffset: -26, lineMin: -40, lineMax: 6, len: 38, width: 30, ballZ: 0.15 },
-  defend: { lineScale: 0.55, lineOffset: -14, lineMin: -45, lineMax: -4, len: 26, width: 22, ballZ: 0.4 },
+  // behindBall: la linea difensiva resta almeno tanti metri dietro la palla (lato porta)
+  defend: { lineScale: 0.55, lineOffset: -14, lineMin: -45, lineMax: -4, behindBall: 7, len: 26, width: 22, ballZ: 0.4 },
   kickoff: { line: -24, len: 21, width: 28 },
   maxZ: 31                // nessuna posizione oltre questa distanza dal centro in larghezza
 };
@@ -277,10 +282,13 @@ export const AI = {
   hz: 10,                 // decisioni al secondo
   mateDifficulty: 0.5,
   arrive: 1.2,            // entro questa distanza la posizione e' raggiunta
+  targetSmooth: 0.35,     // a ogni decisione il posto di zona si avvicina di questa frazione a quello nuovo
+  targetReset: 40,        // m: oltre, il posto filtrato riparte dal nuovo (riposizionamenti)
   sprintDist: 9,          // oltre questa distanza dalla posizione si scatta
+  faceNear: 4,            // entro questa distanza dalla posizione si guarda la palla
   space: { samples: 8, radius: 6, wOpp: 1.4, wLane: 1.2, wHome: 0.08 },
   run: { every: [2.5, 5], depth: 12, max: 2, onside: 0.8 },  // inserimenti: ogni quanto, quanto oltre, quanti insieme; onside: m prima della linea del fuorigioco
-  press: { max: 1, maxOwnThird: 2, contain: 1.4, tight: 0.85, delay: [0.45, 0.12] },   // delay: [difficulty 0, 1]; tight: m dalla palla quando stringe
+  press: { tight: 0.85, delay: [0.45, 0.12] },   // delay: reazione in marcatura [difficulty 0, 1]; tight: m dalla palla quando stringe per il contrasto
   mark: { radius: 14, goalSide: 1.8 },
   wall: { maxDist: 32, gap: 0.7, postAim: 1.6 },  // barriera: uomini a 0,7 m (piu' dell'ingombro di due giocatori), mirata al palo vicino
   back: { dist: 16 },     // rientro: oltre questa distanza dalla posizione si corre indietro
@@ -299,8 +307,47 @@ export const AI = {
     protect: { dist: 2.2, mag: 0.45, chance: [0.3, 0.8], shieldSide: 2.2 }
   },
   tackleRate: [0.75, 1.3], // cadenza dei contrasti automatici rispetto a PRESS.autoEvery [difficulty 0, 1]
-  slideChance: [0.08, 0.2],
-  intercept: { base: 0.3, def: 0.5, speed: 0.012 }    // probabilita' d'intercetto: base + def*attr - speed*v
+  intercept: { base: 0.3, def: 0.5, speed: 0.012 },   // probabilita' d'intercetto: base + def*attr - speed*v
+  // Difesa di squadra (skill match3d, "Difesa IA e disciplina"): uno solo in
+  // pressione che temporeggia, uno in copertura dietro di lui, gli altri in
+  // zona sulle linee di passaggio. Vale anche per il giocatore dell'utente
+  // quando non tocca i comandi per `idle` secondi.
+  defense: {
+    keep: 3,              // m: chi pressa resta lui finche' un compagno non e' piu' vicino di tanto
+    contain: [2, 1.5],    // m dal portatore mentre temporeggia [difficulty 0, 1]
+    shade: 0.35,          // la posizione si sposta verso la corsa del portatore (0 porta, 1 corsa)
+    cover: 6,             // m: la copertura sta tanto dietro chi pressa, sulla linea verso la porta
+    coverInside: 0.3,     // ...spostata verso il centro del campo (frazione)
+    lane: { radius: 15, t: [0.35, 0.8], pull: 0.6 },   // zona: avversari entro radius dal posto; punto sulla linea di passaggio fra t0 e t1, pesato pull
+    markZone: 28,         // avversari a meno di tanti metri dalla nostra porta: marcatura a uomo, lato porta
+    backLine: 0.3,        // posti del modulo in questa frazione piu' arretrata: linea difensiva
+    lineMark: 3,          // la linea marca lato porta chi arriva a meno di tanti metri da lei...
+    lineShift: 0.3,       // ...altrimenti resta sulla linea, spostata verso di lui di questa frazione
+    recover: 5,           // m dal proprio posto oltre cui chi e' davanti alla palla rientra di scatto
+    behindCost: 8,        // m in piu' nella scelta di chi pressa per chi sta dietro al portatore
+    bookedCost: 4,        // ...e per chi e' gia' ammonito
+    chase: 7,             // chi e' stato saltato insegue il portatore finche' gli resta entro tanti metri...
+    chaseLead: 0.35,      // ...correndo dove sara' fra tanti secondi...
+    chaseSide: 0.8,       // ...affiancato di tanti metri, dalla sua parte
+    idle: 0.6             // s senza comandi: il giocatore dell'utente difende da solo
+  },
+  // Contrasto dell'IA solo quando conviene: mai da dietro, palla dalla parte
+  // del difensore e lontana dal piede del portatore (exposed, 0..1), oppure
+  // appena ricevuta (fresh s); dopo `patience` s di attesa si prova comunque.
+  // pastSpeed, pastCos: il portatore che corre (m/s) verso il difensore o di
+  // traverso (coseno fra la sua corsa e la direzione del difensore) prova a saltarlo.
+  tackle: { exposed: 0.12, fresh: 0.5, patience: [1.4, 0.8], pastSpeed: 2, pastCos: -0.4 },
+  // Contrasto rischioso, di lato o da dietro (spesso fallo, come nel calcio
+  // vero): il portatore scappa verso la porta (speed m/s) a chi gli sta
+  // attaccato (dist m), o lo tiene di spalle oltre la pazienza. Probabilita'
+  // al secondo: escape, shield; in area ci si trattiene (box), da ammoniti
+  // anche (booked), e cosi' l'ultimo uomo su un'occasione da gol (lastMan).
+  rash: { dist: 1.6, speed: 3, escape: 1.2, shield: 1.2, box: 0.3, booked: 0.35, lastMan: 0.35 },
+  // Scivolata, ultima risorsa: portatore lanciato verso la porta (speed m/s,
+  // toGoal quota della corsa verso la porta) entro goalDist, arrivo di lato o
+  // di fronte, nessun compagno in copertura (entro coverWidth dalla linea
+  // portatore-porta). chance: probabilita' al secondo [difficulty 0, 1].
+  slide: { chance: [2, 3.2], range: [1.7, 3.3], speed: 3.5, toGoal: 0.4, goalDist: 45, coverWidth: 4 }
 };
 
 // Contrasto in piedi: affondo breve verso la palla, esito al contatto del piede.
@@ -316,6 +363,7 @@ export const TACKLE = {
   rate: 1.3,
   recover: 0.12,          // secondi reali dopo la fine della clip, prima di tornare a correre
   legReach: 0.95,         // dal centro del giocatore al pallone, gamba tesa
+  manReach: 1.05,         // uomo a portata della gamba (centro a centro): se manca la palla puo' prendere lui
   contactDist: 0.62,      // l'affondo porta il corpo a questa distanza dalla palla
   lunge: 0.75,            // metri massimi dell'affondo verso la palla, oltre lo slancio della corsa
   lungeFrom: 0.04,        // l'affondo va da qui al contatto (secondi)
@@ -333,7 +381,7 @@ TACKLE.duration = (TACKLE.end - TACKLE.from) / TACKLE.rate + TACKLE.recover;
 export const PRESS = {
   lead: 0.35,             // s: si corre dove sara' il portatore fra tanto
   sprintDist: 6,          // oltre questa distanza si scatta anche senza Scatto
-  engage: 3.2,            // sotto questa distanza si entra in marcatura stretta
+  engage: 4,              // sotto questa distanza si entra in marcatura stretta
   release: 5.5,           // oltre questa si torna a correre sul portatore
   contain: 1.35,          // distanza di marcatura senza levetta
   minR: 0.9,
@@ -356,7 +404,12 @@ export const DUEL = {
   angle: { front: 1, side: 0.85, back: 0.6 },
   skillGap: 0.4,          // peso della differenza di difficolta' fra le squadre
   manual: 1.05,           // contrasto premuto: poco piu' efficace, molto piu' rischioso
-  foul: { auto: 0.04, manual: 0.11, side: 0.05, back: 0.24, speed: 0.012 },
+  // fallo: base, di lato, da dietro, per m/s di chi entra e del portatore (lanciato si inciampa di piu')
+  foul: { auto: 0.12, manual: 0.14, side: 0.15, back: 0.45, speed: 0.012, carrier: 0.05 },
+  missFoul: { front: 0.5, side: 0.75, back: 0.9 },
+  // carica o spinta di corsa sul portatore (defense.bodyContact): oltre `speed` m/s
+  // di avvicinamento, probabilita' per provenienza, piena a `full` m/s; gap: m oltre il contatto dei corpi
+  contact: { gap: 0.06, speed: 1.2, full: 4, front: 0.05, side: 0.7, back: 1 },   // contrasto che manca la palla e prende l'uomo (a portata: TACKLE.manReach)
   passFirst: [0.15, 0.5], // IA con palla: la passa prima del contrasto [difficolta' 0, 1]
   quickPass: 0.1,         // secondi fra la decisione e il piede sulla palla
   stagger: { miss: 0.45, beaten: 0.8 }, // secondi sbilanciato dopo un contrasto a vuoto
@@ -677,17 +730,23 @@ export const RULES = {
   }
 };
 
-// Falli: gravita' dall'intervento, cartellino oltre le soglie.
+// Falli: gravita' dall'intervento, cartellino oltre le soglie. Un contrasto
+// sbagliato di fronte non si ammonisce; da dietro, in scivolata o per
+// fermare un'azione promettente (promising) si'.
 export const FOUL = {
-  base: { pressing: 0.15, contrasto: 0.3, scivolata: 0.5 },
-  back: 0.35,             // intervento da dietro
-  side: 0.1,
-  speed: 0.04,            // per m/s di chi entra
-  ballFirst: -0.35,       // prima la palla, poi l'uomo
-  noBall: 0.15,           // l'uomo e basta
+  base: { carica: -0.1, pressing: 0.2, contrasto: 0.28, scivolata: 0.38 },
+  back: 0.32,             // intervento da dietro
+  side: 0.08,
+  speed: 0.03,            // per m/s di chi entra
+  ballFirst: -0.3,        // prima la palla, poi l'uomo
+  noBall: 0.1,            // l'uomo e basta
   noise: 0.25,
   yellow: 0.6,
-  red: 1.15,
+  secondYellow: 0.15,     // gia' ammonito: per il secondo giallo serve tanto di piu'
+  red: 1.35,
+  // azione promettente fermata: vittima lanciata verso la porta (speed m/s)
+  // entro dist metri, al massimo `defenders` avversari fra lei e la porta
+  promising: { add: 0.28, dist: 45, speed: 3, defenders: 2 },
   dogsoDist: 26,          // chiara occasione da gol: vittima entro tanti metri dalla porta avversaria
   // Chi subisce il fallo: contrasto in piedi -> la clip tackle (caduta dopo
   // un fallo, con rialzo); scivolata -> tripped, down_idle e rialzo.

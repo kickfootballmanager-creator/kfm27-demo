@@ -298,12 +298,15 @@ export class Rules {
   foul(off, victim, info) {
     const m = this.m, F = FOUL;
     if (!RULES.fouls || m.phase !== 'play' || this.pendingFoul || off.team === victim.team) return false;
-    const from = approach(off, victim);
+    // da dove arriva l'intervento; la scivolata lo porta da quando e' partita
+    const from = info.from || approach(off, victim);
+    const promising = this.promising(victim, off);
     const sev = F.base[info.kind] + (from === 'back' ? F.back : from === 'side' ? F.side : 0) +
-      F.speed * Math.hypot(off.vel.x, off.vel.z) + (info.ballFirst ? F.ballFirst : F.noBall) + gauss() * F.noise * 0.5;
+      F.speed * Math.hypot(off.vel.x, off.vel.z) + (info.ballFirst ? F.ballFirst : F.noBall) + (promising ? F.promising.add : 0) + gauss() * F.noise * 0.5;
     const spot = { x: victim.pos.x, z: victim.pos.z };
     const inBox = inArea(m.dirOf(off.team), spot);
-    let card = sev >= F.red ? 'red' : sev >= F.yellow ? 'yellow' : null;
+    // prima del secondo giallo l'arbitro ci pensa due volte
+    let card = sev >= F.red ? 'red' : sev >= F.yellow + (off.yellows ? F.secondYellow : 0) ? 'yellow' : null;
     // chiara occasione da gol negata: rosso, in area giallo se l'intervento cercava la palla
     if (this.dogso(victim, off)) card = inBox && info.kind !== 'scivolata' ? (card || 'yellow') : 'red';
     m.stats.fouls[off.team]++;
@@ -314,10 +317,23 @@ export class Rules {
       m.poss.loose('contrasto', off);
     }
     const f = { off, victim, spot, card, team: victim.team, penalty: inBox && RULES.penalties, t: 0, adv: false };
-    m.lastFoul = { kind: info.kind, from, sev, card, penalty: f.penalty };
+    m.lastFoul = { kind: info.kind, from, sev, card, penalty: f.penalty, promising };
     if (f.penalty) this.callFoul(f);
     else this.pendingFoul = f;
     return true;
+  }
+
+  // Azione promettente: la vittima correva verso la porta, con la palla, e
+  // davanti a lei restavano pochi difensori. Fermarla con un fallo e' giallo.
+  promising(victim, off) {
+    const m = this.m, P = FOUL.promising, d = m.dirOf(victim.team);
+    const gx = d * HL - victim.pos.x, gz = -victim.pos.z, gl = Math.hypot(gx, gz) || 1;
+    const b = m.ball.pos, v = victim.vel, sp = Math.hypot(v.x, v.z);
+    if (gl > P.dist || Math.hypot(b.x - victim.pos.x, b.z - victim.pos.z) > 3) return false;
+    if (sp < P.speed || (v.x * gx + v.z * gz) / gl < 0.5 * sp) return false;
+    let n = 0;
+    for (const q of m.teams[off.team].players) if (!q.keeper && q !== off && (q.pos.x - victim.pos.x) * d > 0) n++;
+    return n <= P.defenders;
   }
 
   // Chiara occasione: la vittima puntava la porta vicina e fra lei e la porta

@@ -1,4 +1,4 @@
-import { PRESS, DUEL, ATTR, PITCH, DRIBBLE, FEINT, RULES, TACKLE } from './config.js';
+import { PRESS, DUEL, ATTR, PITCH, DRIBBLE, FEINT, RULES, TACKLE, AI, PLAYER } from './config.js';
 import { headingOf } from './player.js';
 
 // Difesa stile PES. Pressing tenuto: corsa decisa sul portatore, da vicino
@@ -87,10 +87,112 @@ export function aiPressState(p, car) { return pressState(p, car); }
 function skillOf(m, p) { return m.teams[p.team].ai.skill; }
 
 // Da dove arriva il difensore rispetto a dove guarda il portatore.
-function approach(def, car) {
+export function approach(def, car) {
   const ax = def.pos.x - car.pos.x, az = def.pos.z - car.pos.z, l = Math.hypot(ax, az) || 1;
   const c = (ax * car.dirX + az * car.dirZ) / l;
   return c > 0.45 ? 'front' : c < -0.3 ? 'back' : 'side';
+}
+
+// Quanto la palla e' lontana dal piede del portatore: 0 attaccata, 1 allungata.
+export function exposure(m, car) {
+  const b = m.ball;
+  return clamp((Math.hypot(b.pos.x - car.pos.x, b.pos.z - car.pos.z) - DRIBBLE.rest) / (DRIBBLE.swing[1] + 0.15), 0, 1);
+}
+
+// L'IA (e il giocatore dell'utente che difende da solo) entra solo quando
+// conviene: mai da dietro, palla dalla sua parte e non attaccata al piede, o
+// appena ricevuta; dopo `patience` secondi di attesa ci prova comunque.
+export function tackleWorth(m, p, car, engaged, patience) {
+  if (car.keeper || car.holding || approach(p, car) === 'back') return false;
+  const b = m.ball;
+  // la palla non sta dietro il corpo del portatore
+  if (Math.hypot(b.pos.x - p.pos.x, b.pos.z - p.pos.z) > Math.hypot(car.pos.x - p.pos.x, car.pos.z - p.pos.z) + 0.1) return false;
+  const T = AI.tackle;
+  return exposure(m, car) >= T.exposed || (m.poss.owned && m.poss.age < T.fresh) || goingPast(p, car) || engaged > patience;
+}
+
+// Il portatore prova a saltare il difensore: gli corre addosso o di lato,
+// abbastanza veloce. E' il momento di allungare la gamba (e di rischiare il fallo).
+function goingPast(p, car) {
+  const T = AI.tackle, cv = Math.hypot(car.vel.x, car.vel.z);
+  if (cv < T.pastSpeed) return false;
+  const dx = p.pos.x - car.pos.x, dz = p.pos.z - car.pos.z, dl = Math.hypot(dx, dz) || 1;
+  // verso il difensore (chiude) o di traverso rispetto a lui
+  const toward = (car.vel.x * dx + car.vel.z * dz) / (dl * cv);
+  return toward > T.pastCos;
+}
+
+// Prudenza di un difensore dell'IA: l'ammonito e l'ultimo uomo davanti a
+// un'occasione da gol (rosso) rischiano meno. 1 per il giocatore dell'utente.
+function caution(m, p, car) {
+  if (p === m.ctrl && !m.ctrlAuto) return 1;
+  return (p.yellows ? AI.rash.booked : 1) * (m.rules.dogso(car, p) ? AI.rash.lastMan : 1);
+}
+
+// Contrasto rischioso: probabilita' al secondo che chi sta attaccato al
+// portatore, di lato o da dietro, entri lo stesso. Succede quando il
+// portatore gli scappa verso la porta o gli tiene la palla di spalle troppo a
+// lungo: e' da qui che nascono quasi tutti i falli, come nel calcio vero.
+export function rashRate(m, p, car, engaged, patience) {
+  const R = AI.rash;
+  if (car.keeper || car.holding || approach(p, car) === 'front') return 0;
+  if (Math.hypot(car.pos.x - p.pos.x, car.pos.z - p.pos.z) > R.dist) return 0;
+  const d = m.dirOf(p.team), gx = -d * HL - car.pos.x, gz = -car.pos.z, gl = Math.hypot(gx, gz) || 1;
+  const k = caution(m, p, car) * (gl < PITCH.penaltyDepth + 2 && Math.abs(car.pos.z) < PITCH.penaltyWidth / 2 ? R.box : 1);
+  const cv = Math.hypot(car.vel.x, car.vel.z);
+  if (cv > R.speed && (car.vel.x * gx + car.vel.z * gz) / gl > 0.3 * cv) return R.escape * k;
+  if (engaged > patience) return R.shield * k;
+  return 0;
+}
+
+// Scivolata come ultima risorsa: portatore lanciato verso la nostra porta e
+// vicino, arrivo di lato o di fronte, a distanza di scivolata, e nessun
+// compagno fra lui e la porta a coprire.
+export function slideWorth(m, p, car) {
+  const S = AI.slide;
+  // un ammonito non rischia la scivolata
+  if (car.keeper || car.holding || p.stagger > 0 || p.yellows || approach(p, car) === 'back') return false;
+  const b = m.ball, bd = Math.hypot(b.pos.x - p.pos.x, b.pos.z - p.pos.z);
+  if (bd < S.range[0] || bd > S.range[1] || b.pos.y > 0.5) return false;
+  const gx = -m.dirOf(p.team) * HL - car.pos.x, gz = -car.pos.z, gl = Math.hypot(gx, gz) || 1;
+  if (gl > S.goalDist) return false;
+  const cv = Math.hypot(car.vel.x, car.vel.z);
+  if (cv < S.speed || (car.vel.x * gx + car.vel.z * gz) / gl < S.toGoal * cv) return false;
+  for (const q of m.teams[p.team].players) {
+    if (q === p || q.keeper || q.down || q.sentOff) continue;
+    const qx = q.pos.x - car.pos.x, qz = q.pos.z - car.pos.z;
+    const along = (qx * gx + qz * gz) / gl;
+    if (along > 0 && along < gl && Math.abs(qx * gz - qz * gx) / gl < S.coverWidth) return false;
+  }
+  return true;
+}
+
+// Contatto di corsa fra un avversario e il portatore: carica o spinta. Alle
+// spalle e' quasi sempre fallo, di lato a volte, di fronte quasi mai (e'
+// il portatore che va addosso). Si valuta una volta per contatto.
+export function bodyContact(m) {
+  const car = m.owner;
+  if (!RULES.fouls || !car || car.keeper || car.holding || m.phase !== 'play') { m.bodyTouch = null; return; }
+  const C = DUEL.contact, R = 2 * PLAYER.radius + C.gap;
+  const seen = m.bodyTouch && m.bodyTouch.car === car ? m.bodyTouch.set : null;
+  const now = new Set();
+  for (const q of m.teams[m.otherSide(car.team)].players) {
+    if (q.keeper || q.down || q.action) continue;
+    const dx = car.pos.x - q.pos.x, dz = car.pos.z - q.pos.z, d = Math.hypot(dx, dz);
+    if (d > R) continue;
+    now.add(q);
+    if (seen && seen.has(q)) continue;
+    const closing = ((q.vel.x - car.vel.x) * dx + (q.vel.z - car.vel.z) * dz) / (d || 1);
+    if (closing < C.speed) continue;
+    if (Math.random() < C[approach(q, car)] * Math.min(1, closing / C.full) * caution(m, q, car) && m.rules.foul(q, car, { kind: 'carica', ballFirst: false })) break;
+  }
+  m.bodyTouch = { car, set: now };
+}
+
+// Contrasto che non arriva al pallone con l'uomo a portata di gamba:
+// probabilita' che lo prenda (fallo), secondo da dove arriva.
+export function missFoulChance(m, def, car) {
+  return RULES.fouls ? DUEL.missFoul[approach(def, car)] * caution(m, def, car) : 0;
 }
 
 // Probabilita' di fallo di un contrasto in piedi (0 se i falli sono spenti).
@@ -98,17 +200,16 @@ export function tackleFoulChance(def, car, manual) {
   if (!RULES.fouls) return 0;
   const F = DUEL.foul, a = approach(def, car);
   return (manual ? F.manual : F.auto) + (a === 'back' ? F.back : a === 'side' ? F.side : 0) +
-    F.speed * Math.hypot(def.vel.x, def.vel.z);
+    F.speed * Math.hypot(def.vel.x, def.vel.z) + F.carrier * Math.hypot(car.vel.x, car.vel.z);
 }
 
 // Esito del contrasto di `def` sul portatore `car`: 'won', 'foul' o 'beaten'.
 export function duel(m, def, car, manual) {
-  const b = m.ball;
-  const exposed = clamp((Math.hypot(b.pos.x - car.pos.x, b.pos.z - car.pos.z) - DRIBBLE.rest) / (DRIBBLE.swing[1] + 0.15), 0, 1);
+  const exposed = exposure(m, car);
   const shield = car.action && car.action.feint ? FEINT.shield : 1;
   const win = lerp2(DUEL.win, defUnit(def)) * (1 - DUEL.dribbleResist * driUnit(car)) * lerp2(DUEL.timing, exposed) *
     DUEL.angle[approach(def, car)] * (1 + DUEL.skillGap * (skillOf(m, def) - skillOf(m, car))) * (manual ? DUEL.manual : 1) * shield;
-  const foul = tackleFoulChance(def, car, manual);
+  const foul = tackleFoulChance(def, car, manual) * caution(m, def, car);
   const r = Math.random();
   return r < win ? 'won' : r < win + foul ? 'foul' : 'beaten';
 }

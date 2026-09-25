@@ -13,7 +13,7 @@ import { TeamAI } from './team-ai.js';
 import { KeeperAI, HELD_Y } from './keeper.js';
 import { startTackle, startSlide, tryAerial, startKeeperGesture } from './gestures.js';
 import { Rules } from './rules.js';
-import { userPress, stagger, beat } from './defense.js';
+import { userPress, stagger, beat, bodyContact } from './defense.js';
 import { Referee } from './referee.js';
 import { unlockAudio, closeAudio } from './audio.js';
 import { SetPieces } from './setpieces.js';
@@ -137,6 +137,14 @@ class Match {
     this.timeScale = 1;        // rallentatore di debug (F4)
     // IA contro IA (?match3d=auto, test di durata): nessun giocatore comandato
     this.auto = !!opts.auto;
+    this.idleT = 0;            // secondi senza nessun comando dell'utente
+  }
+
+  // In difesa, senza comandi da AI.defense.idle secondi, il giocatore
+  // dell'utente difende da solo con le regole dell'IA (team-ai.js).
+  get ctrlAuto() {
+    const c = this.ctrl;
+    return !!c && !c.keeper && this.phase === 'play' && this.idleT >= AI.defense.idle && !this.userAttacking();
   }
 
   get pixelRatio() { return this.gfx ? this.gfx.pixelRatio : 1; }
@@ -440,7 +448,8 @@ class Match {
     const celebrating = p.avatar.gestureName() === R.celebration.clip;
     const waiting = this.phase === 'goal' && this.rules.t < R.returnDelay;
     const t = p.homeTarget;
-    if (!t || celebrating || waiting) { p.drive(dt, 0, 0, 0, {}); return; }
+    // al fischio si finisce la corsa rallentando, senza inchiodare
+    if (!t || celebrating || waiting) { p.drive(dt, 0, 0, 0, { decel: PLAYER.coastDecel }); return; }
     p.goTo(dt, t.x, t.z, t.h);
   }
 
@@ -609,7 +618,7 @@ class Match {
   // Fallo di `off` su `victim`: lo giudica l'arbitro (rules.foul). Con i
   // falli spenti, o a gioco fermo, il contrasto finisce come un dribbling riuscito.
   foul(off, victim, info = {}) {
-    if (this.rules.foul(off, victim, { kind: info.kind || 'contrasto', ballFirst: !!info.ballFirst })) return;
+    if (this.rules.foul(off, victim, { kind: info.kind || 'contrasto', ballFirst: !!info.ballFirst, from: info.from })) return;
     stagger(off, DUEL.stagger.beaten, true);
     if (this.owner === victim) beat(this, victim, off);
   }
@@ -718,6 +727,8 @@ class Match {
     this.lastInp = inp;
     const me = this.ctrl;
     if (inp.mag > 0 || inp.any) this.hud.hideHint();
+    const touching = inp.mag > 0 || inp.any || Object.values(inp.btn.held).some(Boolean);
+    this.idleT = touching ? 0 : this.idleT + dt;
     this.poss.tick(dt);
 
     if (this.kickLock && (this.kickLock.t -= dt) <= 0) this.kickLock = null;
@@ -749,7 +760,7 @@ class Match {
       else if (!live) this.settle(dt, p);
       else if (p.keeper && p !== me) this.teams[p.team].keeperAI.update(dt);
       else if (this.receiver === p) { this.aerial(p, inp); if (!p.action) this.runToBall(dt, p); }
-      else if (p !== me) { this.aerial(p, null); if (!p.action) this.teams[p.team].ai.steer(dt, p); }
+      else if (p !== me || this.ctrlAuto) { this.aerial(p, null); if (!p.action) this.teams[p.team].ai.steer(dt, p); }
       else this.userMove(dt, p, inp, withBall);
     }
     if (live || setting) this.referee.update(dt);
@@ -757,9 +768,13 @@ class Match {
     this.walkOff(dt);
     separate(this.bodies, (p) => p === this.ctrl || p.down || (p.action && p.action.root) || p === this.owner);
     for (const p of this.everyone) p.confine();
+    // chi va addosso al portatore di corsa, soprattutto alle spalle, fa fallo
+    bodyContact(this);
     // pesi e fase delle animazioni dopo il movimento: servono subito ai tocchi di palla
     for (const p of this.bodies) p.animStep(dt);
     for (const p of this.leaving) p.animStep(dt);
+    // lo stop di palla e' un gesto da fermi: chi riparte di corsa lo lascia sfumare nella corsa
+    for (const p of this.everyone) if (!p.action && p.speed > FIRST_TOUCH.cancelAbove && p.avatar.gestureName() === ANIM.receive.clip) p.avatar.endGesture();
 
     if (live || this.rules.userTaking()) this.actions(dt, inp);
 

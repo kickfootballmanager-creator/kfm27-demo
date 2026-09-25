@@ -2,7 +2,7 @@ import { TACKLE, SLIDE, DOWN, AERIAL, KEEPER, PITCH, GOAL, CONTROL, ATTR, DUEL, 
 import { rootAt, clipDuration } from './avatar.js';
 import { headingOf } from './player.js';
 import { KeeperReach } from './moves.js';
-import { duel, stagger, beat, passFirstChance, defUnit } from './defense.js';
+import { duel, stagger, beat, passFirstChance, defUnit, missFoulChance, approach } from './defense.js';
 
 // Contrasto, scivolata, caduta, colpo di testa, rovesciata, portiere: azioni (p.action)
 // che main.stepAction fa avanzare; gli eventi scattano al fotogramma misurato in player.motion.json.
@@ -64,6 +64,13 @@ function resolveTackle(m, p, manual) {
   if (owner && owner.team === p.team) return;
   const reach = b.live && b.pos.y <= 0.8 && Math.hypot(b.pos.x - p.pos.x, b.pos.z - p.pos.z) <= T.legReach;
   if (!reach) {
+    // la gamba non arriva al pallone ma prende l'uomo: fallo, di solito da dietro o di lato
+    if (owner && owner.team !== p.team && !owner.holding && Math.hypot(owner.pos.x - p.pos.x, owner.pos.z - p.pos.z) <= T.manReach &&
+      Math.random() < missFoulChance(m, p, owner)) {
+      m.lastDuel = { def: p, car: owner, result: 'foul' };
+      m.foul(p, owner, { kind: manual ? 'contrasto' : 'pressing', ballFirst: false });
+      return;
+    }
     if (owner || m.poss.flying) stagger(p, DUEL.stagger.miss, manual);
     m.lastDuel = { def: p, result: 'vuoto', dist: Math.hypot(b.pos.x - p.pos.x, b.pos.z - p.pos.z) };
     return;
@@ -100,6 +107,8 @@ export function startSlide(m, p, dx, dz) {
   const end = clipDuration(m.tpl, clip);
   p.avatar.playOnce(clip, S.from, (end - S.from) / S.rate, S.rate);
   const tripped = new Set();
+  // l'arbitro giudica la scivolata da dove e' partita, non da come si gira il portatore dopo
+  const car0 = m.owner && m.owner.team !== p.team ? m.owner : null, from0 = car0 ? approach(p, car0) : null;
   // chi entra in corsa scivola piu' lontano: la clip parte da fermo
   p.action = rootAction(m, p, clip, S.from, end, S.rate, {
     slide: true, scaleA: clamp(S.momentum[0] + p.speed / S.momentum[1], 1, S.momentum[2]),
@@ -121,15 +130,14 @@ export function startSlide(m, p, dx, dz) {
         const bx = (p.pos.x + fx) / 2, bz = (p.pos.z + fz) / 2;
         if (Math.hypot(o.pos.x - bx, o.pos.z - bz) < S.body) {
           tripped.add(o);
+          const from = o === car0 ? from0 : approach(p, o);
           if (m.owner === o) {
             b.kick(o.vel.x * 0.8, 0.3, o.vel.z * 0.8);
             m.poss.loose('scivolata', p);
           }
           trip(m, o);
           // fallo se l'uomo e' preso senza la palla, o da dietro anche dopo averla toccata
-          const ox = p.pos.x - o.pos.x, oz = p.pos.z - o.pos.z, ol = Math.hypot(ox, oz) || 1;
-          const behind = (ox * o.dirX + oz * o.dirZ) / ol < -0.3;
-          if (!a.hit || behind) m.foul(p, o, { kind: 'scivolata', ballFirst: !!a.hit });
+          if (!a.hit || from === 'back') m.foul(p, o, { kind: 'scivolata', ballFirst: !!a.hit, from });
         }
       }
     }
