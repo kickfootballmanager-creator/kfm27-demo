@@ -29,6 +29,7 @@
     stanceY: 0.015,              // m sopra l'altezza della punta da fermi: la punta e' a terra
     heelY: 0.03,                 // m sopra l'altezza della caviglia da fermi: il tallone e' a terra
     detached: 2.5,               // m fra possessore e palla
+    kickFoot: 1.0,               // m: al contatto di un calcio il piede della clip piu' lontano di cosi' dalla palla
     detachedFrames: 15,
     unclaimedFrames: 30,         // palla accanto al destinatario che non la prende
     abandonedFrames: 360         // palla ferma e lontana da tutti
@@ -41,6 +42,18 @@
     const C = await import(new URL('src/js/match3d/config.js', location.href).href);
     S.C = C;
     cancelAnimationFrame(m.raf);
+    // Bug trovato: il primo requestAnimationFrame arriva con un tempo precedente
+    // all'avvio (macchina carica) e il passo negativo alzava tutti i giocatori
+    // e mandava le animazioni all'indietro. Il vero frame() con un tempo di un
+    // secondo prima non deve cambiare niente.
+    const frame = Object.getPrototypeOf(m).frame;
+    const lifts = m.everyone.map((p) => p.avatar.lift), clock = m.poss.clock;
+    m.last = performance.now() + 1000;
+    frame.call(m, performance.now());
+    cancelAnimationFrame(m.raf);
+    const moved = m.everyone.filter((p, i) => Math.abs(p.avatar.lift - lifts[i]) > 1e-6).length;
+    S.startFlags = [];
+    if (moved || m.poss.clock < clock) S.startFlags.push({ kind: 'avvio: un passo negativo cambia i giocatori o il tempo', sollevati: moved, tempo: +(m.poss.clock - clock).toFixed(3) });
     m.frame = () => {};          // niente disegno: il test avanza da solo
     m.controls.pollMenu = () => {};
     // niente controller veri: un pad collegato alla macchina (o che si
@@ -55,17 +68,20 @@
     S.stats = {
       shots: { home: 0, away: 0 }, slides: 0, tackles: 0, possession: { home: 0, away: 0 },
       noReach: 0, gestures: {}, runGestures: {}, kicks: {}, skateSum: 0, skateN: 0,
-      duels: {}, foulKinds: {}, slideFrom: {}, through: 0, throughDone: 0, throughLost: 0, goalShots: [], replays: 0, kickoffs: 0, kickoffReceived: 0
+      duels: {}, foulKinds: {}, slideFrom: {}, through: 0, throughDone: 0, throughLost: 0, goalShots: [], replays: 0, kickoffs: 0, kickoffReceived: 0, kickoffWhistled: 0,
+      kickFoot: { n: 0, sum: 0, max: 0, over: 0 }
     };
     S.byAvatar = new Map();
     for (const p of [...m.everyone, m.referee.p]) S.byAvatar.set(p.avatar, p);
     S.calibrate();
     S.hook();
+    for (const f of S.startFlags) S.flag(f.kind, null, f);
     return { feetMax: S.feetMax, hipsRange: S.hipsRange, trackIssues: S.trackIssues };
   };
 
   // Altezza massima del piede piu' basso nelle clip di corsa (fase di volo):
-  // oltre questa, piu' un margine, il giocatore fluttua.
+  // oltre questa, piu' un margine, il giocatore fluttua. Le clip di corsa sono
+  // quelle in ciclo della libreria caricata (blend tree, anim.js).
   S.calibrate = () => {
     const m = S.m, tpl = m.tpl, av = m.everyone[1].avatar;
     const Mixer = av.mixer.constructor;
@@ -75,7 +91,8 @@
     const mx = new Mixer(holder);
     const wp = (b) => { b.updateWorldMatrix(true, false); const e = b.matrixWorld.elements; return e[13]; };
     let feetMax = 0, hipsLo = Infinity, hipsHi = -Infinity;
-    const names = av.slots.filter(Boolean).map((a) => a.getClip().name);
+    const names = [...new Set(tpl.loco.slots.filter((x) => x.kind === 'cycle').map((x) => x.name))];
+    S.cycleClips = names.length;
     for (const name of names) {
       const clip = tpl.clips[name];
       const a = mx.clipAction(clip);
@@ -97,15 +114,15 @@
     S.toeY = (tpl.gait.ground && tpl.gait.ground.toe) || 0.045;
     S.ankleY = (tpl.gait.ground && tpl.gait.ground.ankle) || 0.13;
     S.hipsRange = [hipsLo, hipsHi];
-    // Ogni clip deve animare le stesse ossa dell'idle: un osso senza traccia
-    // torna alla posa di riposo del modello mentre la clip pesa.
-    // (le tracce di scala valgono 1 ovunque, come la posa di riposo: non contano)
-    const posed = (c) => c.tracks.map((t) => t.name).filter((n) => !n.endsWith('.scale'));
-    const ref = new Set(posed(tpl.clips.idle));
+    // Le clip della libreria tolgono solo le tracce ferme nella posa di riposo
+    // (il mixer riporta l'osso li'): le ossa del corpo le devono avere tutte,
+    // o nella fusione quell'osso tornerebbe alla T-pose.
+    const BODY = ['Hips', 'Spine', 'Spine1', 'Spine2', 'Neck', 'Head', 'LeftUpLeg', 'LeftLeg', 'LeftFoot', 'RightUpLeg', 'RightLeg', 'RightFoot',
+      'LeftShoulder', 'LeftArm', 'LeftForeArm', 'LeftHand', 'RightShoulder', 'RightArm', 'RightForeArm', 'RightHand'];
     S.trackIssues = [];
-    for (const name in tpl.clips) {
-      const own = new Set(posed(tpl.clips[name]));
-      const miss = [...ref].filter((t) => !own.has(t));
+    for (const name in tpl.meta) {
+      const own = new Set(tpl.clips[name].tracks.map((t) => t.name.replace(/^mixamorig\d*/, '').replace(/\.(quaternion|position)$/, '')));
+      const miss = BODY.filter((b) => !own.has(b));
       if (miss.length) S.trackIssues.push({ clip: name, missing: miss.length, sample: miss.slice(0, 4) });
     }
     if (S.trackIssues.length) S.flag('asset: clip con ossa senza traccia', null, { clips: S.trackIssues.map((t) => t.clip + ' ' + t.missing).join(', ') });
@@ -176,6 +193,25 @@
       S.stats.slideFrom[from] = (S.stats.slideFrom[from] || 0) + 1;
       return slide(p, dx, dz);
     };
+    // calcio: al contatto il piede della clip scelta e' sulla palla? (Ball_Bone
+    // della libreria, clip adattata ai tempi del gioco). Posa dell'ultimo
+    // disegno, spostata dove la fisica ha messo il giocatore.
+    const kickNow = m.kickNow.bind(m);
+    m.kickNow = (p, a) => {
+      const b = m.ball, r = p.avatar.rig;
+      if (m.canKick(p) && b.pos.y < 0.5 && p.avatar.one && p.avatar.one.a.getEffectiveWeight() > 0.5) {
+        p.mesh.updateMatrixWorld(true);
+        let d = Infinity;
+        for (const k of ['LeftToeBase', 'RightToeBase', 'LeftFoot', 'RightFoot']) {
+          const e = r[k].matrixWorld.elements;
+          d = Math.min(d, Math.hypot(e[12] + p.pos.x - p.mesh.position.x - b.pos.x, e[14] + p.pos.z - p.mesh.position.z - b.pos.z));
+        }
+        const K = S.stats.kickFoot;
+        K.n++; K.sum += d; K.max = Math.max(K.max, d);
+        if (d > T.kickFoot) { K.over++; S.flag('calcio: piede lontano dalla palla al contatto', p, { clip: p.avatar.gestureName(), distanza: +d.toFixed(2), tipo: a.kind }); }
+      }
+      return kickNow(p, a);
+    };
     poss.loose = (cause, from) => {
       if (cause === 'nessuno la raggiunge') S.stats.noReach++;
       return loose(cause, from);
@@ -186,7 +222,8 @@
     const p = S.byAvatar.get(av);
     const st = S.stats;
     st.gestures[name] = (st.gestures[name] || 0) + 1;
-    if (/^slide_tackle/.test(name)) st.slides++;
+    const meta = S.m.tpl.meta[name];
+    if (/^slide_tackle/.test(name) || (meta && meta.role === 'slide')) st.slides++;
     if (p && p.speed > T.runGestureSpeed) st.runGestures[name] = (st.runGestures[name] || 0) + 1;
   };
 
@@ -250,12 +287,17 @@
     for (let i = 0; i < g.w.length; i++) { const w = g.w[i]; if (!Number.isFinite(w) || w < -1e-6) finite = false; sum += w; }
     if (!finite || Math.abs(sum - 1) > T.weightTol) S.flag('locomozione: pesi del blend tree non sommano a 1', p, { somma: +sum.toFixed(3) });
     const slotSet = new Set();
-    for (const a of av.slots) {
+    for (let i = 0; i < av.slots.length; i++) {
+      const a = av.slots[i];
       if (!a) continue;
       slotSet.add(a);
       if (!a.isScheduled() || !a.enabled || a.loop !== LOOP_REPEAT) {
         S.flag('locomozione: clip della corsa spenta', p, { clip: a.getClip().name, attiva: a.isScheduled(), abilitata: a.enabled, ciclo: a.loop === LOOP_REPEAT });
       }
+    }
+    // le azioni della corsa si creano quando la fessura pesa: mai un peso senza azione
+    for (let i = 0; i < g.w.length; i++) {
+      if (g.w[i] > 0.02 && !av.slots[i]) S.flag('locomozione: fessura che pesa senza azione', p, { fessura: g.slots[i].name, peso: +g.w[i].toFixed(2) });
     }
     let total = 0, gestureW = 0;
     const one = av.one && av.one.a, prev = av.prevOne && av.prevOne.a;
@@ -275,7 +317,7 @@
     const r = av.rig;
     const low = Math.min(wy(r.LeftFoot), wy(r.RightFoot), wy(r.LeftToeBase), wy(r.RightToeBase));
     const free = gestureW < 0.02 && !p.action && !p.down && !p.sentOff;
-    S.persist(st, 'float', free && low > S.feetMax + T.floatMargin, T.floatFrames, 'piedi staccati da terra (fluttua)', p, { piede_piu_basso: +low.toFixed(3), soglia: +(S.feetMax + T.floatMargin).toFixed(3), anca: +wy(r.Hips).toFixed(3) });
+    S.persist(st, 'float', free && low > S.feetMax + T.floatMargin, T.floatFrames, 'piedi staccati da terra (fluttua)', p, { piede_piu_basso: +low.toFixed(3), soglia: +(S.feetMax + T.floatMargin).toFixed(3), anca: +wy(r.Hips).toFixed(3), sollevato: +av.lift.toFixed(3) });
     S.persist(st, 'sink', low < T.sink, 3, 'piedi sotto terra', p, { piede_piu_basso: +low.toFixed(3) });
     S.persist(st, 'air', !free && low > T.airborneMax, T.airborneFrames, 'in aria troppo a lungo durante un gesto', p, { piede_piu_basso: +low.toFixed(3) });
 
@@ -288,7 +330,10 @@
     // 4. clip coerente con velocita' e azione
     if (free) {
       // quota ferma (idle e guardia del portiere) attesa per la velocita' del passo
-      const want = 1 - Math.min(1, Math.max(0, g.speed / S.C.ANIM.speeds.walk)), still = 1 - g.moving;
+      // quota ferma attesa: per ogni stile, sotto la sua camminata si e' fermi
+      let want = 0;
+      for (const st in g.sw) want += g.sw[st] * (1 - Math.min(1, Math.max(0, g.speed / g.L.styles[st].walk)));
+      const still = 1 - g.moving;
       S.persist(st, 'incoh', Math.abs(still - want) > T.incoherent, T.incoherentFrames, 'clip incoerente con la velocita\'', p, { fermo: +still.toFixed(2), atteso: +want.toFixed(2) });
     } else st.incoh = 0;
     const a = p.action;
@@ -297,7 +342,7 @@
       if (name !== a.clip) S.flag('gesto diverso dall\'azione', p, { clip: name });
     }
     const holding = av.one && av.one.t < av.one.hold;
-    S.persist(st, 'runGesture', holding && gestureW > 0.3 && !a && !p.down && m.phase === 'play' && p.speed > T.runGestureSpeed,
+    S.persist(st, 'runGesture', holding && !av.one.loco && gestureW > 0.3 && !a && !p.down && m.phase === 'play' && p.speed > T.runGestureSpeed,
       3, 'gesto da fermo durante la corsa', p, { clip: one ? one.getClip().name : null });
     S.persist(st, 'stuckGesture', one && av.one.hold === Infinity && !a && !p.down && !p.holding && m.phase === 'play', 30, 'gesto senza fine rimasto attivo in gioco', p, { clip: one ? one.getClip().name : null });
 
@@ -426,6 +471,8 @@
     if (st.to) {
       st.t += DT;
       if (poss.owned && poss.owner === st.to) { S.stats.kickoffReceived++; st.to = null; }
+      // tempo scaduto col tocco ancora in viaggio: il fischio lo interrompe
+      else if (m.phase === 'halftime' || m.phase === 'end') { S.stats.kickoffWhistled++; st.to = null; }
       else if (st.t > 3 || (poss.owned && poss.owner !== st.to)) { S.flag('calcio d\'inizio: il compagno non riceve il tocco', st.to); st.to = null; }
     }
   };
@@ -480,12 +527,30 @@
         offsides: m.stats.offsides.home + m.stats.offsides.away,
         replays: S.stats.replays,
         kickoffs: S.stats.kickoffs,
-        kickoffReceived: S.stats.kickoffReceived
+        kickoffReceived: S.stats.kickoffReceived,
+        kickoffWhistled: S.stats.kickoffWhistled,
+        kickFootAvg: +(S.stats.kickFoot.sum / Math.max(1, S.stats.kickFoot.n)).toFixed(3),
+        kickFootMax: +S.stats.kickFoot.max.toFixed(3)
       },
       foulKinds: S.stats.foulKinds,
       slideFrom: S.stats.slideFrom,
       goalShots: S.stats.goalShots,
       gestures: S.stats.gestures,
+      // clip della libreria usate, per ruolo (skill: mappatura clip -> azione)
+      roles: (() => {
+        const out = {};
+        for (const [name, n] of Object.entries(S.stats.gestures)) {
+          const meta = m.tpl.meta[name], r = meta ? meta.role : 'mixamo';
+          (out[r] || (out[r] = {}))[name] = n;
+        }
+        return out;
+      })(),
+      loco: (() => {
+        const out = {};
+        for (const p of [...m.everyone, m.referee.p]) for (const a of p.avatar.slots) if (a) out[a.getClip().name] = (out[a.getClip().name] || 0) + 1;
+        return out;
+      })(),
+      anim: { level: m.animLevel, load: m.loadStats, cycles: S.cycleClips },
       runGestures: S.stats.runGestures,
       kicks: S.stats.kicks,
       violations: S.v

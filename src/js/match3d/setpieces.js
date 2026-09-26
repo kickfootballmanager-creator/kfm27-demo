@@ -16,8 +16,15 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const lerp = (a, b, t) => a + (b - a) * t;
 const gauss = () => (Math.random() + Math.random() + Math.random() - 1.5) * 2;
 
-// Altezza del bacino sopra quella iniziale, al tempo t della clip (player.motion.json).
+// Quanto e' salito il corpo al tempo t della clip: per le clip della libreria
+// l'altezza del piede piu' basso (i piedi fotogramma per fotogramma del build),
+// per quelle Mixamo il bacino (player.motion.json).
 function hipsLift(tpl, clip, t) {
+  const f = tpl.meta[clip] && tpl.meta[clip].feet;
+  if (f) {
+    const n = f.length / 6, i = Math.min(n - 1, Math.max(0, Math.round(t * 30)));
+    return Math.max(0, (Math.min(f[i * 6 + 1], f[i * 6 + 4]) - Math.min(f[1], f[4])) * tpl.scale);
+  }
   const m = tpl.motion[clip];
   const h = m && m.hips;
   if (!h || !h.length) return 0;
@@ -83,11 +90,21 @@ export class SetPieces {
     const m = this.m, s = set.spot, d = m.dirOf(set.side);
     const h = headingOf(d * HL - s.x, -s.z);
     const fx = Math.sin(h), fz = Math.cos(h);
-    if (set.fk && set.fk.mode === 'direct') {
-      const rx = -fz, rz = fx;  // destra di chi guarda la porta
-      return { x: s.x - fx * FK.back - rx * FK.side, z: s.z - fz * FK.back - rz * FK.side, h };
-    }
+    if (set.fk && set.fk.mode === 'direct') return this.runupSpot(s, h, FK.clip);
     return { x: s.x - fx * 0.55, z: s.z - fz * 0.55, h };
+  }
+
+  // Dove parte la rincorsa della clip `clip` perche' al contatto la palla sia
+  // sotto il piede: la clip la mette `back` m avanti e `side` m a destra.
+  runupSpot(s, h, clip) {
+    const r = this.runup(clip), fx = Math.sin(h), fz = Math.cos(h), rx = -fz, rz = fx;
+    return { x: s.x - fx * r.back - rx * r.side, z: s.z - fz * r.back - rz * r.side, h };
+  }
+
+  runup(clip) {
+    const tpl = this.m.tpl, meta = tpl.meta[clip], c = meta && meta.ev && meta.ev.contact;
+    if (!c || !c.ballW) return { back: 2.05, side: 0.5, contact: 0.717, end: 1.3 };
+    return { back: c.ballW[2] * tpl.scale, side: -c.ballW[0] * tpl.scale, contact: c.t, end: meta.dur };
   }
 
   // Uomini in barriera: di piu' vicino e centrale, di meno lontano e defilato.
@@ -150,16 +167,15 @@ export class SetPieces {
       pen.chip = !!(inp && inp.btn && inp.btn.held.l1);
     }
     this.pen = pen;
-    const end = Math.min(T.end, clipDuration(m.tpl, T.clip));
-    p.avatar.playOnce(T.clip, T.from, end - T.from);
-    p.action = rootAction(m, p, T.clip, T.from, end, 1, {
-      scaleS: 0,
+    const R = this.runup(T.clip), end = Math.min(R.end, R.contact + T.after);
+    p.avatar.playOnce(T.clip, 0, end);
+    p.action = rootAction(m, p, T.clip, 0, end, 1, {
       tick: () => {
         // la levetta tenuta durante la rincorsa conta ancora
         const i = m.lastInp;
         if (pen.user && i && i.mag > 0.3) { pen.sx = clamp(i.sx, -1, 1); pen.up = clamp(-i.sy, 0, 1); }
       },
-      events: [{ at: T.contact - T.from, fn: () => this.penaltyKick(p, pen) }]
+      events: [{ at: R.contact, fn: () => this.penaltyKick(p, pen) }]
     });
   }
 
@@ -264,17 +280,16 @@ export class SetPieces {
     if (auto) this.autoAim(p, f);
     const h = headingOf(m.ball.pos.x - p.pos.x, m.ball.pos.z - p.pos.z);
     p.heading = p.moveHeading = h;
-    const end = Math.min(C.end, clipDuration(m.tpl, C.clip));
+    const R = this.runup(C.clip), end = Math.min(R.end, R.contact + C.after);
     p.avatar.playOnce(C.clip, 0, end);
     p.action = rootAction(m, p, C.clip, 0, end, 1, {
-      scaleS: 0,
       tick: (a, dt) => {
         if (auto || p !== m.ctrl) return;
         const inp = m.lastInp;
         if (inp && inp.mag > 0.2) f.curl += (clamp(inp.sx, -1, 1) - f.curl) * (1 - Math.exp(-C.curlRate * dt));
         if (inp && inp.rsMag > 0) f.curl = clamp(inp.rsx, -1, 1) * inp.rsMag;
       },
-      events: [{ at: C.contact, fn: () => {
+      events: [{ at: R.contact, fn: () => {
         const b = m.ball, k = this.kickFor(p, f, power, true);
         b.kick(k.vx, k.vy, k.vz, k.spin);
         m.poss.fly('tiro', p, null, 'punizione');
@@ -305,9 +320,13 @@ export class SetPieces {
     const m = this.m, J = FK.wallJump;
     this.wall = m.everyone.filter((q) => q.aiState === 'BARRIERA' && !q.action && !q.down);
     const t = RULES.wall / Math.max(8, speedH);
+    // punto piu' alto del salto: dove i piedi sono piu' su (piedi del build)
+    const dur = clipDuration(m.tpl, J.clip);
+    let apex = 0, top = -1;
+    for (let k = 0; k <= Math.round(dur * 30); k++) { const y = hipsLift(m.tpl, J.clip, k / 30); if (y > top) { top = y; apex = k / 30; } }
     for (const q of this.wall) {
-      const from = clamp(J.apex - t, J.from, J.apex - 0.05);
-      const end = Math.min(J.end, clipDuration(m.tpl, J.clip));
+      const from = clamp(apex - t, 0, Math.max(0, apex - J.lead));
+      const end = dur;
       q.avatar.playOnce(J.clip, from, end - from);
       q.action = rootAction(m, q, J.clip, from, end, 1, { wallJump: true, scaleA: 0, scaleS: 0 });
     }

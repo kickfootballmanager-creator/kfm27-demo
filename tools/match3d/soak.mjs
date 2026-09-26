@@ -22,6 +22,9 @@ const SECONDS = +opt('seconds', 0);            // 0: partita intera
 const PARALLEL = Math.max(1, Math.min(MATCHES, +opt('parallel', 1)));
 const URL_OPT = opt('url', '');   // vuoto: server interno su 127.0.0.1
 const JSON_OUT = opt('json', '');
+// livello delle animazioni: high, medium, low, o mix (a turno partita per partita)
+const ANIM_LEVEL = opt('anim', 'mix');
+const levelOf = (k) => (ANIM_LEVEL === 'mix' ? ['high', 'medium', 'low'][(k - 1) % 3] : ANIM_LEVEL);
 const CHUNK = 900;
 
 // Obiettivi per partita, entrambe le squadre (skill match3d, "Difesa IA e disciplina").
@@ -49,7 +52,7 @@ async function main() {
         for (let attempt = 1; !init; attempt++) {
           errors.length = 0;
           try {
-            await openMatch(cdp, BASE, errors);
+            await openMatch(cdp, BASE, errors, '&anim=' + levelOf(k));
             await evaluate(cdp, page);
             init = await evaluate(cdp, 'window.__soak.init()');
           } catch (e) {
@@ -74,7 +77,7 @@ async function main() {
         results.push(rep);
         const nv = Object.values(rep.violations).reduce((s, v) => s + v.count, 0);
         const s = rep.stats;
-        process.stdout.write(`\rpartita ${k}/${MATCHES}  ${rep.goals.home}-${rep.goals.away}  ${rep.seconds} s di gioco in ${rep.wall.toFixed(0)} s  violazioni ${nv}  errori ${rep.errors.length}` +
+        process.stdout.write(`\rpartita ${k}/${MATCHES} [${levelOf(k)}]  ${rep.goals.home}-${rep.goals.away}  ${rep.seconds} s di gioco in ${rep.wall.toFixed(0)} s  violazioni ${nv}  errori ${rep.errors.length}` +
           `  | scivolate ${s.slides} falli ${s.fouls} gialli ${s.yellows} rossi ${s.reds}\n`);
       }
     } finally {

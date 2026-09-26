@@ -4,11 +4,12 @@ import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { MODEL, ANIM } from './config.js';
 import { boneMap, solveTwoBone, palm, rotateWorld } from './rig.js';
-import { measureClips, SLOTS, slotTime, IDLE_SLOT, FootLock, feetPose, matchPose } from './anim.js';
+import { buildLoco, gaitOf, gesturePoses, groundOf, slotTime, phaseOf, FootLock, feetPose, matchPose } from './anim.js';
+import { AnimLibrary } from './anim-lib.js';
 
 const GLB_URL = new URL('../../assets/match3d/player.glb', import.meta.url).href;
-// Spostamento della radice e fotogrammi chiave misurati sugli FBX originali
-// (tools/match3d/measure_clips.py): nel GLB le clip sono ferme sul posto.
+// Clip Mixamo di riserva (player.glb): spostamento della radice e fotogrammi
+// chiave misurati sugli FBX originali (tools/match3d/measure_clips.py).
 const MOTION_URL = new URL('../../assets/match3d/player.motion.json', import.meta.url).href;
 
 // Materiali di player.glb nell'ordine dei colori passati allo shader;
@@ -17,9 +18,11 @@ const PARTS = ['skin', 'kit_shirt', 'kit_shorts', 'kit_socks', 'boots', 'hair'];
 const PATTERNS = { solid: 0, stripes: 1, halves: 2, sleeves: 3, center: 4, sash: 5 };
 
 let cache = null;
+let library = null;
 
-// Un solo caricamento per sessione: le partite successive riusano il modello.
-export function loadPlayerModel() {
+// Un solo caricamento del modello per sessione; la libreria Studio33 carica i
+// pacchetti del livello (anim-lib.js) e li tiene per le partite successive.
+export function loadPlayerModel(level = 'low') {
   if (!cache) {
     cache = Promise.all([
       new GLTFLoader().loadAsync(GLB_URL),
@@ -30,29 +33,103 @@ export function loadPlayerModel() {
       return tpl;
     }).catch((e) => { cache = null; throw e; });
   }
-  return cache;
+  if (!library) library = new AnimLibrary();
+  return Promise.all([cache, library.loadLevel(level)]).then(([tpl]) => {
+    attachLibrary(tpl, library);
+    return tpl;
+  });
 }
 
-// Spostamento della radice della clip al tempo t: { a: avanti, s: a destra },
-// nel riferimento del giocatore all'inizio del gesto. Zero se la clip non si muove.
+// Le clip della libreria entrano nel modello: clip, metadati, cicli della
+// corsa, pose dei palmi. Si richiama quando arriva un pacchetto in secondo
+// piano: i giocatori ricostruiscono il blend tree (locoVersion).
+export function attachLibrary(tpl, lib) {
+  if (tpl.libVersion === lib.version) return tpl;
+  const s = tpl.scale;
+  lib.scale = s;
+  tpl.lib = lib;
+  for (const name in lib.entries) {
+    if (tpl.meta[name]) continue;
+    const e = lib.entries[name];
+    tpl.clips[name] = e.clip;
+    tpl.meta[name] = e.meta;
+    const g = e.meta.loop ? gaitOf(e.meta, s) : null;
+    if (g) tpl.gait[name] = g;
+    if (e.meta.palms) tpl.poses[name] = keeperPoses(e.meta, s);
+  }
+  if (!tpl.gait.ground) {
+    const idle = lib.role('idle').find((e) => e.meta.style === 'normal');
+    if (idle) tpl.gait.ground = groundOf(tpl.holder, idle.clip);
+  }
+  // tocco di palla in conduzione: la fase del passo in cui il destro tocca la
+  // palla nelle clip di conduzione essenziali (Ball_Bone), uguale a ogni livello
+  if (tpl.dribbleTouch === undefined) {
+    let sx = 0, sy = 0;
+    for (const e of lib.role('loco')) {
+      const g = tpl.gait[e.name];
+      if (e.meta.style !== 'dribble' || e.meta.pack !== 'core' || !g) continue;
+      for (const t of g.touches) {
+        if (t.foot !== 'R') continue;
+        const a = phaseOf(g, t.t / g.dur) * Math.PI * 2;
+        sx += Math.cos(a); sy += Math.sin(a);
+      }
+    }
+    if (sx || sy) tpl.dribbleTouch = (Math.atan2(sy, sx) / (Math.PI * 2) + 1) % 1;
+  }
+  tpl.loco = buildLoco(tpl);
+  tpl.loco.names = new Set(tpl.loco.slots.map((x) => x.name));
+  tpl.locoVersion = (tpl.locoVersion || 0) + 1;
+  tpl.libVersion = lib.version;
+  return tpl;
+}
+
+// Palmi dai metadati del build: nel riferimento del giocatore (a avanti,
+// s destra, y su), fotogramma per fotogramma a 30 Hz.
+function keeperPoses(meta, s) {
+  const P = meta.palms, n = meta.n;
+  const lh = new Float32Array(n * 3), rh = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    const o = i * 6;
+    lh[i * 3] = P[o + 2] * s; lh[i * 3 + 1] = -P[o] * s; lh[i * 3 + 2] = P[o + 1] * s;
+    rh[i * 3] = P[o + 5] * s; rh[i * 3 + 1] = -P[o + 3] * s; rh[i * 3 + 2] = P[o + 4] * s;
+  }
+  return { fps: 30, n, lh, rh };
+}
+
+// Spostamento della radice della clip al tempo t: { a: avanti, s: a destra,
+// yaw: rotazione verso sinistra }, nel riferimento del giocatore all'inizio
+// del gesto. Zero se la clip non si muove.
 export function rootAt(tpl, clip, t) {
-  const m = tpl.motion[clip];
-  if (!m || !m.root.length) return { a: 0, s: 0 };
-  const r = m.root;
-  if (t <= r[0][0]) return { a: r[0][1], s: r[0][2] };
+  const m = tpl.meta[clip];
+  if (m && m.root) {
+    const r = m.root, n = r.length / 3, x = Math.min(n - 1, Math.max(0, t * 30));
+    const i = Math.floor(x), j = Math.min(n - 1, i + 1), k = x - i, sc = tpl.scale;
+    const at = (c) => r[i * 3 + c] + (r[j * 3 + c] - r[i * 3 + c]) * k;
+    return { a: at(0) * sc, s: -at(1) * sc, yaw: at(2) };
+  }
+  const mm = tpl.motion[clip];
+  if (!mm || !mm.root.length) return { a: 0, s: 0, yaw: 0 };
+  const r = mm.root;
+  if (t <= r[0][0]) return { a: r[0][1], s: r[0][2], yaw: 0 };
   for (let i = 1; i < r.length; i++) {
     if (t <= r[i][0]) {
       const k = (t - r[i - 1][0]) / (r[i][0] - r[i - 1][0]);
-      return { a: r[i - 1][1] + (r[i][1] - r[i - 1][1]) * k, s: r[i - 1][2] + (r[i][2] - r[i - 1][2]) * k };
+      return { a: r[i - 1][1] + (r[i][1] - r[i - 1][1]) * k, s: r[i - 1][2] + (r[i][2] - r[i - 1][2]) * k, yaw: 0 };
     }
   }
   const e = r[r.length - 1];
-  return { a: e[1], s: e[2] };
+  return { a: e[1], s: e[2], yaw: 0 };
 }
 
 export function clipDuration(tpl, clip) {
   const c = tpl.clips[clip];
   return c ? c.duration : 0;
+}
+
+// Tabella delle pose dei piedi di un gesto della libreria (per agganciare il passo).
+export function gestureTable(tpl, clip) {
+  if (!(clip in tpl.gposes)) tpl.gposes[clip] = gesturePoses(tpl.meta[clip], tpl.scale);
+  return tpl.gposes[clip];
 }
 
 // Le sei mesh diventano una sola SkinnedMesh (una draw call per giocatore):
@@ -102,46 +179,20 @@ function buildTemplate(gltf) {
   return {
     holder,
     clips,
+    scale: s,                // metri del modello in scena per metro della libreria
+    meta: {},                // metadati delle clip della libreria (build)
+    gait: {},                // cicli della corsa (anim.gaitOf) e altezza dei piedi da fermi
+    gposes: {},              // pose dei piedi dei gesti, calcolate quando servono
+    poses: {},               // palmi delle clip del portiere
     geometry: merged,
     skinMap: fixed.skin && fixed.skin.map,
     boots: fixed.boots ? fixed.boots.color.clone() : new THREE.Color(0x333333),
     hair: fixed.hair ? fixed.hair.color.clone() : new THREE.Color(0x3a302a),
     center,
-    poses: samplePoses(holder, clips),
     plate: platePlacement(holder, body, clips.idle),
-    gait: measureClips(holder, clips),
     // copie delle clip usate da due azioni diverse (vedi Avatar.gestureClip)
     copies: {}
   };
-}
-
-// Palmi fotogramma per fotogramma nelle clip del portiere, nel riferimento
-// del giocatore (a avanti, s destra, y su) con la radice ferma: servono a
-// scegliere la parata e il fotogramma in cui le mani arrivano sulla palla.
-function samplePoses(holder, clips) {
-  const rig = boneMap(holder);
-  const mx = new THREE.AnimationMixer(holder);
-  const v = new THREE.Vector3(), out = {};
-  const fps = ANIM.poseFps;
-  for (const name in clips) {
-    if (!name.startsWith('gk_')) continue;
-    const clip = clips[name], a = mx.clipAction(clip);
-    const n = Math.floor(clip.duration * fps) + 1;
-    const lh = new Float32Array(n * 3), rh = new Float32Array(n * 3);
-    a.play();
-    for (let i = 0; i < n; i++) {
-      a.time = Math.min(i / fps, clip.duration - 1e-3);
-      mx.update(0);
-      holder.updateMatrixWorld(true);
-      palm(rig, 'Left', v); lh[i * 3] = v.z; lh[i * 3 + 1] = -v.x; lh[i * 3 + 2] = v.y;
-      palm(rig, 'Right', v); rh[i * 3] = v.z; rh[i * 3 + 1] = -v.x; rh[i * 3 + 2] = v.y;
-    }
-    a.stop();
-    out[name] = { fps, n, lh, rh };
-  }
-  mx.stopAllAction();
-  mx.uncacheRoot(holder);
-  return out;
 }
 
 // Il numero e' un rettangolo figlio dell'osso della schiena, sul punto piu'
@@ -312,34 +363,41 @@ export class Avatar {
 
     this.tpl = tpl;
     this.mixer = new THREE.AnimationMixer(this.object);
-    // Una azione per fessura del blend tree (anim.js); le corse hanno il tempo
-    // deciso dalla fase comune, l'idle va per conto suo. Una clip in due
-    // fessure (passo laterale e guardia del portiere) ha due azioni distinte.
-    const seen = new Set();
-    this.slots = SLOTS.map((name, i) => {
-      let clip = tpl.clips[name];
-      if (!clip) return null;
-      if (seen.has(name)) clip = tpl.copies['slot' + i] || (tpl.copies['slot' + i] = clip.clone());
-      seen.add(name);
-      const a = this.mixer.clipAction(clip);
-      a.setEffectiveWeight(0);
-      a.play();
-      if (i !== IDLE_SLOT) a.timeScale = 0;
-      return a;
-    });
+    // Una azione per fessura del blend tree (anim.js), creata quando la
+    // fessura comincia a pesare e liberata dopo ANIM.slotRelease secondi a
+    // peso zero: con centinaia di clip nessun giocatore le tiene tutte. Le
+    // corse hanno il tempo deciso dalla fase comune, i fermi vanno per conto loro.
+    // Una clip puo' stare in piu' fessure (le corse laterali prestate alla
+    // conduzione): un'azione per clip, con i pesi delle sue fessure sommati.
+    this.acts = new Map();      // nome della clip -> { a, idle, w, t }
+    this.slots = [];            // per fessura: l'azione della sua clip (o null)
     this.feet = new FootLock(this.rig);
     this.one = null;
     this.prevOne = null;       // gesto precedente che sfuma sotto quello nuovo
     this.feat = new Float32Array(6);
     this.resyncDue = false;
     this.lift = 0;              // metri di cui il corpo e' alzato perche' i piedi non entrino nell'erba
+    this.yawFix = 0;            // rad: rotazione del gesto passata al busto (gestures.bakeYaw), tolta all'anca mentre sfuma
+  }
+
+  // Azione della clip di una fessura del blend tree.
+  slotAction(slot) {
+    const clip = this.tpl.clips[slot.name];
+    if (!clip) return null;
+    const a = this.mixer.clipAction(clip);
+    a.setLoop(THREE.LoopRepeat, Infinity);
+    a.setEffectiveWeight(0);
+    a.play();
+    if (slot.kind === 'cycle') a.timeScale = 0;
+    else a.time = Math.random() * clip.duration;
+    return a;
   }
 
   // Clip di un gesto: mai la stessa azione di una fessura della corsa, che
   // fermata a fine gesto lascerebbe la corsa senza animazione.
   gestureClip(name) {
     const tpl = this.tpl, c = tpl.clips[name];
-    if (!c || !SLOTS.includes(name)) return c;
+    if (!c || !tpl.loco || !tpl.loco.names.has(name)) return c;
     return tpl.copies[name] || (tpl.copies[name] = c.clone());
   }
 
@@ -347,15 +405,28 @@ export class Avatar {
   // clip) perche' i piedi siano dove li ha il passo in corso.
   matchStart(name, lo, hi, pref) {
     this.object.updateMatrixWorld(true);
-    return matchPose(this.tpl.gait[name], feetPose(this.rig, this.object.rotation.y, this.feat), lo, hi, pref);
+    return matchPose(gestureTable(this.tpl, name), feetPose(this.rig, this.object.rotation.y, this.feat), lo, hi, pref);
+  }
+
+  // Posa dei piedi in corso (per scegliere un gesto fra piu' clip).
+  currentFeet() {
+    this.object.updateMatrixWorld(true);
+    return feetPose(this.rig, this.object.rotation.y, this.feat);
+  }
+
+  // Un gesto finito libera la sua azione (e le sue associazioni alle ossa).
+  dropAction(a) {
+    a.stop();
+    const clip = a.getClip();
+    if (!this.acts.has(clip.name) || this.acts.get(clip.name).a !== a) this.mixer.uncacheAction(clip);
   }
 
   // Gesto sopra la corsa da `from`; dopo `hold` secondi sfuma verso la corsa.
   // Un gesto gia' in corso sfuma sotto il nuovo: niente pose in piedi fra due gesti a terra.
-  playOnce(name, from, hold, rate = 1, fade = ANIM.fadeIn) {
+  playOnce(name, from, hold, rate = 1, fade = ANIM.fadeIn, loco = false) {
     const clip = this.gestureClip(name);
     if (!clip) return;
-    if (this.prevOne) { this.prevOne.a.stop(); this.prevOne = null; }
+    if (this.prevOne) { this.dropAction(this.prevOne.a); this.prevOne = null; }
     let chained = false;
     if (this.one) {
       const w = this.one.a.getEffectiveWeight();
@@ -370,7 +441,8 @@ export class Avatar {
     a.timeScale = rate;
     a.setEffectiveWeight(0);
     a.play();
-    this.one = { a, t: 0, hold, fade: chained ? ANIM.chainFade : fade };
+    // loco: partenza, arresto o svolta, parte della corsa (non un gesto da fermo)
+    this.one = { a, t: 0, hold, fade: chained ? ANIM.chainFade : fade, loco, name };
   }
 
   // Gesto in ciclo (a terra, in attesa) finche' non se ne chiede un altro.
@@ -465,29 +537,66 @@ export class Avatar {
       gw = o.t < o.hold ? Math.min(1, o.t / o.fade) : Math.max(0, 1 - (o.t - o.hold) / ANIM.fadeOut);
       // il gesto comincia a sfumare: la corsa riparte dalla fase con i piedi dove sono
       if (was < o.hold && o.t >= o.hold && gw > 0.5) this.resyncDue = true;
-      if (o.t >= o.hold && gw <= 0) { o.a.stop(); this.one = null; gw = 0; }
+      if (o.t >= o.hold && gw <= 0) { this.dropAction(o.a); this.one = null; gw = 0; }
     }
     if (this.prevOne) {
       const p = this.prevOne;
       p.t += dt;
       pw = p.w * Math.max(0, 1 - p.t / ANIM.chainFade);
-      if (pw <= 0 || !this.one) { p.a.stop(); this.prevOne = null; pw = 0; }
+      if (pw <= 0 || !this.one) { this.dropAction(p.a); this.prevOne = null; pw = 0; }
     }
     const g = gw + pw;
     if (g > 1) { gw /= g; pw /= g; }
     const base = 1 - Math.min(1, gw + pw);
     if (this.one) this.one.a.setEffectiveWeight(gw);
     if (this.prevOne) this.prevOne.a.setEffectiveWeight(pw);
-    const phase = loco.phaseAt(alpha);
-    for (let i = 0; i < this.slots.length; i++) {
-      const a = this.slots[i];
-      if (!a) continue;
-      if (i !== IDLE_SLOT) a.time = slotTime(loco, i, phase);
-      a.setEffectiveWeight(loco.weightAt(i, alpha) * base);
+    if (loco.version !== this.tpl.locoVersion) loco.setup();
+    const phase = loco.phaseAt(alpha), cyc = loco.cycleAt(alpha), L = loco.slots, n = loco.w.length;
+    for (const x of this.acts.values()) x.w = 0;
+    this.slots.length = n;
+    for (let i = 0; i < n; i++) {
+      const slot = L[i];
+      // anche un peso che sta per salire (ultimo passo di fisica) vuole l'azione pronta
+      const live = loco.w[i] > 1e-4 || loco.pw[i] > 1e-4;
+      let x = this.acts.get(slot.name);
+      if (live && !x) {
+        const a = this.slotAction(slot);
+        if (a) this.acts.set(slot.name, x = { a, idle: 0, w: 0, t: null });
+      }
+      if (!x || !live) continue;
+      x.w += loco.weightAt(i, alpha) * base;
+      const t = slotTime(loco, i, phase, cyc);
+      if (t !== null) x.t = t;
+      x.idle = 0;
     }
+    for (const [name, x] of this.acts) {
+      if (x.w > 0 || x.idle === 0) {
+        if (x.t !== null) x.a.time = x.t;
+        x.a.setEffectiveWeight(x.w);
+        if (x.w <= 0) x.idle += dt;
+        continue;
+      }
+      x.a.setEffectiveWeight(0);
+      // a peso zero da un po': via l'azione, torna quando serve
+      if ((x.idle += dt) > ANIM.slotRelease) {
+        x.a.stop();
+        this.mixer.uncacheAction(x.a.getClip());
+        this.acts.delete(name);
+      }
+    }
+    for (let i = 0; i < n; i++) { const x = this.acts.get(L[i].name); this.slots[i] = x ? x.a : null; }
     this.mixer.update(dt);
     this.lastDt = dt;
     this.twist(-loco.yawAt(alpha) * base);
+    // il gesto che sfuma ha ancora dentro la rotazione gia' passata al busto
+    if (this.yawFix) {
+      const w = Math.min(1, gw + pw);
+      if (w > 1e-3) {
+        this.object.updateMatrixWorld(true);
+        _twist.setFromAxisAngle(_up, this.yawFix * w);
+        rotateWorld(this.rig.Hips, _twist);
+      } else this.yawFix = 0;
+    }
     if (this.resyncDue) {
       this.resyncDue = false;
       this.object.updateMatrixWorld(true);
@@ -533,5 +642,7 @@ export class Avatar {
   dispose() {
     this.mixer.stopAllAction();
     this.mixer.uncacheRoot(this.object);
+    this.acts.clear();
+    this.slots = [];
   }
 }

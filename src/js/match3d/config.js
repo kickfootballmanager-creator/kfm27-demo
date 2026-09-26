@@ -208,10 +208,12 @@ export const CROSS = {
   error: 1.3              // errore sul punto d'arrivo (m) a passaggio 0, scalato dall'attributo
 };
 
-// Finta (skill_spin_*): il giocatore gira su se stesso con la palla, avanzando
-// come nella clip; per questo tempo i contrasti riescono meno.
+// Finta (roulette della libreria, specchiata per l'altro lato): il giocatore
+// gira su se stesso con la palla, avanzando come nella clip; per questo tempo
+// i contrasti riescono meno.
 export const FEINT = {
-  rate: 1.15,             // velocita' di riproduzione della clip
+  clip: { right: '557_Tricks', left: '557_Tricks_M' },
+  rate: 0.8,              // velocita' di riproduzione: dura come la finta di prima (1,1 s)
   shield: 0.6,            // probabilita' di contrasto riuscito moltiplicata per questo
   endCancel: 0.75         // da questa frazione della clip si puo' gia' passare o tirare
 };
@@ -365,17 +367,12 @@ export const AI = {
 };
 
 // Contrasto in piedi: affondo breve verso la palla, esito al contatto del piede.
-// Manca una clip di contrasto in piedi (tackle e' una caduta dopo un fallo):
-// finche' non arriva da Mixamo si usa kickoff, il piede sinistro che va
-// avanti sulla palla da fermo, il gesto piu' vicino per significato.
-// Secondi della clip: from, contact (piede sinistro piu' veloce), end.
+// La clip (Tackles_Stand, Small_Tackles, Run_Tackles della libreria) si
+// sceglie per corrispondenza e si adatta ai tempi del gioco: contatto dopo
+// `hit` secondi, gesto lungo `duration`.
 export const TACKLE = {
-  clip: 'kickoff',
-  from: 0.18,
-  contact: 0.517,
-  end: 0.567,
-  rate: 1.3,
-  recover: 0.12,          // secondi reali dopo la fine della clip, prima di tornare a correre
+  hit: 0.26,              // secondi reali dal via al contatto del piede
+  duration: 0.55,         // secondi reali del gesto, poi si torna a correre
   legReach: 0.95,         // dal centro del giocatore al pallone, gamba tesa
   manReach: 1.05,         // uomo a portata della gamba (centro a centro): se manca la palla puo' prendere lui
   contactDist: 0.62,      // l'affondo porta il corpo a questa distanza dalla palla
@@ -386,9 +383,6 @@ export const TACKLE = {
   keep: 0.45,             // probabilita' di tenerla invece di allontanarla
   lock: 0.35              // chi l'ha appena persa non la riprende subito
 };
-// secondi reali dall'inizio al contatto del piede, e durata del gesto
-TACKLE.hit = (TACKLE.contact - TACKLE.from) / TACKLE.rate;
-TACKLE.duration = (TACKLE.end - TACKLE.from) / TACKLE.rate + TACKLE.recover;
 
 // Difesa stile PES: Pressing tenuto porta sul portatore, da vicino marcatura
 // stretta (jockey) e contrasto automatico quando distanza e angolo lo permettono.
@@ -436,7 +430,10 @@ export const DUEL = {
 
 // Scivolata: ci si butta nella direzione scelta seguendo la radice della clip.
 export const SLIDE = {
-  clip: 'slide_tackle', from: 0.05, window: [0.15, 0.85], rate: 1,
+  // la scivolata dritta della libreria (palla a sinistra) e la sua copia
+  // specchiata; rallentata e allungata perche' copra tempo e strada di prima
+  clip: { left: '636_Slide_Tackles01', right: '636_Slide_Tackles01_M' },
+  from: 0.03, window: [0.1, 0.55], rate: 0.65, travel: 1.85,
   foot: 0.95, reach: 0.85, body: 0.9,
   success: 0.85,          // a contatto con la palla, moltiplicato per la difesa
   knock: 7,               // m/s della palla colpita
@@ -444,11 +441,13 @@ export const SLIDE = {
   lead: 0.45              // senza joystick si mira dove sara' la palla fra tanti secondi
 };
 
-// Chi subisce una scivolata: cade (tripped), resta a terra (down_idle), si rialza.
+// Chi subisce una scivolata: cade, resta a terra, si rialza. Una clip sola
+// della libreria (caduta, a terra, rialzo): ferma nell'ultimo istante a terra
+// per groundTime secondi, poi riparte.
 export const DOWN = {
-  fallTravel: 0.6,        // frazione dello spostamento della clip tripped
-  groundTime: 0.9,
-  getUp: { clip: 'tackle', from: 1.4, to: 2.27 }       // la parte finale del contrasto e' un rialzo da terra
+  clip: '742_Tackles01_Reaction_03',
+  fallTravel: 0.6,        // frazione dello spostamento della clip
+  groundTime: 0.5
 };
 
 // Palloni alti: colpo di testa, rovesciata, al volo.
@@ -456,8 +455,10 @@ export const AERIAL = {
   headMin: 1.25, headMax: 2.7,
   jumpAbove: 1.95,        // oltre questa altezza si stacca da terra (header_jump)
   reach: 1.1,             // distanza orizzontale palla-giocatore al contatto
-  header: { clip: 'header', from: 0.55, contact: 0.92, end: 1.5 },
-  jump: { clip: 'header_jump', from: 0.75, contact: 1.133, end: 1.75 },
+  // lead: secondi reali dal via al contatto (tempi di prima); il contatto nella
+  // clip viene dai metadati della libreria (Ball_Bone)
+  header: { clip: '259_Heading_Stand_01', lead: 0.37, after: 0.4 },
+  jump: { clip: '329_Jump_Head_0', lead: 0.383, after: 0.3 },
   bicycle: { clip: 'bicycle_kick', from: 0.35, contact: 0.75, end: 2.4, min: 0.9, max: 2.2, goalDist: 18, backAngle: 1.9 },
   shotSpeed: [15, 21],    // colpo di testa verso la porta
   passSpeed: 11,
@@ -484,13 +485,15 @@ export const KEEPER = {
   // la clip e il fotogramma (dentro `window`) in cui i suoi palmi arrivano
   // sulla palla, deformando la clip nel tempo e nello spostamento della
   // radice (scaleA avanti, scaleS di lato); l'IK sulle braccia chiude il resto.
-  saves: [
-    { name: 'presa', clip: 'gk_catch', from: 0.05, window: [0.25, 0.65], end: 1.2, scaleA: [0, 1.2], scaleS: [0, 1.6], catch: true, bias: 0 },
-    { name: 'presa alta', clip: 'gk_catch_high', from: 0.35, window: [0.55, 1.0], end: 2.7, scaleA: [0, 1], scaleS: [0, 2], catch: true, bias: 0.05 },
-    { name: 'presa bassa', clip: 'gk_scoop_', from: 0.3, window: [0.55, 0.85], end: 2.5, scaleA: [0, 0.8], scaleS: [0, 1.5], catch: true, bias: 0.05 },
-    { name: 'tuffo basso', clip: 'gk_block_', from: 0.3, window: [0.7, 1.4], end: 3.4, scaleA: [0, 1.2], scaleS: [0.5, 1.3], catch: false, bias: 0.1 },
-    { name: 'tuffo', clip: 'gk_dive_', from: 0.35, window: [0.6, 1.2], end: 3.2, scaleA: [0, 1.2], scaleS: [0.5, 1.3], catch: false, bias: 0.12 }
-  ],
+  // Le opzioni di parata vengono dalla libreria (keeper.js, saveOptions): le
+  // prese (Keeper_Ball_*, SlidingCatch: la palla resta in mano) e le
+  // respinte (Keeper_Save_*), con la finestra attorno al contatto del
+  // Ball_Bone. Sono tutte nel pacchetto essenziale: uguali a ogni livello.
+  // before/after: secondi della clip prima e dopo il contatto in cui le mani
+  // possono incontrare la palla; lead: da quanto prima del contatto parte la clip.
+  saveWindow: { before: 0.3, after: 0.2, lead: 0.6 },
+  saveScale: { dive: { a: [0, 1.2], s: [0.5, 1.3] }, stand: { a: [0, 1.2], s: [0, 1.6] }, claim: { a: [0.2, 1.6], s: [0, 2.2] } },
+  saveBias: { catch: 0, parry: 0.1, dive: 0.02, punch: 0.08 },
   plan: {
     step: 2,              // punti della traiettoria provati: uno ogni tanti passi di fisica
     horizon: 2,           // secondi di traiettoria
@@ -502,12 +505,7 @@ export const KEEPER = {
     maxResidual: 0.6,     // oltre questo scarto le mani non arrivano: non si prova
     wide: 0.5             // tiro fuori dallo specchio di tanto: si lascia andare
   },
-  // Uscite sui palloni alti: presa alta sul posto o in corsa, presa al petto.
-  claims: [
-    { name: 'uscita alta', clip: 'gk_catch_high', from: 0.35, window: [0.55, 1.0], end: 2.7, scaleA: [0, 1.6], scaleS: [0, 2.2], catch: true, bias: 0 },
-    { name: 'uscita in corsa', clip: 'gk_catch_run_', from: 0.9, window: [1.35, 1.75], end: 2.7, scaleA: [0.2, 1.6], scaleS: [0, 3], catch: true, bias: 0.05 },
-    { name: 'presa', clip: 'gk_catch', from: 0.05, window: [0.25, 0.65], end: 1.2, scaleA: [0, 1.4], scaleS: [0, 1.8], catch: true, bias: 0.05 }
-  ],
+  // Uscite sui palloni alti: prese e pugni della libreria (keeper.js, claimOptions).
   claimPlan: { step: 2, horizon: 3, ahead: 5, behind: 1.5, maxY: 2.5, rateMax: 1.6, rateCost: 0.08, every: 0.12, accept: 0.5 },
   ik: { lead: 0.3, hold: 0.12, fade: 0.25, gap: 0.02, track: 1.6 },   // secondi attorno al contatto; track: m entro cui le mani seguono la palla vera
   catchSpeed: 24,         // presa: sotto questa velocita' la palla resta in mano
@@ -529,15 +527,12 @@ export const KEEPER = {
     ['LeftFoot', 'LeftToeBase', 0.5, 0.07, false], ['RightFoot', 'RightToeBase', 0.5, 0.07, false]
   ],
   bodyCheck: 3.5,         // si controllano le sfere solo con la palla entro tanti metri
-  // clip: contatto (secondi della clip), fine
+  // Rinvii della libreria: rilascio, mano e contatto dai metadati (Ball_Bone).
+  // Palla in mano fra una presa e il rinvio: la guardia con la palla
+  // (stile keeperBall della corsa), niente gesto fermo.
   clips: {
-    scoop: { clip: 'gk_scoop_', from: 0.45, contact: 0.7, end: 2.0 },
-    high: { clip: 'gk_catch_high', from: 0.45, contact: 0.83, end: 2.2 },
-    claim: { clip: 'gk_catch_run_', from: 1.0, contact: 1.567, end: 2.5 },
-    // palla in mano: fermo nel fotogramma `hold` (due mani al petto), poi il
-    // lancio riparte da li'; dal fotogramma oneHand.at la palla segue una mano sola
-    throw: { clip: 'gk_throw', hold: 0.5, rate: 1.25, contact: 1.617, end: 2.6, oneHand: { at: 0.72, hand: 'Right' } },
-    dropkick: { clip: 'gk_dropkick', from: 0.8, contact: 2.083, end: 3.1, oneHand: { at: 1.05, hand: 'Left' }, drop: 1.5 },
+    throw: { clip: '358_Keeper_Ball_Throw_01', from: 0.2, rate: 1.1, after: 0.6 },
+    dropkick: { clip: '342_Keeper_Ball_Kick_01', from: 0.2, rate: 1, after: 0.7 },
     concede: { clip: 'gk_concede', from: 0, end: 2.9 }
   }
 };
@@ -568,37 +563,22 @@ export const MODEL = {
   attachRate: 18          // 1/s: palla che passa a una mano sola e si appoggia sul palmo
 };
 
-// Animazioni. Locomozione come blend tree continuo per velocita' e direzione:
-// le clip in avanti si fondono per velocita' (idle, camminata, corsa, scatto),
-// quelle direzionali per l'angolo fra corsa e busto. Tempi d'appoggio dei
-// piedi, velocita' naturali e verso di ogni clip si misurano sulle clip al
-// caricamento (anim.js, measureClips): in tutte le clip la fase 0 e'
-// l'appoggio del destro e 0,5 quello del sinistro, cosi' nella fusione i piedi non scivolano.
+// Animazioni, sulla libreria Studio33 (anim.js, anim-pick.js). Locomozione
+// come blend tree continuo per velocita' e direzione, a stili (normale,
+// difesa, conduzione, portiere, portiere con la palla); ancore, bande di
+// velocita', appoggi dei piedi e pose sono misurati offline sulle clip. In
+// tutte le clip la fase 0 e' l'appoggio del destro e 0,5 quello del sinistro,
+// cosi' nella fusione i piedi non scivolano.
 export const ANIM = {
-  // m/s a cui ogni clip in avanti pesa 1: scelte perche' il playback resti
-  // vicino a 1 (la corsa lenta va a 2,5 m/s, quella veloce a 4,8).
-  speeds: { walk: 1.8, run: 3.3, sprint: 6 },
-  forward: ['idle', 'walk', 'run', 'sprint'],
-  // corsa guardando altrove: [sinistra, destra], dalla diagonale avanti all'indietro
-  sides: [
-    ['jog_diag_fwd_left', 'jog_diag_fwd_right'],
-    ['strafe_left', 'strafe_right'],
-    ['jog_diag_back_left', 'jog_diag_back_right']
-  ],
-  keeperStep: 'gk_sidestep',  // il portiere di lato, rivolto alla palla
-  keeperStepMax: 3.5,     // m/s: oltre, anche il portiere corre di lato come gli altri
-  keeperStepBlend: 1,     // m/s in cui il passo laterale lascia il posto alla corsa di lato
-  // Portiere in guardia quando la palla e' vicina (KEEPER.alertDist) e sta
-  // fermo: il fotogramma del passo laterale con i piedi a terra piu' larghi.
-  keeperReady: { clip: 'gk_sidestep', rate: 4 },
-  // Gesti che partono dal fotogramma con i piedi piu' simili al passo in corso.
-  match: ['pass', 'shot', 'penalty', 'receive'],
+  borrow: { dribble: { from: 'normal', minAngle: 1.0 } },   // conduzione: di lato e all'indietro le corse normali
+  bandGap: 0.12,          // clip con velocita' entro il 12%: varianti della stessa banda
+  styleRate: 7,           // 1/s: passaggio da uno stile all'altro (palla al piede, guardia...)
+  slotRelease: 1.5,       // s a peso zero dopo cui l'azione di una fessura si libera
+  readyRate: 4,           // 1/s: il portiere entra ed esce dalla guardia
+  // stile difesa (guardia): portatore avversario entro dist m, entro angle rad
+  // dal busto, chi difende sotto speed m/s
+  guard: { dist: 4, angle: 1.1, speed: 4.2 },
   matchBias: 0.3,         // quanto conta allontanarsi dall'istante preferito (m^2 al secondo)
-  gaitSamples: 120,       // campioni per clip nella misura dei passi
-  contactBand: 0.035,     // m sopra la caviglia piu' bassa: il piede e' a terra
-  speedBand: 0.02,        // appoggio stretto su cui si misura la velocita' naturale
-  plantHeight: 0.06,      // m sopra il punto piu' basso: il piede puo' essere in appoggio
-  plantSlip: 0.35,        // ...se nel mondo si muove meno di questa frazione della velocita' naturale
   minRate: 0.6,           // playback minimo e massimo delle clip di corsa
   maxRate: 2,
   dirMaxRate: 2.1,        // clip direzionali (sono corsette): un po' piu' accelerate
@@ -614,6 +594,7 @@ export const ANIM = {
   warp: { from: 3.6, to: 6, minAngle: 0.35, twist: 0.55, turnSlow: 7, turnFast: 5, gestureTurn: 20 },
   liftRelease: 0.6,       // m/s: il corpo alzato perche' i piedi non entrino nell'erba riscende piano
   turnStep: 0.45,         // m/s di passo per rad/s di rotazione da fermi: girandosi si fanno piccoli passi
+  turnStepMax: 1.2,
   // Inclinazione di tutto il corpo, dai piedi: nelle curve verso l'interno,
   // in avanti quando accelera, indietro quando frena. rad per m/s^2.
   lean: { roll: 0.02, maxRoll: 0.2, pitch: 0.012, maxPitch: 0.07, maxBack: 0.05, rate: 8 },
@@ -622,21 +603,52 @@ export const ANIM = {
   footLock: { on: true, maxSpeed: 9, minMove: 0.25, ramp: 0.08, release: 0.12, drift: 0.22, liftEarly: 0.25 },
   fadeIn: 0.15,           // cross-fade verso un gesto (0,15-0,25 s)
   fadeOut: 0.22,
-  syncMinSpeed: 1.2,      // sotto questa velocita' il calcio parte dall'inizio, senza cercare il passo
-  minLead: 0.1,           // secondi minimi fra l'inizio della clip e il contatto del piede
-  // Secondi della clip: si parte da `start`, la palla parte a `contact`, il
-  // fotogramma in cui il piede destro e' piu' veloce (player.motion.json).
-  // Di prima la clip parte `firstTime` secondi prima del contatto.
-  // `early`: da qui al massimo si puo' anticipare l'inizio per agganciare il passo.
-  pass: { clip: 'pass', start: 0.2, early: 0.04, contact: 0.417, recover: 0.3, moveMag: 0.35, turn: 4 },
-  through: { clip: 'pass', start: 0.2, early: 0.04, contact: 0.417, recover: 0.3, moveMag: 0.35, turn: 4 },
-  cross: { clip: 'pass', start: 0.15, early: 0.04, contact: 0.417, recover: 0.35, moveMag: 0.3, turn: 4 },
-  shot: { clip: 'shot', start: 0.2, early: 0.02, contact: 0.45, recover: 0.4, moveMag: 0.3, turn: 4 },
-  firstTime: 0.08,
-  recoverMove: 0.35,      // joystick ridotto mentre si finisce il tiro
-  receive: { clip: 'receive', start: 0.1, early: 0.15, length: 0.6 },
   chainFade: 0.18,        // due gesti di fila: il primo sfuma sotto il secondo
-  poseFps: 30             // campioni al secondo delle tabelle delle pose del portiere
+  syncMinSpeed: 1.2,      // sotto questa velocita' il calcio non cerca il passo in corso
+  // Calci: `lead` secondi reali dal comando al contatto del piede, uguali a
+  // ogni livello; la clip scelta parte e si accelera per rispettarli.
+  // recover: secondi dopo il contatto prima di tornare a correre.
+  kickRate: [0.6, 1.8],
+  pass: { role: 'pass', lead: 0.22, recover: 0.3, moveMag: 0.35, turn: 4 },
+  through: { role: 'pass', lead: 0.22, recover: 0.3, moveMag: 0.35, turn: 4 },
+  cross: { role: 'long', lead: 0.27, recover: 0.35, moveMag: 0.3, turn: 4 },
+  shot: { role: 'shot', lead: 0.25, recover: 0.4, moveMag: 0.3, turn: 4 },
+  firstTime: 0.08,        // di prima: il piede e' gia' quasi sulla palla
+  recoverMove: 0.35,      // joystick ridotto mentre si finisce il tiro
+  // Ricezione da fermi: la clip di stop (con la palla gia' al piede) per
+  // `length` secondi; `chest` e `head`: palla oltre queste altezze.
+  receive: { length: 0.6, fade: 0.12, lead: 0.12 },   // lead: intercetto, secondi di clip prima del contatto
+  // Partenze, arresti, svolte e giri sul posto (player.transition): clip della
+  // libreria sopra il blend tree, solo nello stile normale e in conduzione.
+  // startBelow/startWant: da fermi (m/s dei pesi) verso una corsa voluta oltre
+  // tanti m/s; stopAbove/stopWant: in corsa verso una velocita' voluta sotto;
+  // turnAbove/turnAngle: in corsa, direzione voluta oltre tanti rad dal busto;
+  // inPlace*: fermi, sguardo oltre tanti rad. rate: playback [min, max];
+  // lead: secondi (reali) di clip prima che cominci la rotazione.
+  trans: {
+    startBelow: 0.35, startWant: 0.9, startTop: 4.5, startRate: 1.25, startHold: 0.45,
+    stopAbove: 2.2, stopWant: 0.3, stopTail: 0.15,
+    turnAbove: 1.0, turnAngle: 2.2, turnLag: 0.12, turnHold: 0.5,
+    inPlaceBelow: 0.3, inPlaceWant: 0.5, inPlaceAngle: 1.3, inPlaceRate: 2.2,
+    rate: [0.7, 1.8], lead: 0.06, fade: 0.12, cooldown: 0.35,
+    match: { yaw: 1, speed: 0.35, dir: 1.5, accept: 1.2 }
+  },
+  // Pesi della scelta per corrispondenza (anim-pick.js): rad di rotazione,
+  // metri di lato della palla, m/s, posa dei piedi, potenza, altezza della
+  // palla; keep: vantaggio della clip gia' usata dal giocatore per quel ruolo.
+  // runAbove: m/s oltre cui si scelgono solo clip che entrano in corsa (runClip: m/s d'entrata della clip)
+  match: { turn: 1.2, side: 2.5, speed: 0.25, pose: 1, power: 0.6, height: 1.5, lob: 1, inPlace: 0.8, rate: 0.4, keep: 0.2, runAbove: 2.5, runClip: 1.5 }
+};
+
+// Pacchetti della libreria di animazioni per livello di qualita' (anim-lib.js):
+// alto tutto all'avvio, medio l'essenziale all'avvio e il resto durante la
+// partita, basso solo l'essenziale. Fisica, IA e comandi non cambiano.
+export const ANIMLIB = {
+  levels: {
+    high: { start: ['core', 'more', 'extra'], later: [] },
+    medium: { start: ['core'], later: ['more', 'extra'] },
+    low: { start: ['core'], later: [] }
+  }
 };
 
 export const CAMERA = {
@@ -666,9 +678,9 @@ export const CAMERA = {
 // alta e le scelte della punizione indiretta (passaggio, cross, filtrante).
 export const FK = {
   directMax: 30,          // entro tanti metri dalla porta: punizione diretta con barriera e mira
-  back: 2.05,             // chi tira parte da qui dietro la palla: la rincorsa della clip
-  clip: 'penalty', contact: 0.717, end: 1.3,   // calcio di palla ferma con rincorsa
-  side: 0.5,              // chi tira sta un po' di lato, verso il piede d'appoggio
+  // calcio di palla ferma con rincorsa in diagonale (libreria): chi tira parte
+  // dove la clip mette il Root rispetto alla palla al contatto (setpieces.runup)
+  clip: '513_Shoot_Stand_0_01', after: 0.6,
   aimSpeed: [5, 2.2],     // m/s della mira con la levetta: in larghezza, in altezza
   aimOut: 1.5,            // si puo' mirare fin oltre il palo di tanto
   aimY: [0.2, 3.4],       // altezza sulla linea di porta: da rasoterra a sopra la traversa
@@ -685,7 +697,7 @@ export const FK = {
   cam: { back: 6.5, height: 2.3, look: 0.8, lookY: 1.2, fov: 34 },
   camFar: { back: 12, height: 8, look: 0.3, lookY: 0, fov: 44 },
   camHold: 1.1,           // dopo il calcio la telecamera resta tanti secondi, poi torna alla partita
-  wallJump: { clip: 'header_jump', from: 0.7, apex: 1.133, end: 1.75 },
+  wallJump: { clip: '021_Ball_Avoid_Jump', lead: 0.15 },   // salto della barriera (libreria); lead: s prima del punto piu' alto
   wallRadius: 0.28,       // ingombro di un uomo in barriera (m)
   wallHeight: 1.85,
   wallRest: 0.3,          // velocita' che resta alla palla respinta dalla barriera
@@ -710,12 +722,14 @@ export const RULES = {
   returnDelay: 1,         // dopo un gol si torna verso il centrocampo dopo tanti secondi
   gatherMax: 9,           // ripresa: al massimo si aspetta tanto che tutti siano al loro posto
   gatherDist: 0.6,        // entro questa distanza dal proprio posto si e' pronti
+  // esultanze della libreria (pacchetto extra), altrimenti quella Mixamo
   celebration: { clip: 'celebration', from: 0, hold: 4.6 },
   // Calcio d'inizio come in PES: chi batte tocca corto al compagno accanto,
   // mateBack m dietro la linea e mateSide m di lato; la palla gli arriva a
-  // `arrive` m/s. Chi batte ha la palla `ahead` m davanti e `foot` m a sinistra
-  // (la clip calcia di sinistro, contatto a `contact` s).
-  kickoff: { clip: 'kickoff', from: 0, contact: 0.517, end: 0.567, arrive: 3, mateBack: 1.2, mateSide: 2, ahead: 0.5, foot: 0.1 },
+  // `arrive` m/s. Chi batte guarda avanti con la palla dove la mette la clip
+  // KickOff della libreria scelta per la direzione del compagno (135, 180,
+  // 225 gradi); lead: s dal via al contatto, after: s dopo il contatto.
+  kickoff: { clips: ['444_KickOff_135', '445_KickOff_180', '446_KickOff_225'], lead: 0.5, after: 0.25, arrive: 3, mateBack: 1.2, mateSide: 2 },
   // Rimessa: in attesa si resta fermi nel primo fotogramma (palla in mano),
   // poi la clip riparte da li'; la rincorsa della radice (2,07 m fino al
   // rilascio) riporta il battitore sulla linea.
@@ -731,7 +745,7 @@ export const RULES = {
   // basso), la barra la potenza: poca non arriva negli angoli alti, oltre il
   // 90% la palla va alta. L1 + tiro: cucchiaio. R1 tenuto: guida alla mira.
   penalty: {
-    clip: 'penalty', from: 0, contact: 0.717, end: 1.3, back: 2.05,
+    clip: '513_Shoot_Stand_0_01', after: 0.6,
     speed: 18, postMargin: 0.7, height: [0.3, 1.9], overPower: 0.9, overHeight: 1.8,
     topPower: 0.5,        // sotto questa potenza l'angolo alto resta basso
     error: 0.5,           // frazione dell'errore di mira del tiro normale
@@ -764,9 +778,9 @@ export const FOUL = {
   // entro dist metri, al massimo `defenders` avversari fra lei e la porta
   promising: { add: 0.28, dist: 45, speed: 3, defenders: 2 },
   dogsoDist: 26,          // chiara occasione da gol: vittima entro tanti metri dalla porta avversaria
-  // Chi subisce il fallo: contrasto in piedi -> la clip tackle (caduta dopo
-  // un fallo, con rialzo); scivolata -> tripped, down_idle e rialzo.
-  standFall: { clip: 'tackle', from: 0, end: 2.27, travel: 0.4 }
+  // Chi subisce il fallo in un contrasto in piedi: caduta e rialzo della
+  // libreria, dal lato del contatto; in scivolata: DOWN.
+  standFall: { clip: { left: '105_Defense_Jump_Fall_Reaction_01_L', right: '106_Defense_Jump_Fall_Reaction_01_R' }, travel: 0.4 }
 };
 
 // Regola del vantaggio: l'arbitro aspetta `decide` secondi; se la squadra che

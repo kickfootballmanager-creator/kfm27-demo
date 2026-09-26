@@ -139,8 +139,8 @@ export function collectErrors(cdp, list) {
 }
 
 // Apre la partita di prova IA contro IA e aspetta che sia pronta.
-export async function openMatch(cdp, base, errors) {
-  await cdp.send('Page.navigate', { url: base + '?match3d=auto' });
+export async function openMatch(cdp, base, errors, query = '') {
+  await cdp.send('Page.navigate', { url: base + '?match3d=auto' + query });
   for (let i = 0; i < 240; i++) {
     await sleep(250);
     try { if (await evaluate(cdp, '!!(window.__m3d && window.__m3d.everyone && window.__m3d.rules)')) return; } catch (e) { /* pagina in caricamento */ }

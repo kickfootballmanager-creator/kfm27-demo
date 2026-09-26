@@ -1,11 +1,13 @@
 import { TACKLE, SLIDE, DOWN, AERIAL, KEEPER, PITCH, GOAL, CONTROL, ATTR, DUEL, FOUL } from './config.js';
 import { rootAt, clipDuration } from './avatar.js';
+import { pickTackle } from './anim-pick.js';
 import { headingOf } from './player.js';
 import { KeeperReach } from './moves.js';
 import { duel, stagger, beat, passFirstChance, defUnit, missFoulChance, approach } from './defense.js';
 
 // Contrasto, scivolata, caduta, colpo di testa, rovesciata, portiere: azioni (p.action)
-// che main.stepAction fa avanzare; gli eventi scattano al fotogramma misurato in player.motion.json.
+// che main.stepAction fa avanzare; gli eventi scattano al fotogramma misurato
+// dal build della libreria (contatti dal Ball_Bone) o in player.motion.json.
 
 const HL = PITCH.length / 2;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -22,8 +24,22 @@ export function rootAction(m, p, clip, from, end, rate, extra) {
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 const smooth = (u) => u * u * (3 - 2 * u);
 
-// --- contrasto in piedi: la clip TACKLE.clip (provvisoria, vedi config) e
-// l'affondo del corpo verso la palla deciso dal codice; esito al contatto del piede.
+// Clip che tengono dentro di se' la rotazione (portiere, cadute, finte): alla
+// fine del gesto la rotazione passa al busto del giocatore, e l'anca viene
+// ricorretta durante la dissolvenza (Avatar.yawFix): nessun giro all'indietro.
+export function bakeYaw(m, p, clip, t) {
+  const meta = m.tpl.meta[clip];
+  if (!meta || !meta.keepYaw) return;
+  const y = wrap(rootAt(m.tpl, clip, t).yaw);
+  if (Math.abs(y) < 0.05) return;
+  p.heading = p.prevHeading = p.moveHeading = wrap(p.heading + y);
+  if (p.gait.vis !== null) p.gait.vis = wrap(p.gait.vis + y);
+  p.avatar.yawFix = -y;
+}
+
+// --- contrasto in piedi: la clip della libreria scelta per corrispondenza
+// (lato della palla, velocita') e l'affondo del corpo verso la palla deciso
+// dal codice; esito al contatto del piede, dopo TACKLE.hit secondi.
 // `manual`: Contrasto premuto (piu' rischioso del contrasto automatico del Pressing).
 export function startTackle(m, p, manual = false) {
   if (p.action || p.down || p.stagger > 0) return false;
@@ -31,13 +47,15 @@ export function startTackle(m, p, manual = false) {
   // l'IA con palla vede arrivare il contrasto e puo' liberarsene prima
   const car = m.owner;
   if (car && car.team !== p.team && car !== m.ctrl && !car.keeper && Math.random() < passFirstChance(m, car)) m.teams[car.team].ai.passNow(car);
-  p.avatar.playOnce(T.clip, T.from, T.duration, T.rate);
+  const bx = b.pos.x - p.pos.x, bz = b.pos.z - p.pos.z;
+  const pk = pickTackle(m.tpl, p, { lead: T.hit, speed: p.speed, ballLeft: -(bx * p.rightX + bz * p.rightZ) });
+  if (pk) p.avatar.playOnce(pk.clip, pk.from, T.duration, pk.rate);
   const h0 = p.heading, x0 = p.pos.x, z0 = p.pos.z;
   // l'affondo insegue dove sara' la palla al contatto e si somma allo slancio della corsa
   const range = T.lunge + p.speed * T.hit;
   const pace = p.speed + T.lungeSpeed;
   p.action = {
-    tackle: true, moves: true, t: 0, rate: 1, end: T.duration,
+    tackle: true, moves: true, clip: pk ? pk.clip : null, t: 0, rate: 1, end: T.duration,
     tick: (a, dt) => {
       const left = Math.max(0, T.hit - a.t);
       const ax = b.pos.x + b.vel.x * left - p.pos.x, az = b.pos.z + b.vel.z * left - p.pos.z, al = Math.hypot(ax, az) || 1;
@@ -103,7 +121,8 @@ export function startSlide(m, p, dx, dz) {
   p.heading = headingOf(dx / l, dz / l);
   p.moveHeading = p.heading;
   const toBall = (b.pos.x - p.pos.x) * p.rightX + (b.pos.z - p.pos.z) * p.rightZ;
-  const clip = S.clip + '_' + (toBall < 0 ? 'left' : 'right');
+  const side = toBall < 0 ? 'left' : 'right';
+  const clip = m.tpl.clips[S.clip[side]] ? S.clip[side] : 'slide_tackle_' + side;
   const end = clipDuration(m.tpl, clip);
   p.avatar.playOnce(clip, S.from, (end - S.from) / S.rate, S.rate);
   const tripped = new Set();
@@ -111,7 +130,7 @@ export function startSlide(m, p, dx, dz) {
   const car0 = m.owner && m.owner.team !== p.team ? m.owner : null, from0 = car0 ? approach(p, car0) : null;
   // chi entra in corsa scivola piu' lontano: la clip parte da fermo
   p.action = rootAction(m, p, clip, S.from, end, S.rate, {
-    slide: true, scaleA: clamp(S.momentum[0] + p.speed / S.momentum[1], 1, S.momentum[2]),
+    slide: true, scaleA: clamp(S.momentum[0] + p.speed / S.momentum[1], 1, S.momentum[2]) * (m.tpl.meta[clip] ? S.travel : 1),
     tick: (a) => {
       if (a.t < S.window[0] || a.t > S.window[1]) return;
       const fx = p.pos.x + p.dirX * S.foot, fz = p.pos.z + p.dirZ * S.foot;
@@ -144,38 +163,41 @@ export function startSlide(m, p, dx, dz) {
   });
 }
 
-// --- caduta, a terra, rialzo
+// --- caduta, a terra, rialzo: una clip della libreria (DOWN.clip) che si
+// ferma nell'ultimo istante a terra per DOWN.groundTime secondi.
 export function trip(m, o) {
   const s = Math.hypot(o.vel.x, o.vel.z);
   if (s > 0.5) o.heading = headingOf(o.vel.x, o.vel.z);
   o.down = true;
   if (m.ctrl === o) m.buffer = null;
-  const end = clipDuration(m.tpl, 'tripped');
-  o.avatar.playOnce('tripped', 0, end + 0.5);
-  o.action = rootAction(m, o, 'tripped', 0, end, 1, {
-    scaleA: DOWN.fallTravel * Math.min(1, 0.4 + s / 7), scaleS: DOWN.fallTravel * 0.3,
+  const D = DOWN, meta = m.tpl.meta[D.clip];
+  const rest = meta.ev.rest, end = meta.dur;
+  const scaleA = D.fallTravel * Math.min(1, 0.4 + s / 7), scaleS = D.fallTravel * 0.3;
+  o.avatar.playOnce(D.clip, 0, Infinity);
+  o.action = rootAction(m, o, D.clip, 0, rest, 1, {
+    scaleA, scaleS,
     onEnd: () => {
-      o.avatar.playLoop('down_idle');
-      o.action = { clip: 'down_idle', t: 0, rate: 1, end: DOWN.groundTime, onEnd: () => getUp(m, o) };
+      o.avatar.resume(D.clip, 0, Infinity);
+      o.action = { clip: D.clip, t: 0, rate: 1, end: D.groundTime, onEnd: () => getUp(m, o, D.clip, rest, end, scaleA, scaleS) };
     }
   });
 }
 
-// Chi subisce un fallo in un contrasto in piedi: la clip tackle e' proprio una
-// caduta dopo un fallo, con il rialzo alla fine.
+// Chi subisce un fallo in un contrasto in piedi: caduta e rialzo della
+// libreria, da una parte o dall'altra.
 export function standFall(m, o) {
   if (o.down) return;
-  const F = FOUL.standFall;
+  const F = FOUL.standFall, clip = F.clip[Math.random() < 0.5 ? 'left' : 'right'];
   o.down = true;
   if (m.ctrl === o) m.buffer = null;
-  o.avatar.playOnce(F.clip, F.from, F.end - F.from);
-  o.action = rootAction(m, o, F.clip, F.from, F.end, 1, { scaleA: F.travel, scaleS: F.travel, onEnd: () => { o.down = false; } });
+  const end = clipDuration(m.tpl, clip);
+  o.avatar.playOnce(clip, 0, end);
+  o.action = rootAction(m, o, clip, 0, end, 1, { scaleA: F.travel, scaleS: F.travel, onEnd: () => { o.down = false; bakeYaw(m, o, clip, end); } });
 }
 
-function getUp(m, o) {
-  const G = DOWN.getUp;
-  o.avatar.playOnce(G.clip, G.from, G.to - G.from);
-  o.action = { clip: G.clip, t: 0, rate: 1, end: G.to - G.from, onEnd: () => { o.down = false; } };
+function getUp(m, o, clip, from, end, scaleA, scaleS) {
+  o.avatar.resume(clip, 1, end - from);
+  o.action = rootAction(m, o, clip, from, end, 1, { scaleA, scaleS, onEnd: () => { o.down = false; bakeYaw(m, o, clip, end); } });
 }
 
 // --- palloni alti: colpo di testa o rovesciata, avviati in anticipo perche'
@@ -188,7 +210,7 @@ export function tryAerial(m, p, intent) {
   const facing = Math.abs(Math.atan2(Math.sin(p.heading - headingOf(d, 0)), Math.cos(p.heading - headingOf(d, 0))));
   const tries = [];
   if (intent === 'shot' && goalDist < A.bicycle.goalDist && facing > A.bicycle.backAngle) tries.push({ C: A.bicycle, lo: A.bicycle.min, hi: A.bicycle.max, bicycle: true });
-  tries.push({ C: A.jump, lo: A.jumpAbove, hi: A.headMax }, { C: A.header, lo: A.headMin, hi: A.jumpAbove });
+  tries.push({ C: aerialSpec(m, A.jump), lo: A.jumpAbove, hi: A.headMax }, { C: aerialSpec(m, A.header), lo: A.headMin, hi: A.jumpAbove });
   const path = b.predict(m.aerialPath || (m.aerialPath = []), 1 / 60, 1.4);
   for (const { C, lo, hi, bicycle } of tries) {
     const tc = C.contact - C.from;
@@ -200,6 +222,15 @@ export function tryAerial(m, p, intent) {
     return true;
   }
   return false;
+}
+
+// Tempi di un colpo di testa: contatto dal Ball_Bone della clip, partenza
+// C.lead secondi prima (come prima), fine C.after dopo.
+function aerialSpec(m, C) {
+  const meta = m.tpl.meta[C.clip];
+  if (!meta || !meta.ev || !meta.ev.contact) return C;
+  const contact = meta.ev.contact.t;
+  return { clip: C.clip, from: Math.max(0, contact - C.lead), contact, end: Math.min(meta.dur, contact + C.after) };
 }
 
 function startAerial(m, p, C, intent, bicycle, s) {
@@ -270,16 +301,16 @@ export function startKeeperGesture(m, k, clip, from, contact, end, rate, o) {
     onEnd: () => {
       k.keeperBusy = false;
       if (reach) reach.done = true;
+      bakeYaw(m, k, clip, end);
       if (k.holding && m.owner === k) holdPose(k);
     }
   });
 }
 
-// Palla in mano fra un gesto e il rinvio: fermo nella posa della rimessa con
-// le mani al petto.
+// Palla in mano fra un gesto e il rinvio: la guardia con la palla al petto
+// e' lo stile keeperBall della corsa, il gesto sfuma e basta.
 export function holdPose(k) {
-  const T = KEEPER.clips.throw;
-  k.avatar.playOnce(T.clip, T.hold, Infinity, 0);
+  k.avatar.endGesture();
 }
 
 // Rinvio: la palla passa a una mano sola, poi (al volo) cade dalla mano con

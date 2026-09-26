@@ -25,7 +25,8 @@ const [W, H] = opt('size', '960x540').split('x').map(Number);
 const QUALITY = opt('quality', 'medium');     // low | medium | high
 const VIEW = opt('view', 'close');            // close: vicino a chi si segue; tv: telecamera della partita
 const SET = opt('set', '');                   // es. KEEPER.alertDist=200: cambia una costante di config per la cattura
-const UNTIL = opt('until', '');               // replay: si simula (fino a --warm secondi) finche' non parte il replay di un gol
+const UNTIL = opt('until', '');
+const ANIM_LEVEL = opt('anim', 'high');         // livello delle animazioni: high | medium | low               // replay: si simula (fino a --warm secondi) finche' non parte il replay di un gol
 
 const page = `(() => {
   const m = window.__m3d;
@@ -77,7 +78,7 @@ async function main() {
   const cdp = await launch({ width: W, height: H });
   const errors = [];
   collectErrors(cdp, errors);
-  await openMatch(cdp, BASE, errors);
+  await openMatch(cdp, BASE, errors, '&anim=' + ANIM_LEVEL);
   if (SET) {
     const [path, value] = SET.split('=');
     const [group, key] = path.split('.');

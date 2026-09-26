@@ -1,12 +1,13 @@
 import * as THREE from 'three';
-import { PHYSICS, RENDER, REPLAY, RULES, PLAYER, CONTROL, DRIBBLE, SHOT, PASS, KIT, RECEIVE, FIRST_TOUCH, ANIM, POWER, FEINT, AI, AERIAL, SHAPE, PITCH, SLIDE, BALL, DUEL, OFFSIDE, DEBUG, PRESS, THROUGH } from './config.js';
+import { PHYSICS, RENDER, REPLAY, RULES, PLAYER, CONTROL, DRIBBLE, SHOT, PASS, KIT, RECEIVE, FIRST_TOUCH, ANIM, ANIMLIB, POWER, FEINT, AI, AERIAL, SHAPE, PITCH, SLIDE, BALL, DUEL, OFFSIDE, DEBUG, PRESS, THROUGH } from './config.js';
 import { buildPitch } from './pitch.js';
 import { Ball, shadowTexture } from './ball.js';
 import { BroadcastCamera } from './camera.js';
 import { Hud } from './hud.js';
 import { Controls, glyph } from './controls.js';
 import { buildTeam, separate, choosePass, passAim, shotVelocity, pressure, chooseThrough, chooseCross, loftError, headingOf, passSpeed, throughSpeed, throughPoint } from './player.js';
-import { loadPlayerModel, kitMaterial, rootAt, clipDuration } from './avatar.js';
+import { loadPlayerModel, kitMaterial, rootAt, clipDuration, attachLibrary } from './avatar.js';
+import { pickKick, pickTrap, pickIntercept } from './anim-pick.js';
 import { Possession } from './possession.js';
 import { Debug } from './debug.js';
 import { TeamAI } from './team-ai.js';
@@ -17,7 +18,7 @@ import { userPress, stagger, beat, bodyContact } from './defense.js';
 import { Referee } from './referee.js';
 import { unlockAudio, closeAudio } from './audio.js';
 import { SetPieces } from './setpieces.js';
-import { Graphics } from './render.js';
+import { Graphics, savedQuality, detectQuality } from './render.js';
 import { Stadium } from './stadium.js';
 import { Recorder, Replay } from './replay.js';
 
@@ -65,6 +66,12 @@ function disposeScene(scene) {
       m.dispose();
     }
   });
+}
+
+// Memoria JavaScript occupata (solo Chrome la espone), per i tempi di caricamento.
+function heapBytes() {
+  const m = typeof performance !== 'undefined' && performance.memory;
+  return m ? m.usedJSHeapSize : null;
 }
 
 function teamOf(t, fallback) {
@@ -164,17 +171,25 @@ class Match {
   otherSide(side) { return side === 'home' ? 'away' : 'home'; }
 
   async start() {
-    const [tpl] = await Promise.all([loadPlayerModel(), loadCss(), fontsReady()]);
+    const t0 = performance.now();
+    const r = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    r.setSize(window.innerWidth, window.innerHeight);
+    r.domElement.tabIndex = 0;
+    this.renderer = r;
+    // Livello delle animazioni: quello della grafica (scelto dal dispositivo o
+    // nelle opzioni), o quello chiesto dalla prova. Cambia solo la varieta'.
+    const level = ANIMLIB.levels[this.opts.animLevel] ? this.opts.animLevel : (savedQuality() || detectQuality(r));
+    const mem0 = heapBytes();
+    const [tpl] = await Promise.all([loadPlayerModel(level), loadCss(), fontsReady()]);
+    this.animLevel = level;
+    this.loadStats = { level, loadMs: Math.round(performance.now() - t0), heapBefore: mem0, heapAfter: heapBytes(), anim: tpl.lib.stats };
+    // livello medio: il resto della libreria arriva durante la partita
+    tpl.lib.loadLater(() => { attachLibrary(tpl, tpl.lib); this.loadStats.laterMs = Math.round(performance.now() - t0); });
     const root = document.createElement('div');
     root.className = 'm3d';
     document.body.appendChild(root);
     this.root = root;
-
-    const r = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-    r.setSize(window.innerWidth, window.innerHeight);
-    r.domElement.tabIndex = 0;
     root.appendChild(r.domElement);
-    this.renderer = r;
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(RENDER.background);
@@ -240,6 +255,8 @@ class Match {
     });
     this.hud.setHint(this.controls.padKind ? this.padHint(this.controls.padKind) : KEY_HINT);
     this.debug = new Debug(root, this);
+    // partita di prova con &debug: pannello aperto (sul telefono non c'e' F3)
+    if (this.opts.debug) this.debug.toggle();
 
     this.rules = new Rules(this, this.opts.durationMinutes);
     this.rules.kickoff(this.userSide);
@@ -356,7 +373,9 @@ class Match {
 
   frame(now) {
     this.raf = requestAnimationFrame((t) => this.frame(t));
-    const dt = Math.min(0.25, (now - this.last) / 1000) * this.timeScale;
+    // il tempo del primo requestAnimationFrame puo' precedere this.last (avvio
+    // lento): mai un passo negativo, che farebbe andare tutto all'indietro
+    const dt = Math.max(0, Math.min(0.25, (now - this.last) / 1000)) * this.timeScale;
     this.last = now;
     this.advance(dt);
     this.gfx.update(dt, this.replay ? this.ball.mesh.position : this.ball.pos);
@@ -493,10 +512,13 @@ class Match {
     const side2 = fw[1].slot.x >= fw[0].slot.x ? 1 : -1;
     const mate = { x: -d * K.mateBack, z: d * side2 * K.mateSide };
     put(fw[1], mate.x, mate.z, headingOf(d, 0));
-    // chi batte guarda il compagno, con la palla davanti al piede sinistro
-    const ml = Math.hypot(mate.x, mate.z), ux = mate.x / ml, uz = mate.z / ml, h = headingOf(ux, uz);
-    const lx = Math.cos(h), lz = -Math.sin(h);
-    put(fw[0], -ux * K.ahead - lx * K.foot, -uz * K.ahead - lz * K.foot, h);
+    // chi batte guarda avanti; la clip KickOff scelta per la direzione del
+    // compagno dice dove sta la palla rispetto a lui
+    const h = headingOf(d, 0);
+    const k = this.kickoffClip(h, Math.atan2(mate.x, mate.z));
+    this.kickClip = k.clip;
+    const fx = Math.sin(h), fz = Math.cos(h), lx = Math.cos(h), lz = -Math.sin(h);
+    put(fw[0], -(fx * k.ball.ahead + lx * k.ball.left), -(fz * k.ball.ahead + lz * k.ball.left), h);
     this.kickLock = this.buffer = null;
     this.kickTaker = fw[0];
     this.kickMate = fw[1];
@@ -507,7 +529,7 @@ class Match {
   // correndo (niente teletrasporti); chi esulta finisce l'esultanza.
   settle(dt, p) {
     const R = RULES;
-    const celebrating = p.avatar.gestureName() === R.celebration.clip;
+    const celebrating = this.isCelebrating(p);
     const waiting = this.phase === 'goal' && this.rules.t < R.returnDelay;
     const t = p.homeTarget;
     // al fischio si finisce la corsa rallentando, senza inchiodare
@@ -516,6 +538,47 @@ class Match {
   }
 
   kickoff(side = this.userSide) { this.rules.kickoff(side); }
+
+  // Clip del calcio d'inizio per un compagno in direzione `to` (rad nel campo)
+  // da chi guarda verso `h`: 135, 180 o 225 gradi. Palla dove la mette la clip.
+  kickoffClip(h, to) {
+    const rel = wrapAngle(to - h);
+    let best = null, bc = Infinity;
+    for (const name of RULES.kickoff.clips) {
+      const meta = this.tpl.meta[name];
+      if (!meta) continue;
+      const dir = Number(name.split('_').pop()) * Math.PI / 180;
+      const c = Math.abs(wrapAngle(dir - rel));
+      if (c < bc) { bc = c; best = name; }
+    }
+    if (!best) return { clip: null, ball: { ahead: 0.5, left: 0.1 } };
+    const b = this.tpl.meta[best].ball0, s = this.tpl.scale;
+    return { clip: best, ball: { ahead: b[2] * s, left: b[0] * s } };
+  }
+
+  // Esulta? (clip di esultanza della libreria o quella Mixamo)
+  isCelebrating(p) {
+    const g = p.avatar.gestureName();
+    if (!g) return false;
+    const meta = this.tpl.meta[g];
+    return g === RULES.celebration.clip || (!!meta && meta.role === 'celebrate');
+  }
+
+  // Stile della corsa (anim.js): portiere, con la palla al piede, in guardia
+  // davanti al portatore avversario, oppure normale.
+  locoStyleOf(p) {
+    if (p.keeper) return p.holding ? 'keeperBall' : 'keeper';
+    const o = this.owner;
+    if (o === p) return 'dribble';
+    if (o && p.team && o.team !== p.team && this.phase === 'play' && !p.down && !o.holding) {
+      const G = ANIM.guard, dx = o.pos.x - p.pos.x, dz = o.pos.z - p.pos.z;
+      if (Math.hypot(dx, dz) < G.dist && p.speed < G.speed && Math.abs(wrapAngle(Math.atan2(dx, dz) - p.heading)) < G.angle) return 'defense';
+    }
+    return 'normal';
+  }
+
+  // stop e intercetti del primo tocco (sfumano nella corsa se si riparte)
+  isTrap(name) { const m = name && this.tpl.meta[name]; return !!m && (m.role === 'trap' || m.role === 'intercept'); }
 
   // Il giocatore di movimento di `list` piu' vicino a (x, z).
   nearestTo(list, x, z, skip) {
@@ -833,10 +896,10 @@ class Match {
     // chi va addosso al portatore di corsa, soprattutto alle spalle, fa fallo
     bodyContact(this);
     // pesi e fase delle animazioni dopo il movimento: servono subito ai tocchi di palla
-    for (const p of this.bodies) p.animStep(dt);
+    for (const p of this.bodies) { p.locoStyle = this.locoStyleOf(p); p.animStep(dt); }
     for (const p of this.leaving) p.animStep(dt);
     // lo stop di palla e' un gesto da fermi: chi riparte di corsa lo lascia sfumare nella corsa
-    for (const p of this.everyone) if (!p.action && p.speed > FIRST_TOUCH.cancelAbove && p.avatar.gestureName() === ANIM.receive.clip) p.avatar.endGesture();
+    for (const p of this.everyone) if (!p.action && p.speed > FIRST_TOUCH.cancelAbove && this.isTrap(p.avatar.gestureName())) p.avatar.endGesture();
 
     if (live || this.rules.userTaking()) this.actions(dt, inp);
 
@@ -972,20 +1035,25 @@ class Match {
     }
     a.aim = this.kickAim(p, a);
     a.dx = a.aim.tx - b.pos.x; a.dz = a.aim.tz - b.pos.z;
-    // Palla al piede: la clip parte da K.start. Di prima, o per liberarsi di un
-    // contrasto (inp.quick): quasi al contatto.
-    const from = this.owner === p && !(inp && inp.quick) ? this.kickFrom(p, K) : Math.max(0, K.contact - (inp && inp.quick ? DUEL.quickPass : ANIM.firstTime));
-    a.contact = K.contact - from;
-    a.end = a.contact + K.recover;
-    p.avatar.playOnce(K.clip, from, a.end);
+    // Dal comando al contatto: K.lead con la palla al piede, meno di prima o
+    // per liberarsi di un contrasto (inp.quick). Uguale a ogni livello: la
+    // clip scelta per corrispondenza parte e si accelera per rispettarlo.
+    const quick = !!(inp && inp.quick);
+    const lead = this.owner === p && !quick ? K.lead : quick ? DUEL.quickPass : ANIM.firstTime;
+    a.contact = lead;
+    a.end = lead + K.recover;
+    const bx = b.pos.x - p.pos.x, bz = b.pos.z - p.pos.z;
+    const pick = pickKick(this.tpl, p, K, {
+      lead, speed: p.speed, ballY: b.pos.y,
+      turn: wrapAngle(Math.atan2(a.dx, a.dz) - p.heading),
+      ballLeft: -(bx * p.rightX + bz * p.rightZ),
+      power: kind === 'shot' ? power : clamp(Math.hypot(a.dx, a.dz) / 40, 0, 1),
+      lob: kind === 'cross' && a.cross === 'cross'
+    });
+    if (pick) p.avatar.playOnce(pick.clip, pick.from, a.end, pick.rate);
+    else if (K.fallback) p.avatar.playOnce(K.fallback.clip, Math.max(0, K.fallback.contact - lead), a.end);
+    a.clip = pick ? pick.clip : K.fallback && K.fallback.clip;
     p.action = a;
-  }
-
-  // Il calcio parte dal fotogramma della clip con i piedi dove li ha il passo
-  // in corso (fra K.early e il contatto): niente scatti di gamba.
-  kickFrom(p, K) {
-    if (p.speed < ANIM.syncMinSpeed) return K.start;
-    return p.avatar.matchStart(K.clip, K.early ?? 0, K.contact - ANIM.minLead, K.start);
   }
 
   // Un passo del gesto in corso. I calci si girano verso il bersaglio e
@@ -1014,13 +1082,14 @@ class Match {
     }
   }
 
-  // Finta: skill_spin verso il lato del joystick, la palla resta al piede.
+  // Finta: la roulette verso il lato del joystick, la palla resta al piede.
+  // La clip della libreria gira a destra, la copia specchiata a sinistra.
   startFeint(p, inp) {
     let side = 'right';
     if (inp && inp.rs && inp.rs.fx !== undefined) side = inp.rs.fx * p.rightX + inp.rs.fz * p.rightZ < 0 ? 'left' : 'right';
     else if (inp && inp.mag > 0) side = inp.x * p.rightX + inp.z * p.rightZ < 0 ? 'left' : 'right';
     else side = (p.feintSide = p.feintSide === 'right' ? 'left' : 'right');
-    const clip = 'skill_spin_' + side;
+    const clip = this.tpl.clips[FEINT.clip[side]] ? FEINT.clip[side] : 'skill_spin_' + side;
     const dur = clipDuration(this.tpl, clip);
     if (!dur) return;
     p.avatar.playOnce(clip, 0, dur / FEINT.rate, FEINT.rate);
@@ -1143,7 +1212,8 @@ class Match {
     const p = this.owner, b = this.ball, D = DRIBBLE;
     const run = Math.min(1, p.speed / p.params.maxSpeed);
     const moving = smoothstep(D.moveFrom, D.moveFull, p.speed);
-    const u = wrap01(p.gait.phase - D.touchPhase);
+    // fase del tocco: dalle clip di conduzione (Ball_Bone), altrimenti la config
+    const u = wrap01(p.gait.phase - (this.tpl.dribbleTouch ?? D.touchPhase));
     const touch = D.touch[0] + (D.touch[1] - D.touch[0]) * run;
     const swing = (D.swing[0] + (D.swing[1] - D.swing[0]) * run) * (p.close ? D.closeSwing : 1);
     // durante un calcio la palla aspetta il piede, niente allungo
@@ -1210,27 +1280,40 @@ class Match {
     this.gain(p, cause);
     p.holding = hands;
     if (p.team === this.userSide && !p.keeper) this.switchTo(p);
-    if (!hands) this.firstTouch(p, p === this.ctrl ? inp : null);
+    if (!hands) this.firstTouch(p, p === this.ctrl ? inp : null, cause);
   }
 
   // Primo tocco: col joystick lontano dal busto la palla va subito da quella
   // parte e il giocatore si gira con lei, restando in possesso; da fermi,
   // senza joystick, si vede lo stop.
-  firstTouch(p, inp) {
+  firstTouch(p, inp, cause) {
+    const R = ANIM.receive, b = this.ball;
+    // intercetto: la gamba che va sulla palla avversaria (clip Intercept della libreria)
+    if (cause === 'intercetto' && !p.keeper && !p.avatar.busy) {
+      const bx = b.pos.x - p.pos.x, bz = b.pos.z - p.pos.z;
+      const pk = pickIntercept(this.tpl, p, { ballLeft: -(bx * p.rightX + bz * p.rightZ), ballAhead: bx * p.dirX + bz * p.dirZ, speed: p.speed });
+      if (pk) { p.avatar.playOnce(pk.clip, Math.max(0, pk.contact - R.lead), R.length, 1, R.fade, p.speed > FIRST_TOUCH.receiveBelow); return; }
+    }
     if (inp && inp.mag > 0 && !this.buffer) {
       const ang = Math.acos(Math.max(-1, Math.min(1, inp.x * p.dirX + inp.z * p.dirZ)));
       if (ang > FIRST_TOUCH.minAngle) {
-        const want = Math.atan2(inp.x, inp.z);
-        p.heading = wrapAngle(p.heading + wrapAngle(want - p.heading) * FIRST_TOUCH.turn);
+        const want = Math.atan2(inp.x, inp.z), turn = wrapAngle(want - p.heading);
+        p.heading = wrapAngle(p.heading + turn * FIRST_TOUCH.turn);
         p.moveHeading = want;
         p.ballDist = DRIBBLE.touch[1] + DRIBBLE.swing[1] * 0.5;
+        // primo tocco orientato: lo stop che porta la palla da quella parte
+        if (!p.avatar.busy) {
+          const pk = pickTrap(this.tpl, p, { turn, ballY: b.pos.y, speed: p.speed });
+          if (pk) p.avatar.playOnce(pk.clip, 0, R.length, 1, R.fade, true);
+        }
         return;
       }
     }
-    if (p.speed < FIRST_TOUCH.receiveBelow && !p.avatar.busy) {
-      const R = ANIM.receive;
-      p.avatar.playOnce(R.clip, p.avatar.matchStart(R.clip, 0, R.start + R.early, R.start), R.length);
-    }
+    if (p.avatar.busy) return;
+    // stop di palla scelto per altezza della palla e velocita' (la clip parte
+    // con la palla al piede); in corsa lo stop in corsa, parte della corsa
+    const pk = pickTrap(this.tpl, p, { turn: 0, ballY: b.pos.y, speed: p.speed });
+    if (pk) p.avatar.playOnce(pk.clip, 0, R.length, 1, R.fade, p.speed >= FIRST_TOUCH.receiveBelow);
   }
 
   // Cambio: il compagno piu' vicino alla palla, mai il portiere.

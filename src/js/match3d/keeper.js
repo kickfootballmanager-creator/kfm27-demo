@@ -15,6 +15,47 @@ const lerp = (a, b, t) => a + (b - a) * t;
 const gauss = () => (Math.random() + Math.random() + Math.random() - 1.5) * 2;
 
 const _c = new THREE.Vector3(), _e = new THREE.Vector3(), _off = new THREE.Vector3();
+
+// Opzioni di parata dalla libreria: una per clip, con la finestra attorno al
+// contatto misurato dal build (Ball_Bone e palmi del Biped originale). Le
+// clip del portiere stanno tutte nel pacchetto essenziale: stesse opzioni a
+// ogni livello. `claim`: uscite sui palloni alti (prese e pugni).
+function libOptions(tpl, claim) {
+  const key = claim ? 'claim' : 'save';
+  if (tpl.keeperOptions && tpl.keeperOptions.v === tpl.libVersion && tpl.keeperOptions[key]) return tpl.keeperOptions[key];
+  if (!tpl.keeperOptions || tpl.keeperOptions.v !== tpl.libVersion) tpl.keeperOptions = { v: tpl.libVersion };
+  const W = KEEPER.saveWindow, SC = KEEPER.saveScale, B = KEEPER.saveBias, out = [];
+  const roles = claim ? ['gkCatch', 'gkPunch'] : ['gkCatch', 'gkSave'];
+  for (const role of roles) {
+    for (const e of tpl.lib.role(role)) {
+      const m = e.meta, c = m.ev && m.ev.contact;
+      if (!c || !tpl.poses[e.name]) continue;
+      const dive = !!m.ev.dive, catchIt = role === 'gkCatch';
+      const sc = claim ? SC.claim : dive ? SC.dive : SC.stand;
+      out.push({
+        name: e.name, clip: e.name, from: Math.max(0, c.t - W.lead),
+        window: [Math.max(0.05, c.t - W.before), c.t + W.after], end: m.dur,
+        scaleA: sc.a, scaleS: sc.s, catch: catchIt,
+        bias: (catchIt ? B.catch : role === 'gkPunch' ? B.punch : B.parry) + (dive ? B.dive : 0)
+      });
+    }
+  }
+  tpl.keeperOptions[key] = out;
+  return out;
+}
+
+// Tempi di un rinvio dai metadati: rilascio dalle mani, mano sola, contatto del piede.
+function releaseSpec(tpl, C) {
+  const m = tpl.meta[C.clip], ev = (m && m.ev) || {};
+  const kick = !!ev.contact;
+  return {
+    clip: C.clip, from: C.from, rate: C.rate,
+    contact: kick ? ev.contact.t : ev.release,
+    drop: kick ? ev.release : undefined,
+    oneHand: ev.oneHand,
+    end: Math.min(m ? m.dur : 0, (kick ? ev.contact.t : ev.release) + C.after)
+  };
+}
 const _q = new THREE.Vector3(), _s = new THREE.Vector3(), _n = new THREE.Vector3(), _t = new THREE.Vector3();
 
 // Prima sfera del corpo (KEEPER.body) toccata dalla palla nel suo ultimo
@@ -172,7 +213,7 @@ export class KeeperAI {
   // punto, la clip e il fotogramma in cui i palmi arrivano sulla palla:
   // tabelle tpl.poses per le mani, radice scalata entro scaleA/scaleS, clip
   // accelerata o fatta partire piu' avanti se il tempo e' poco.
-  plan(options = KEEPER.saves, P = KEEPER.plan) {
+  plan(options = libOptions(this.m.tpl, false), P = KEEPER.plan) {
     const m = this.m, k = this.p, tpl = m.tpl;
     const path = m.ball.predict(this.path, 1 / 60, P.horizon);
     let react = lerp(KEEPER.react[0], KEEPER.react[1], this.skill);
@@ -316,7 +357,7 @@ export class KeeperAI {
     k.aiState = 'USCITA';
     if ((this.replan -= dt) <= 0) {
       this.replan = KEEPER.claimPlan.every;
-      const plan = this.plan(KEEPER.claims, KEEPER.claimPlan);
+      const plan = this.plan(libOptions(m.tpl, true), KEEPER.claimPlan);
       if (plan && plan.e < KEEPER.claimPlan.accept) {
         this.pending = { wait: plan.wait, seq: poss.seq, plan };
         this.lastPlan = plan;
@@ -354,10 +395,22 @@ export class KeeperAI {
     k.aiState = 'USCITA';
     const d = Math.hypot(b.pos.x - k.pos.x, b.pos.z - k.pos.z);
     if (d < 1.4 && Math.hypot(b.vel.x, b.vel.z) < 12) {
-      const C = KEEPER.clips.scoop;
-      const side = (b.pos.x - k.pos.x) * k.rightX + (b.pos.z - k.pos.z) * k.rightZ > 0 ? 'right' : 'left';
-      m.startKeeperGesture(k, C.clip + side, C.contact - 0.15, C.contact, C.end, 1, { catch: true, scaleS: 0.3, scaleA: 0.3, point: b.pos.clone() });
-      return true;
+      // presa bassa: fra le prese con la palla vicina a terra, quella con la
+      // palla dalla stessa parte e alla stessa distanza
+      const lat = (b.pos.x - k.pos.x) * k.rightX + (b.pos.z - k.pos.z) * k.rightZ;
+      const ahead = (b.pos.x - k.pos.x) * k.dirX + (b.pos.z - k.pos.z) * k.dirZ;
+      let best = null, bc = Infinity;
+      for (const o of libOptions(m.tpl, false)) {
+        const c = m.tpl.meta[o.clip].ev.contact, w = c.ballW;
+        if (!o.catch || !w || w[1] > 0.6) continue;
+        const cost = Math.abs(-w[0] * m.tpl.scale - lat) + Math.abs(w[2] * m.tpl.scale - ahead) * 0.5;
+        if (cost < bc) { bc = cost; best = { o, c }; }
+      }
+      if (best) {
+        const t = best.c.t;
+        m.startKeeperGesture(k, best.o.clip, Math.max(0, t - 0.15), t, best.o.end, 1, { catch: true, scaleS: 0.3, scaleA: 0.3, point: b.pos.clone() });
+        return true;
+      }
     }
     this.moveTo(dt, mine.x, mine.z, true);
     return true;
@@ -387,16 +440,16 @@ export class KeeperAI {
     // con le mani: la clip riparte dalla posa in cui teneva la palla; al volo:
     // la palla passa alla sinistra, cade e il destro la calcia
     if (near) {
-      const T = KEEPER.clips.throw;
-      m.startKeeperGesture(k, T.clip, T.hold, T.contact, T.end, T.rate, { release: 'throw', spec: T, resume: true, target: near, scaleS: 0, scaleA: 0.4 });
+      const T = releaseSpec(m.tpl, KEEPER.clips.throw);
+      m.startKeeperGesture(k, T.clip, T.from, T.contact, T.end, T.rate, { release: 'throw', spec: T, target: near, scaleS: 0, scaleA: 0.4 });
     } else {
       let far = null, fa = -Infinity;
       for (const q of mates) {
         const a = q.pos.x * this.dir;
         if (a > fa && a < 15) { fa = a; far = q; }
       }
-      const D = KEEPER.clips.dropkick;
-      m.startKeeperGesture(k, D.clip, D.from, D.contact, D.end, 1, { release: 'kick', spec: D, target: far, scaleS: 0, scaleA: 0.5 });
+      const D = releaseSpec(m.tpl, KEEPER.clips.dropkick);
+      m.startKeeperGesture(k, D.clip, D.from, D.contact, D.end, D.rate, { release: 'kick', spec: D, target: far, scaleS: 0, scaleA: 0.5 });
     }
   }
 

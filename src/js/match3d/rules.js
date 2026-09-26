@@ -3,6 +3,7 @@ import { headingOf, choosePass, freeness } from './player.js';
 import { rollSpeedFor } from './ball.js';
 import { rootAction, standFall } from './gestures.js';
 import { whistle } from './audio.js';
+import { clipDuration } from './avatar.js';
 
 // Fasi della partita: kickoff (calcio d'inizio), play, restart (rimessa,
 // angolo, rinvio, punizione, rigore), out, foul (fischio di un fallo o di un
@@ -77,7 +78,7 @@ export class Rules {
     if (!this.firstKick) this.firstKick = side;
     m.cameraFocus = null;
     const p = m.placeKickoff(side, instant);
-    if (!instant) for (const q of m.everyone) if (q.avatar.gestureName() === RULES.celebration.clip) q.avatar.endGesture();
+    if (!instant) for (const q of m.everyone) if (m.isCelebrating(q)) q.avatar.endGesture();
     if (!m.poss.free) m.poss.loose('fischio');
     m.ball.reset(0, 0);
     m.gain(p, "calcio d'inizio");
@@ -249,11 +250,15 @@ export class Rules {
       const dd = Math.hypot(q.pos.x, q.pos.z);
       if (dd < bd) { bd = dd; to = q; }
     }
-    p.heading = to ? headingOf(to.pos.x - p.pos.x, to.pos.z - p.pos.z) : p.heading;
-    p.avatar.playOnce(K.clip, K.from, K.end - K.from + 0.1);
+    // chi batte guarda avanti: la clip (135, 180, 225 gradi) va dal compagno
+    const clip = to ? m.kickoffClip(p.heading, Math.atan2(to.pos.x - p.pos.x, to.pos.z - p.pos.z)).clip : m.kickClip;
+    const meta = clip && m.tpl.meta[clip];
+    const contact = meta ? meta.ev.contact.t : 0.517, from = meta ? Math.max(0, contact - K.lead) : 0;
+    const end = meta ? Math.min(meta.dur, contact + K.after) : 0.567;
+    p.avatar.playOnce(clip || 'kickoff', from, end - from + 0.1);
     p.action = {
-      clip: K.clip, t: 0, rate: 1, end: K.end - K.from,
-      events: [{ at: K.contact - K.from, fn: () => {
+      clip: clip || 'kickoff', t: 0, rate: 1, end: end - from,
+      events: [{ at: contact - from, fn: () => {
         // tocco corto: arriva al compagno a K.arrive m/s, non un rasoterra da passaggio lungo
         if (to) m.ball.rollAt(to.pos.x, to.pos.z, rollSpeedFor(Math.hypot(to.pos.x - m.ball.pos.x, to.pos.z - m.ball.pos.z), K.arrive));
         else m.ball.kick(-d * 6, 0, 0);
@@ -460,7 +465,6 @@ export class Rules {
     if (!taker) taker = team.players.find((q) => !q.keeper) || team.keeper;
     const h = headingOf(d * HL - sp.x, -sp.z);
     b.reset(sp.x, sp.z);
-    const back = type === 'penalty' ? RULES.penalty.back : 0.55;
     taker.action = null;
     taker.down = false;
     // fischio: la palla e' ferma, poi la tiene chi batte (come nel calcio d'inizio)
@@ -470,7 +474,7 @@ export class Rules {
     // diretta vicina, da lontano o rigore: mira, telecamera e posto di chi batte
     m.setpieces.prepare(this.set);
     // chi batte va sulla palla camminando; gli altri si sistemano da soli (IA)
-    taker.homeTarget = type === 'penalty' ? { x: sp.x - Math.sin(h) * back, z: sp.z - Math.cos(h) * back, h } : m.setpieces.takerSpot(this.set);
+    taker.homeTarget = type === 'penalty' ? m.setpieces.runupSpot(sp, h, RULES.penalty.clip) : m.setpieces.takerSpot(this.set);
     if (side === m.userSide && !taker.keeper) m.setControlled(taker);
     else if (!m.ctrl || m.ctrl === taker || m.ctrl.team !== m.userSide || m.ctrl.keeper || m.ctrl.sentOff) m.setControlled(m.nearestTo(m.squad.players, sp.x, sp.z));
     if (type === 'freekick') m.hud.toast(direct === false ? 'Punizione indiretta' : 'Punizione');
@@ -512,7 +516,13 @@ export class Rules {
     this.pendingFoul = null;
     this.flushCards();
     for (const p of m.everyone) if (p.action && !p.keeper) { p.action = null; p.avatar.endGesture(); }
-    if (scorer && !scorer.down) { scorer.avatar.playOnce(C.clip, C.from, C.hold); m.cameraFocus = scorer; }
+    if (scorer && !scorer.down) {
+      // un'esultanza della libreria (pacchetto extra), diversa di gol in gol; senza, quella Mixamo
+      const list = m.tpl.lib ? m.tpl.lib.role('celebrate') : [];
+      const clip = list.length ? list[(scorer.number + m.goals.home + m.goals.away) % list.length].name : C.clip;
+      scorer.avatar.playOnce(clip, C.from, Math.min(C.hold, clipDuration(m.tpl, clip) || C.hold));
+      m.cameraFocus = scorer;
+    }
     this.next = m.otherSide(team);
     // niente rientro a centrocampo: dopo esultanza e replay le squadre sono gia' schierate
     this.go('goal');

@@ -20,3 +20,14 @@ team_selection.png
 
 # FBX grezzi della partita 3D: non servono al gioco
 src/assets/match3d/source/
+
+# Partita 3D: modelli e animazioni convertiti. Possono contenere la
+# libreria Studio33 Soccer 8, la cui licenza vieta la ridistribuzione:
+# il repository e' pubblico, questi file non devono mai entrarci.
+src/assets/match3d/**/*.glb
+src/assets/match3d/**/*.gltf
+src/assets/match3d/**/*.bin
+src/assets/match3d/**/*.fbx
+
+# file compilati degli strumenti Python
+__pycache__/

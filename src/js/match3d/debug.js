@@ -1,5 +1,3 @@
-import { SLOTS } from './anim.js';
-
 // Pannello di debug (F3): fps, stato del possesso con i suoi ultimi cambi,
 // fase di gioco, stati dell'IA e passo del giocatore comandato. Solo testo,
 // aggiornato 4 volte al secondo. F4: rallentatore.
@@ -46,9 +44,15 @@ export class Debug {
     const c = m.ctrl;
     if (c && c.gait) {
       const g = c.gait, names = [];
-      for (let i = 0; i < g.w.length; i++) if (g.w[i] > 0.05 && g.info(i)) names.push(SLOTS[i] + ' ' + g.w[i].toFixed(2));
-      if (g.w[0] > 0.05) names.unshift('idle ' + g.w[0].toFixed(2));
+      for (let i = 0; i < g.w.length; i++) if (g.w[i] > 0.05) names.push(g.slots[i].name.replace(/^\d+_/, '') + ' ' + g.w[i].toFixed(2));
       lines.push('passo ' + g.phase.toFixed(2) + '  ' + c.speed.toFixed(1) + ' m/s  ' + names.join(', ') + (c.avatar.one ? '  gesto ' + c.avatar.gestureName() : ''));
+    }
+    // animazioni: livello, pacchetti caricati, tempi e memoria (skill: misurarli)
+    const L = m.loadStats;
+    if (L) {
+      const A = L.anim, packs = Object.entries(A.packs).map(([n, v]) => n + ' ' + v.clips + ' clip ' + (v.bytes / 1e6).toFixed(1) + ' MB ' + Math.round(v.download + v.parse) + ' ms').join(', ');
+      const mb = (b) => (b === null || b === undefined ? '-' : (b / 1e6).toFixed(0) + ' MB');
+      lines.push('animazioni ' + L.level + ': ' + packs + '  avvio ' + L.loadMs + ' ms' + (L.laterMs ? ', resto a ' + L.laterMs + ' ms' : '') + '  heap ' + mb(L.heapBefore) + ' -> ' + mb(L.heapAfter));
     }
     const k = m.lastKick;
     if (k) lines.push('ultimo calcio ' + k.kind + '  potenza ' + k.power.toFixed(2) + '  ' + k.speed.toFixed(1) + ' m/s  bersaglio a ' + k.dist.toFixed(1) + ' m');

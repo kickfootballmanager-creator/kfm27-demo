@@ -29,9 +29,13 @@ function fakeTeam(id, name, colors, formation) {
 
 export function startTestMatch() {
   // ?match3d=auto: IA contro IA, per il test di durata (tools/match3d/soak.mjs)
-  const auto = new URLSearchParams(location.search).get('match3d') === 'auto';
+  const q = new URLSearchParams(location.search);
+  const auto = q.get('match3d') === 'auto';
   return startMatch({
     auto,
+    // &anim=high|medium|low: livello delle animazioni (se manca, quello della grafica)
+    animLevel: q.get('anim') || undefined,
+    debug: q.has('debug'),
     home: fakeTeam('prova-a', 'Prova A', { primary: '#c8102e', secondary: '#1b1b1b', shorts: '#f2f4f5', pattern: 'stripes' }, '4-3-3'),
     away: fakeTeam('prova-b', 'Prova B', { primary: '#12a0dc', secondary: null, shorts: '#f2f4f5', pattern: 'solid' }, '4-4-2'),
     userSide: 'home',

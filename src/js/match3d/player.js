@@ -1,8 +1,9 @@
 import * as THREE from 'three';
-import { PLAYER, PITCH, GOAL, PASS, SHOT, ATTR, THROUGH, CROSS, FORMATIONS, FORMATION_ROLES, KICK, BALL, DUEL } from './config.js';
+import { ANIM, PLAYER, PITCH, GOAL, PASS, SHOT, ATTR, THROUGH, CROSS, FORMATIONS, FORMATION_ROLES, KICK, BALL, DUEL } from './config.js';
 import { playerParams } from './attributes.js';
 import { Avatar } from './avatar.js';
 import { Locomotion } from './anim.js';
+import { pickTransition, stopTime } from './anim-pick.js';
 import { rollSpeedFor, rollTime, loftFor } from './ball.js';
 
 const HL = PITCH.length / 2;
@@ -22,6 +23,13 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 // Circa normale, media 0 e deviazione 1: basta per gli errori di mira.
 function gauss() {
   return (Math.random() + Math.random() + Math.random() - 1.5) * 2;
+}
+
+// Numero intero stabile da una stringa: stesso giocatore, stesse varianti delle clip.
+function seedOf(str) {
+  let h = 7;
+  for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) | 0;
+  return Math.abs(h);
 }
 
 // Nel verso di +z la maglia mostra il petto: rotation.y = heading porta
@@ -55,12 +63,16 @@ export class Player {
     this.keeper = false;
     this.action = null;        // gesto in corso (main.js): calcio, finta, contrasto...
     this.sideSpeed = 0;        // portiere: velocita' laterale per il passo laterale
+    this.wantSpeed = 0;        // ultima corsa voluta (drive): velocita' e direzione, per partenze e arresti
+    this.wantDir = this.heading;
+    this.transCool = 0;        // secondi prima della prossima partenza, arresto o svolta
 
     this.avatar = new Avatar(tpl, material, data.number, kit.primary);
     this.mesh = this.avatar.object;
     // imbardata, poi inclinazione in avanti (x) e di lato (z) attorno ai piedi
     this.mesh.rotation.order = 'YXZ';
-    this.gait = new Locomotion(tpl.gait);   // blend space della corsa
+    // blend space della corsa; il seme sceglie fra clip simili, diverso per giocatore
+    this.gait = new Locomotion(tpl, seedOf(String(data.id ?? '') + '#' + (data.number ?? '') + (data.name || '')));
     this.faceVel = 0;          // velocita' angolare del busto (rad/s)
     this.shadow = new THREE.Mesh(
       new THREE.PlaneGeometry(1, 1),
@@ -130,6 +142,9 @@ export class Player {
     if (mag === 0 && !o.face && this.speed < 0.05) this.moveHeading = this.heading;
 
     this.sprinting = !!o.sprint && mag > 0;
+    this.wantSpeed = want;
+    this.wantDir = mag > 0 ? headingOf(dx, dz) : this.moveHeading;
+    this.faceTo = faceTo;
     // Spinta forte alla partenza e dolce vicino al massimo; frenata piena in
     // corsa e piu' morbida all'ultimo passo.
     const run = Math.min(1, this.speed / Math.max(1, top));
@@ -181,7 +196,66 @@ export class Player {
   }
 
   // Dopo il movimento del passo di fisica: pesi e fase delle animazioni.
-  animStep(dt) { this.gait.step(dt, this); }
+  animStep(dt) {
+    this.gait.step(dt, this);
+    this.transition(dt);
+  }
+
+  // Partenze, arresti e cambi di direzione con le clip della libreria, sopra
+  // il blend tree (skill "Fluidita'"). Il movimento resta quello della
+  // fisica: la clip si sceglie per rotazione e velocita' e si riproduce
+  // alla velocita' che fa coincidere i suoi tempi con quelli del codice.
+  transition(dt) {
+    const T = ANIM.trans, av = this.avatar;
+    if ((this.transCool -= dt) > 0) return;
+    const style = this.locoStyle === 'dribble' || this.locoStyle === 'normal' || this.locoStyle === 'defense' ? this.locoStyle : null;
+    if (!style || av.one || this.action || this.down || this.keeper || this.sentOff || !av.tpl.lib) return;
+    const tpl = av.tpl, g = this.gait, v = this.speed, want = this.wantSpeed;
+    let e = null, from = 0, rate = 1, hold = 0;
+    const turn = wrap(this.wantDir - this.heading);
+    if (style === 'defense') {
+      // in guardia solo i giri sul posto verso il portatore; il resto e' il blend tree
+    } else if (g.blendSpeed < T.startBelow && want > T.startWant && Math.abs(wrap(this.wantDir - this.moveHeading)) < 0.3) {
+      // partenza da fermo verso `turn`
+      e = pickTransition(tpl, this, 'start', style, { yaw: turn, vOut: Math.min(want, T.startTop) });
+      if (e) { rate = T.startRate; hold = Math.min(e.meta.dur, T.startHold); }
+    } else if (v > T.stopAbove && want < T.stopWant) {
+      // arresto: la clip si ferma quando si ferma il codice
+      // si ferma girandosi verso dove guardera' (la palla, il suo posto)
+      const face = this.faceTo !== undefined ? wrap(this.faceTo - this.heading) : 0;
+      e = pickTransition(tpl, this, 'stop', style, { yaw: Math.abs(face) > 0.6 ? face : 0, vIn: v, dir: wrap(this.moveHeading - this.heading) });
+      if (e) {
+        const codeStop = v / (PLAYER.decel * PLAYER.decelLow * 1.4);
+        rate = clamp(stopTime(tpl, e.name) / Math.max(0.15, codeStop), T.rate[0], T.rate[1]);
+        hold = Math.min(e.meta.dur / rate, stopTime(tpl, e.name) / rate + T.stopTail);
+      }
+    }
+    if (e) {
+      // gia' scelta
+    } else if (style !== 'defense' && v > T.turnAbove && Math.abs(turn) > T.turnAngle && want > T.startWant) {
+      // inversione in corsa
+      e = pickTransition(tpl, this, 'turn', style, { yaw: turn, vIn: v, dir: wrap(this.moveHeading - this.heading) });
+      if (e && e.meta.ev && e.meta.ev.turn) {
+        const tr = e.meta.ev.turn, codeTurn = Math.abs(turn) / PLAYER.faceMax + T.turnLag;
+        rate = clamp((tr.to - tr.from) / codeTurn, T.rate[0], T.rate[1]);
+        from = Math.max(0, tr.from - T.lead * rate);
+        hold = Math.min((e.meta.dur - from) / rate, T.turnHold);
+      } else e = null;
+    } else if (v < T.inPlaceBelow && want < T.inPlaceWant && this.faceTo !== undefined && Math.abs(wrap(this.faceTo - this.heading)) > T.inPlaceAngle) {
+      // giro sul posto verso lo sguardo
+      const yaw = wrap(this.faceTo - this.heading);
+      e = pickTransition(tpl, this, 'turnInPlace', style === 'dribble' ? 'normal' : style, { yaw });
+      if (e && e.meta.ev && e.meta.ev.turn) {
+        const tr = e.meta.ev.turn, codeTurn = Math.abs(yaw) / PLAYER.faceMax + T.turnLag;
+        rate = clamp((tr.to - tr.from) / codeTurn, T.rate[0], T.inPlaceRate);
+        from = Math.max(0, tr.from - T.lead * rate);
+        hold = Math.min((e.meta.dur - from) / rate, (tr.to - from) / rate + T.stopTail);
+      } else e = null;
+    }
+    if (!e) return;
+    av.playOnce(e.name, from, hold, rate, T.fade, true);
+    this.transCool = hold + T.cooldown;
+  }
 
   // Sposta il giocatore senza passare dalla corsa (radice di una clip,
   // riposizionamento): la velocita' resta coerente per le animazioni.
