@@ -32,7 +32,19 @@
     kickFoot: 1.0,               // m: al contatto di un calcio il piede della clip piu' lontano di cosi' dalla palla
     detachedFrames: 15,
     unclaimedFrames: 30,         // palla accanto al destinatario che non la prende
-    abandonedFrames: 360         // palla ferma e lontana da tutti
+    abandonedFrames: 360,        // palla ferma e lontana da tutti
+    // Continuita' delle ossa, due tipi di scatto (rad in 1/60 s):
+    // - picco: un passo oltre jumpAngle e jumpRatio volte piu' grande del passo
+    //   prima e di quello dopo (minimo jumpFloor): la posa va e torna;
+    // - fermo e poi scatto: due passi sotto frozeBelow e poi oltre jumpAngle
+    //   (bug trovato: il ginocchio teso dal piede bloccato, poi 40 rad/s).
+    // Un salto di velocita' fra due chiavi a 30 fps non e' uno scatto, e
+    // nemmeno uno schiocco del piede in una corsa accelerata: gli scatti gia'
+    // nelle catture si tolgono nella build (studio33_build.despike).
+    jumpAngle: 0.35,
+    jumpRatio: 4,
+    jumpFloor: 0.03,
+    frozeBelow: 0.01
   };
 
   const S = window.__soak = {};
@@ -51,9 +63,13 @@
     m.last = performance.now() + 1000;
     frame.call(m, performance.now());
     cancelAnimationFrame(m.raf);
-    const moved = m.everyone.filter((p, i) => Math.abs(p.avatar.lift - lifts[i]) > 1e-6).length;
+    // 0,1 mm: la posa si ricalcola a ogni aggiornamento (IK compreso) e varia di
+    // micrometri; il bug alzava tutti di centimetri
+    const moved = m.everyone.filter((p, i) => Math.abs(p.avatar.lift - lifts[i]) > 1e-4).length;
     S.startFlags = [];
-    if (moved || m.poss.clock < clock) S.startFlags.push({ kind: 'avvio: un passo negativo cambia i giocatori o il tempo', sollevati: moved, tempo: +(m.poss.clock - clock).toFixed(3) });
+    const worst = m.everyone.map((p, i) => ({ p, d: p.avatar.lift - lifts[i] })).sort((a, b) => Math.abs(b.d) - Math.abs(a.d))[0];
+    if (moved || m.poss.clock < clock) S.startFlags.push({ kind: 'avvio: un passo negativo cambia i giocatori o il tempo', sollevati: moved, tempo: +(m.poss.clock - clock).toFixed(3),
+      max_mm: +(worst.d * 1000).toFixed(2), chi: worst.p.team + ' ' + worst.p.number, gesto: worst.p.avatar.gestureName(), blocco: worst.p.avatar.feet.feet.map((f) => f.w.toFixed(2)).join('/'), fase: m.phase });
     m.frame = () => {};          // niente disegno: il test avanza da solo
     m.controls.pollMenu = () => {};
     // niente controller veri: un pad collegato alla macchina (o che si
@@ -69,7 +85,8 @@
       shots: { home: 0, away: 0 }, slides: 0, tackles: 0, possession: { home: 0, away: 0 },
       noReach: 0, gestures: {}, runGestures: {}, kicks: {}, skateSum: 0, skateN: 0,
       duels: {}, foulKinds: {}, slideFrom: {}, through: 0, throughDone: 0, throughLost: 0, goalShots: [], replays: 0, kickoffs: 0, kickoffReceived: 0, kickoffWhistled: 0,
-      kickFoot: { n: 0, sum: 0, max: 0, over: 0 }
+      kickFoot: { n: 0, sum: 0, max: 0, over: 0 },
+      boneMax: 0                 // rad: la rotazione piu' grande di un osso in un passo
     };
     S.byAvatar = new Map();
     for (const p of [...m.everyone, m.referee.p]) S.byAvatar.set(p.avatar, p);
@@ -138,6 +155,17 @@
         return orig.apply(this, arguments);
       };
       proto.__soakHooked = true;
+    }
+    // un riposizionamento cambia la posa di colpo per scelta: la continuita' riparte
+    const pproto = Object.getPrototypeOf(m.everyone[0]);
+    if (!pproto.__soakPlaced) {
+      const place = pproto.place;
+      pproto.place = function () {
+        const st = window.__soak && window.__soak.st.get(this);
+        if (st) st.qWarm = 0;
+        return place.apply(this, arguments);
+      };
+      pproto.__soakPlaced = true;
     }
     const poss = m.poss, fly = poss.fly.bind(poss), loose = poss.loose.bind(poss), own = poss.own.bind(poss);
     poss.fly = (kind, from, to, cause) => {
@@ -370,6 +398,38 @@
 
     // 5. numeri validi
     if (!Number.isFinite(p.pos.x) || !Number.isFinite(p.pos.z) || !Number.isFinite(wy(r.Hips))) S.flag('posizione non valida (NaN)', p);
+
+    // 6. continuita' di tutte le ossa: nessuna rotazione improvvisa. Riparte
+    // dopo un riposizionamento o un salto di passi (replay).
+    const bones = st.bones || (st.bones = Object.entries(r));
+    const nb = bones.length;
+    const qs = st.q || (st.q = new Float32Array(nb * 4));
+    const d1 = st.d1 || (st.d1 = new Float32Array(nb));   // passo prima
+    const d2 = st.d2 || (st.d2 = new Float32Array(nb));   // due passi prima
+    if (st.qFrame !== S.frames - 1) st.qWarm = 0;
+    // il bacino nel mondo: a fine gesto la sua rotazione passa al corpo
+    // (gestures.bakeYaw) e quella locale cambia senza che la posa si muova
+    const hipsW = r.Hips.getWorldQuaternion(S._hq || (S._hq = r.Hips.quaternion.clone()));
+    for (let i = 0; i < nb; i++) {
+      const q = bones[i][1] === r.Hips ? hipsW : bones[i][1].quaternion, o = i * 4;
+      if (st.qWarm > 0) {
+        const d = 2 * Math.acos(Math.min(1, Math.abs(q.x * qs[o] + q.y * qs[o + 1] + q.z * qs[o + 2] + q.w * qs[o + 3])));
+        if (st.qWarm > 2) {
+          if (d1[i] > T.jumpAngle && d1[i] > T.jumpRatio * Math.max(d2[i], d, T.jumpFloor)) {
+            S.flag('animazione: scatto improvviso di un osso (picco)', p, { osso: bones[i][0], passi: [+d2[i].toFixed(3), +d1[i].toFixed(3), +d.toFixed(3)] });
+          }
+          if (d2[i] < T.frozeBelow && d1[i] < T.frozeBelow && d > T.jumpAngle) {
+            S.flag('animazione: osso fermo e poi scatto', p, { osso: bones[i][0], passi: [+d2[i].toFixed(3), +d1[i].toFixed(3), +d.toFixed(3)] });
+          }
+        }
+        if (d > S.stats.boneMax) S.stats.boneMax = d;
+        d2[i] = d1[i];
+        d1[i] = d;
+      }
+      qs[o] = q.x; qs[o + 1] = q.y; qs[o + 2] = q.z; qs[o + 3] = q.w;
+    }
+    st.qWarm++;
+    st.qFrame = S.frames;
   };
 
   S.checkBall = () => {
@@ -530,7 +590,8 @@
         kickoffReceived: S.stats.kickoffReceived,
         kickoffWhistled: S.stats.kickoffWhistled,
         kickFootAvg: +(S.stats.kickFoot.sum / Math.max(1, S.stats.kickFoot.n)).toFixed(3),
-        kickFootMax: +S.stats.kickFoot.max.toFixed(3)
+        kickFootMax: +S.stats.kickFoot.max.toFixed(3),
+        boneMaxDeg: +(S.stats.boneMax * 180 / Math.PI).toFixed(1)
       },
       foulKinds: S.stats.foulKinds,
       slideFrom: S.stats.slideFrom,

@@ -1,45 +1,45 @@
 {
  "source": "Calciatore.fbx + Mixamo",
  "unit": "metri",
- "height": 1.804,
+ "height": 1.789,
  "bonePrefix": "mixamorig5:",
  "rootBone": "mixamorig5:Hips",
- "triangles": 3600,
+ "triangles": 9848,
  "meshes": [
   {
    "mesh": "Ch38_Body",
-   "trisBefore": 18600,
-   "trisAfter": 1400,
+   "trisBefore": 18400,
+   "trisAfter": 2600,
    "material": "skin"
   },
   {
    "mesh": "Ch38_Shirt",
    "trisBefore": 7554,
-   "trisAfter": 700,
+   "trisAfter": 2600,
    "material": "kit_shirt"
   },
   {
    "mesh": "Ch38_Shorts",
    "trisBefore": 7024,
-   "trisAfter": 500,
+   "trisAfter": 1600,
    "material": "kit_shorts"
   },
   {
    "mesh": "Ch38_Socks",
    "trisBefore": 1000,
-   "trisAfter": 250,
+   "trisAfter": 600,
    "material": "kit_socks"
   },
   {
    "mesh": "Ch38_Shoes",
    "trisBefore": 3480,
-   "trisAfter": 350,
+   "trisAfter": 1048,
    "material": "boots"
   },
   {
    "mesh": "Ch38_Hair",
    "trisBefore": 9528,
-   "trisAfter": 400,
+   "trisAfter": 1400,
    "material": "hair"
   }
  ],

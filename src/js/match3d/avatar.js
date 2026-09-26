@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { MODEL, ANIM } from './config.js';
+import { MODEL, ANIM, BALL } from './config.js';
 import { boneMap, solveTwoBone, palm, rotateWorld } from './rig.js';
 import { buildLoco, gaitOf, gesturePoses, groundOf, slotTime, phaseOf, FootLock, feetPose, matchPose } from './anim.js';
 import { AnimLibrary } from './anim-lib.js';
@@ -248,7 +248,9 @@ function color(css, fallback) {
 // Un materiale per squadra: colori della divisa e disegno della maglia nello
 // shader, la pelle dalla texture del modello.
 export function kitMaterial(tpl, kit) {
-  const m = new THREE.MeshStandardMaterial({ map: tpl.skinMap || null, roughness: MODEL.roughness, metalness: 0 });
+  // due facce: sotto l'orlo della maglia, nei polsini e nei pantaloncini si vede
+  // l'interno della stoffa (sotto i vestiti il corpo non c'e': si vedeva l'erba)
+  const m = new THREE.MeshStandardMaterial({ map: tpl.skinMap || null, roughness: MODEL.roughness, metalness: 0, side: THREE.DoubleSide });
   const colors = [
     new THREE.Color(1, 1, 1),
     color(kit.primary, '#e8ecf0'),
@@ -324,7 +326,10 @@ function numberTexture(number, shirt) {
 const _hl = new THREE.Vector3(), _hr = new THREE.Vector3(), _lat = new THREE.Vector3();
 const _tl = new THREE.Vector3(), _tr = new THREE.Vector3();
 const _twist = new THREE.Quaternion(), _up = new THREE.Vector3(0, 1, 0);
+const smooth01 = (u) => { const c = Math.max(0, Math.min(1, u)); return c * c * (3 - 2 * c); };
 const _hq = new THREE.Quaternion();
+const _ika = new THREE.Quaternion(), _ikb = new THREE.Quaternion(), _id = new THREE.Quaternion();
+const _iv = new THREE.Quaternion(), _iw = new THREE.Quaternion(), _iq = new THREE.Quaternion(), _ip = new THREE.Quaternion();
 
 // Un calciatore in scena: copia dello scheletro, clip condivise, fusione
 // delle corse in base alla velocita' reale e gesti (passaggio, tiro) sopra.
@@ -375,9 +380,27 @@ export class Avatar {
     this.one = null;
     this.prevOne = null;       // gesto precedente che sfuma sotto quello nuovo
     this.feat = new Float32Array(6);
-    this.resyncDue = false;
     this.lift = 0;              // metri di cui il corpo e' alzato perche' i piedi non entrino nell'erba
     this.yawFix = 0;            // rad: rotazione del gesto passata al busto (gestures.bakeYaw), tolta all'anca mentre sfuma
+    // Posa del mixer prima dei ritocchi (IK, torsione, piedi): il mixer di
+    // three.js riscrive un osso solo se il suo valore cambia, quindi un
+    // ritocco su un osso fermo nella clip restava e poi scattava via.
+    this.boneList = Object.values(this.rig);
+    this.animPose = this.boneList.map((b) => b.quaternion.clone());
+    // salti isolati dell'uscita del mixer (smoothJumps)
+    this.shown = this.boneList.map((b) => b.quaternion.clone());
+    this.shownPrev = this.boneList.map((b) => b.quaternion.clone());
+    this.finalPrev = this.boneList.map((b) => b.quaternion.clone());
+    this.inert = this.boneList.map(() => null);
+    this.jumpD = new Float32Array(this.boneList.length);
+    this.inertReady = false;
+    // palla fra le mani (holdBall): peso della presa e ultimi punti dei palmi
+    // rispetto al corpo, per sciogliere la presa piano dopo il lancio
+    this.holdW = 0;
+    this.holdWant = false;
+    this.holdL = new THREE.Vector3();
+    this.holdR = new THREE.Vector3();
+    this.heldCenter = new THREE.Vector3();
   }
 
   // Azione della clip di una fessura del blend tree.
@@ -430,7 +453,13 @@ export class Avatar {
     let chained = false;
     if (this.one) {
       const w = this.one.a.getEffectiveWeight();
-      if (w > 0.05 && this.one.a.getClip() !== clip) { this.prevOne = { a: this.one.a, w, t: 0 }; chained = true; }
+      if (w > 0.05 && this.one.a.getClip() !== clip) {
+        // il gesto che sfuma resta fermo alla sua posa: una finta che gira il
+        // corpo, fusa con una caduta, passava i 180 gradi e il bacino si ribaltava
+        this.one.a.timeScale = 0;
+        this.prevOne = { a: this.one.a, w, t: 0 };
+        chained = true;
+      }
       else this.one.a.stop();
     }
     const a = this.mixer.clipAction(clip);
@@ -492,18 +521,94 @@ export class Avatar {
       return out;
     }
     this.attach = null;
+    // a due mani la posa l'ha gia' fatta update (holdWant): qui solo la palla
+    out.copy(this.heldCenter);
+    this.track(out);
+    return out;
+  }
+
+  // Palla fra le due mani (dentro update, prima dell'inerzializzazione): il
+  // centro a meta' fra i palmi della clip, i palmi sulla superficie della palla.
+  holdTargets(radius) {
+    const r = this.rig;
+    this.object.updateMatrixWorld(true);
     const L = palm(r, 'Left', _hl), R = palm(r, 'Right', _hr);
-    out.addVectors(L, R).multiplyScalar(0.5);
+    const out = this.heldCenter.addVectors(L, R).multiplyScalar(0.5);
     const lat = _lat.subVectors(R, L);
     const n = lat.length();
     if (n > 1e-4) lat.divideScalar(n); else lat.set(-Math.cos(this.object.rotation.y), 0, Math.sin(this.object.rotation.y));
     const g = radius + MODEL.holdGap;
-    _tl.copy(out).addScaledVector(lat, -g);
-    _tr.copy(out).addScaledVector(lat, g);
-    solveTwoBone(r.LeftArm, r.LeftForeArm, (o) => palm(r, 'Left', o), _tl);
-    solveTwoBone(r.RightArm, r.RightForeArm, (o) => palm(r, 'Right', o), _tr);
-    this.track(out);
-    return out;
+    this.object.worldToLocal(this.holdL.copy(out).addScaledVector(lat, -g));
+    this.object.worldToLocal(this.holdR.copy(out).addScaledVector(lat, g));
+  }
+
+  // Salti isolati della posa finale (mixer, IK, torsione: due clip con il
+  // bacino girato di 180 gradi che cambiano ramo nella fusione, un IK che
+  // cambia soluzione): quell'osso prosegue dalla posa mostrata con la velocita'
+  // che aveva e raggiunge la nuova in ANIM.inertia.time secondi
+  // (inerzializzazione). Un movimento veloce che cresce passo dopo passo non si
+  // tocca. Il bacino si guarda nel mondo: a fine gesto la sua rotazione passa
+  // al corpo (gestures.bakeYaw) e quella locale cambia senza che la posa si muova.
+  smoothJumps(dt) {
+    const B = this.boneList, FP = this.finalPrev, SH = this.shown, SP = this.shownPrev, I = this.inert, D = this.jumpD, K = ANIM.inertia;
+    const keep = dt > 0 ? Math.exp(-dt / K.time) : 1, hips = this.rig.Hips;
+    this.object.updateMatrixWorld(true);
+    let touched = false;
+    for (let i = 0; i < B.length; i++) {
+      const root = B[i] === hips;
+      const q = root ? _iq.copy(hips.parent.getWorldQuaternion(_ip)).multiply(hips.quaternion) : B[i].quaternion;
+      if (dt > 0 && this.inertReady) {
+        const d = q.angleTo(FP[i]);
+        // un salto puo' durare piu' fotogrammi: con la correzione attiva ogni
+        // passo oltre K.jump la fa ripartire. Per il bacino basta K.rejump: il
+        // secondo passo (0,29 rad dopo 0,36) restava sotto K.jump e la correzione
+        // che si scioglieva nello stesso verso lo portava a 0,35-0,41. Non per le
+        // altre ossa: il ginocchio in scatto fa passi cosi' e restava fermo
+        if (I[i] ? d > (root ? K.rejump : K.jump) : d > K.jump && d > K.ratio * Math.max(D[i], K.floor)) {
+          // dove sarebbe andato l'osso mostrato con la velocita' dell'ultimo passo
+          _iv.copy(SP[i]).invert().multiply(SH[i]);
+          _iw.copy(SH[i]).multiply(_iv);
+          I[i] = (I[i] || new THREE.Quaternion()).copy(q).invert().multiply(_iw);
+        }
+        D[i] = d;
+      }
+      FP[i].copy(q);
+      if (I[i]) {
+        I[i].slerp(_id, 1 - keep);
+        if (I[i].angleTo(_id) < 1e-3) I[i] = null;
+        else {
+          q.multiply(I[i]);
+          if (root) hips.quaternion.copy(_ip.invert().multiply(q));
+          touched = true;
+        }
+      }
+      if (dt > 0) SP[i].copy(SH[i]);
+      SH[i].copy(q);
+    }
+    if (touched) this.object.updateMatrixWorld(true);
+    this.inertReady = true;
+  }
+
+  // Riposizionamento: la posa nuova si mostra subito.
+  resetJumps() {
+    for (let i = 0; i < this.inert.length; i++) this.inert[i] = null;
+    this.inertReady = false;
+  }
+
+  // IK delle due braccia a peso pieno, poi rotazioni fuse con la clip a `w`.
+  armIK(tl, tr, w) {
+    const r = this.rig;
+    for (const [side, t] of [['Left', tl], ['Right', tr]]) {
+      const arm = r[side + 'Arm'], fore = r[side + 'ForeArm'];
+      _ika.copy(arm.quaternion);
+      _ikb.copy(fore.quaternion);
+      solveTwoBone(arm, fore, (o) => palm(r, side, o), t);
+      if (w < 1) {
+        arm.quaternion.copy(_ika.slerp(arm.quaternion, w));
+        fore.quaternion.copy(_ikb.slerp(fore.quaternion, w));
+        arm.updateMatrixWorld(true);
+      }
+    }
   }
 
   track(p) {
@@ -514,7 +619,10 @@ export class Avatar {
   get busy() { return !!this.one || !!this.proc; }
 
   // Animazione creata in codice (moves.js) sopra la clip in corso.
-  playProc(move) { this.proc = move; }
+  playProc(move) {
+    if (move.takeOver && this.proc && this.proc !== move) move.takeOver(this.proc);
+    this.proc = move;
+  }
 
   gestureName() { return this.one ? this.one.a.getClip().name : null; }
 
@@ -534,9 +642,18 @@ export class Avatar {
     if (this.one) {
       const o = this.one, was = o.t;
       o.t += dt;
-      gw = o.t < o.hold ? Math.min(1, o.t / o.fade) : Math.max(0, 1 - (o.t - o.hold) / ANIM.fadeOut);
-      // il gesto comincia a sfumare: la corsa riparte dalla fase con i piedi dove sono
-      if (was < o.hold && o.t >= o.hold && gw > 0.5) this.resyncDue = true;
+      // dopo `hold` sfuma dal peso che aveva: un gesto fermato mentre entrava
+      // non salta a peso pieno per un fotogramma (trovato dal test di continuita')
+      gw = o.t < o.hold ? Math.min(1, o.t / o.fade) : Math.min(1, o.hold / o.fade) * Math.max(0, 1 - (o.t - o.hold) / ANIM.fadeOut);
+      // il gesto comincia a sfumare: la corsa riparte dalla fase con i piedi dove
+      // sono. Solo se il gesto era entrato del tutto: il salto di fase della
+      // corsa si vede quanto la corsa pesa (con 0,5 il ginocchio scattava)
+      // Dalla posa appena mostrata e prima dei tempi della corsa: dopo il mixer
+      // la fase nuova si vedeva solo al fotogramma successivo
+      if (was < o.hold && o.t >= o.hold && o.hold >= o.fade * 0.95) {
+        this.object.updateMatrixWorld(true);
+        loco.resync(feetPose(this.rig, this.object.rotation.y, this.feat));
+      }
       if (o.t >= o.hold && gw <= 0) { this.dropAction(o.a); this.one = null; gw = 0; }
     }
     if (this.prevOne) {
@@ -548,6 +665,10 @@ export class Avatar {
     const g = gw + pw;
     if (g > 1) { gw /= g; pw /= g; }
     const base = 1 - Math.min(1, gw + pw);
+    // inclinazione della corsa (player.sync) quanto pesa la corsa: tutta o
+    // niente scattava di colpo (fino a 0,19 rad) quando un gesto entrava o finiva
+    this.object.rotation.x *= base;
+    this.object.rotation.z *= base;
     if (this.one) this.one.a.setEffectiveWeight(gw);
     if (this.prevOne) this.prevOne.a.setEffectiveWeight(pw);
     if (loco.version !== this.tpl.locoVersion) loco.setup();
@@ -585,7 +706,10 @@ export class Avatar {
       }
     }
     for (let i = 0; i < n; i++) { const x = this.acts.get(L[i].name); this.slots[i] = x ? x.a : null; }
+    const B = this.boneList, AP = this.animPose;
+    for (let i = 0; i < B.length; i++) B[i].quaternion.copy(AP[i]);
     this.mixer.update(dt);
+    for (let i = 0; i < B.length; i++) AP[i].copy(B[i].quaternion);   // uscita del mixer: si rimette al prossimo aggiornamento
     this.lastDt = dt;
     this.twist(-loco.yawAt(alpha) * base);
     // il gesto che sfuma ha ancora dentro la rotazione gia' passata al busto
@@ -597,13 +721,20 @@ export class Avatar {
         rotateWorld(this.rig.Hips, _twist);
       } else this.yawFix = 0;
     }
-    if (this.resyncDue) {
-      this.resyncDue = false;
-      this.object.updateMatrixWorld(true);
-      loco.resync(feetPose(this.rig, this.object.rotation.y, this.feat));
-    }
-    if (dt > 0) this.feet.apply(dt, loco, phase, gw + pw, this.object);
+    // anche con passo zero (pausa): la posa del mixer si rimette a ogni
+    // aggiornamento e senza l'IK la gamba bloccata tornerebbe alla clip
+    this.feet.apply(dt, loco, phase, gw + pw, this.object);
     if (this.proc && !this.proc.update(this, dt)) this.proc = null;
+    // palla fra le due mani (holdWant, dal gioco): la presa entra e si scioglie
+    // a MODEL.holdRate al secondo; sciolta (rinvio, rimessa, palla in una mano)
+    // le braccia tornano alla clip dagli ultimi punti dei palmi
+    this.holdW = this.holdWant ? Math.min(1, this.holdW + dt * MODEL.holdRate) : Math.max(0, this.holdW - dt * MODEL.holdRate);
+    if (this.holdWant) this.holdTargets(BALL.radius);
+    if (this.holdW > 0) {
+      this.object.updateMatrixWorld(true);
+      this.armIK(this.object.localToWorld(_tl.copy(this.holdL)), this.object.localToWorld(_tr.copy(this.holdR)), this.holdW);
+    }
+    this.smoothJumps(dt);
     this.ground(dt);
   }
 
@@ -611,7 +742,10 @@ export class Avatar {
   // corsa: rotazione attorno alla verticale, divisa sulle tre vertebre.
   twist(a) {
     const T = ANIM.warp.twist;
-    a = Math.max(-T, Math.min(T, a));
+    // oltre T resta T; negli ultimi F.twistFade rad prima di pi torna a zero:
+    // a pi l'angolo cambia segno e il busto girava di colpo dall'altra parte
+    const s = Math.abs(a), F = ANIM.warp.twistFade;
+    if (s > T) a = Math.sign(a) * T * smooth01((Math.PI - s) / F);
     if (Math.abs(a) < 1e-3) return;
     this.object.updateMatrixWorld(true);
     const r = this.rig;

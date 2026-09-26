@@ -1,19 +1,25 @@
 """Costruisce src/assets/match3d/player.glb da Calciatore.fbx + le animazioni Mixamo.
 
-- decima la mesh a ~3.500 triangoli
+- vestiti con i pesi originali sulle sole ossa giuste, maglia un po' piu'
+  corta e svasata, corpo coperto tolto (player_mesh.py)
+- decima la mesh a ~9.800 triangoli senza toccare orli, polsini e colletto
 - separa maglia / pantaloncini / calzettoni in tre materiali a tinta unita
 - un'unica texture: l'atlante del corpo a 1024
 - importa le animazioni, le rinomina, toglie lo spostamento orizzontale della radice
 - esporta un solo GLB in metri (~1,79 m) + un JSON con lo spostamento originale di ogni clip
 """
-import bpy, os, json, math, statistics
+import bpy, os, sys, json, math, statistics, tempfile
 from mathutils import Vector, Matrix
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import player_mesh  # noqa: E402
 
 ROOT = r"C:\Users\UTENTE\Desktop\kfm27\src\assets\match3d"
 SRC = os.path.join(ROOT, "source")
 OUT_GLB = os.path.join(ROOT, "player.glb")
 OUT_JSON = os.path.join(ROOT, "player.clips.json")
-TMP = r"C:\Users\UTENTE\AppData\Local\Temp\claude\C--Users-UTENTE-Desktop-kfm27\fcd67a9a-535a-4d2b-ae0b-95e5db3267cb\scratchpad"
+TMP = os.path.join(tempfile.gettempdir(), "kfm27-player")
+os.makedirs(TMP, exist_ok=True)
 
 # il prefisso Mixamo di questo rig e' "mixamorig5:", non "mixamorig:":
 # l'osso radice va cercato, mai scritto a mano.
@@ -78,13 +84,14 @@ SKIPPED = {
 }
 
 # mesh -> (triangoli obiettivo, nome materiale, colore di base, metallico, rugosita')
+# (con 3.600 triangoli in tutto orli, polsini e calzettoni venivano seghettati)
 MESH_PLAN = {
-    "Ch38_Body":  (1400, "skin",       None,                       0.0, 0.70),
-    "Ch38_Shirt": (700,  "kit_shirt",  (0.85, 0.85, 0.87, 1.0),    0.0, 0.62),
-    "Ch38_Shorts": (500, "kit_shorts", (0.12, 0.13, 0.16, 1.0),    0.0, 0.62),
-    "Ch38_Socks": (250,  "kit_socks",  (0.85, 0.85, 0.87, 1.0),    0.0, 0.70),
-    "Ch38_Shoes": (350,  "boots",      (0.04, 0.04, 0.05, 1.0),    0.1, 0.35),
-    "Ch38_Hair":  (400,  "hair",       (0.055, 0.042, 0.035, 1.0), 0.0, 0.85),
+    "Ch38_Body":  (2600, "skin",       None,                       0.0, 0.70),
+    "Ch38_Shirt": (2600, "kit_shirt",  (0.85, 0.85, 0.87, 1.0),    0.0, 0.62),
+    "Ch38_Shorts": (1600, "kit_shorts", (0.12, 0.13, 0.16, 1.0),   0.0, 0.62),
+    "Ch38_Socks": (600,  "kit_socks",  (0.85, 0.85, 0.87, 1.0),    0.0, 0.70),
+    "Ch38_Shoes": (1000, "boots",      (0.04, 0.04, 0.05, 1.0),    0.1, 0.35),
+    "Ch38_Hair":  (1400, "hair",       (0.055, 0.042, 0.035, 1.0), 0.0, 0.85),
 }
 DROP_MESHES = ("Ch38_Eyelashes",)
 
@@ -152,29 +159,29 @@ def make_material(name, color, metallic, rough, image=None):
     return mat
 
 
+missing = [n for n in MESH_PLAN if bpy.data.objects.get(n) is None]
+if missing:
+    raise RuntimeError("mesh mancanti: %s" % missing)
+M = {n: bpy.data.objects[n] for n in MESH_PLAN}
+# vestiti: pesi originali sulle sole ossa giuste, orlo, corpo coperto
+for n, (allowed, remap) in player_mesh.ALLOW.items():
+    say("pesi di %s: %.1f spostati su ossa ammesse" % (n, player_mesh.restrict(M[n], arm, allowed, remap)))
+say("corpo: tolte %d facce coperte dai vestiti" % player_mesh.remove_covered(
+    M["Ch38_Body"], [M[n] for n in ("Ch38_Shirt", "Ch38_Shorts", "Ch38_Socks", "Ch38_Shoes")]))
+hem = player_mesh.shape_shirt(M["Ch38_Shirt"])
+say("maglia: orlo a %.3f m, pantaloncini solo sul bacino per %d vertici"
+    % (hem, player_mesh.shorts_under_shirt(M["Ch38_Shorts"], hem)))
+
 mesh_report = []
 for name, (target, matname, color, metallic, rough) in MESH_PLAN.items():
-    ob = bpy.data.objects.get(name)
-    if ob is None:
-        say("ATTENZIONE: mesh mancante", name)
-        continue
-    before = tri_count(ob)
-
+    ob = M[name]
     ob.data.materials.clear()
     ob.data.materials.append(make_material(matname, color, metallic, rough,
                                            diffuse if matname == "skin" else None))
-
-    ratio = min(1.0, target / float(before))
-    mod = ob.modifiers.new("decimate", 'DECIMATE')
-    mod.decimate_type = 'COLLAPSE'
-    mod.ratio = ratio
-    mod.use_collapse_triangulate = True
-    bpy.context.view_layer.objects.active = ob
-    bpy.ops.object.modifier_apply(modifier=mod.name)
-
-    after = tri_count(ob)
+    # i capelli sono ciocche aperte: tutto bordo, niente da proteggere
+    before, after, kept = player_mesh.decimate(bpy, ob, target, protect=(name != "Ch38_Hair"))
     mesh_report.append((name, before, after, matname))
-    say("%-16s %6d -> %5d tris   materiale %s" % (name, before, after, matname))
+    say("%-16s %6d -> %5d tris   materiale %s   vertici protetti %d" % (name, before, after, matname, kept))
 
 total_tris = sum(r[2] for r in mesh_report)
 say("TOTALE triangoli", total_tris)

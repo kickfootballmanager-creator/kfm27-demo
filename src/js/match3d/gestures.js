@@ -292,15 +292,19 @@ export function startKeeperGesture(m, k, clip, from, contact, end, rate, o) {
       // peso dell'IK: sale prima del contatto, resta un attimo, poi sfuma
       const tr = (a.t - tc) / rate;
       const w = tr < -I.lead ? 0 : tr < 0 ? smooth((tr + I.lead) / I.lead) : tr < I.hold ? 1 : Math.max(0, 1 - (tr - I.hold) / I.fade);
-      // le mani vanno sul punto previsto; con la palla vicina seguono quella vera
+      // le mani vanno sul punto previsto e passano sulla palla vera man mano
+      // che arriva (prima il bersaglio saltava sulla palla a I.track m: braccia a scatto)
       const b = m.ball;
-      if (b.live && !m.poss.owned && b.pos.distanceTo(o.point || reach.target) < I.track) reach.target.copy(b.pos);
+      if (b.live && !m.poss.owned) {
+        if (o.point) reach.target.copy(o.point).lerp(b.pos, smooth(Math.max(0, Math.min(1, 1 - b.pos.distanceTo(o.point) / I.track))));
+        else reach.target.copy(b.pos);
+      }
       reach.weight = m.owner === k ? 0 : w;
       reach.ttl = 0.25;
     },
     onEnd: () => {
       k.keeperBusy = false;
-      if (reach) reach.done = true;
+      if (reach) { reach.weight = 0; reach.ttl = 0; }   // l'IK sfuma (moves.KeeperReach), non si spegne di colpo
       bakeYaw(m, k, clip, end);
       if (k.holding && m.owner === k) holdPose(k);
     }

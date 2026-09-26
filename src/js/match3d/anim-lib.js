@@ -24,6 +24,7 @@ function parseGlb(buf) {
 
 const COMPONENTS = { SCALAR: 1, VEC3: 3, VEC4: 4 };
 const Q = 1 / 32767;
+const unit = (q) => { const l = Math.hypot(q[0], q[1], q[2], q[3]) || 1; q[0] /= l; q[1] /= l; q[2] /= l; q[3] /= l; return q; };
 
 // Rotazioni in interi a 16 bit (meta' memoria): l'interpolatore le legge
 // cosi' come sono e le converte solo nei due fotogrammi che servono.
@@ -34,16 +35,19 @@ class Q16Interpolant extends THREE.Interpolant {
     this.b = new Float32Array(4);
   }
 
+  // Gli interi a 16 bit non danno un quaternione di lunghezza 1 esatta: si
+  // normalizza (altrimenti l'osso si scala appena e gli angoli misurati fra
+  // due pose uguali non sono zero).
   copySampleValue_(index) {
     const r = this.resultBuffer, v = this.sampleValues, o = index * 4;
     for (let k = 0; k < 4; k++) r[k] = v[o + k] * Q;
-    return r;
+    return unit(r);
   }
 
   interpolate_(i1, t0, t, t1) {
     const v = this.sampleValues, a = this.a, b = this.b, o = (i1 - 1) * 4;
     for (let k = 0; k < 4; k++) { a[k] = v[o + k] * Q; b[k] = v[o + 4 + k] * Q; }
-    THREE.Quaternion.slerpFlat(this.resultBuffer, 0, a, 0, b, 0, (t - t0) / (t1 - t0));
+    THREE.Quaternion.slerpFlat(this.resultBuffer, 0, unit(a), 0, unit(b), 0, (t - t0) / (t1 - t0));
     return this.resultBuffer;
   }
 }

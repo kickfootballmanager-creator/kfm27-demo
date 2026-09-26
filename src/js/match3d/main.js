@@ -407,6 +407,9 @@ class Match {
     }
     const alpha = this.paused ? 1 : this.acc / step;
     this.ball.sync(alpha, this.paused ? 0 : dt);
+    // palla fra le due mani: l'avatar la mette in posa dentro il suo aggiornamento
+    const holder = this.owner;
+    for (const p of this.everyone) p.avatar.holdWant = p === holder && !!p.holding && !p.holdHand;
     for (const p of this.everyone) p.sync(alpha, this.paused ? 0 : dt);
     for (const p of this.leaving) p.sync(alpha, this.paused ? 0 : dt);
     this.referee.sync(alpha, this.paused ? 0 : dt, this.camera.cam);

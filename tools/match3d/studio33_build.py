@@ -284,7 +284,125 @@ def frame_pose(D):
         m_pose[tb] = m_pose[mb(M + "Foot")] @ (old_ft.inverted() @ m_pose[tb])
         if te in m_pose:
             m_pose[te] = m_pose[tb] @ M_REL[te]
+        split_twist(m_pose, M)
     return s_pose, m_pose
+
+
+# Il Biped mette tutta la rotazione attorno all'avambraccio nella mano (fino a
+# 109 gradi); lo scheletro Mixamo non ha ossa di torsione e la pelle del
+# Calciatore si aspetta che l'avambraccio ne porti una parte: con tutto nel
+# polso il polsino si strozza. La mano resta dov'e' nel mondo.
+TWIST_SHARE = 0.5
+
+
+def split_twist(m_pose, M):
+    fa, hd = mb(M + "ForeArm"), mb(M + "Hand")
+    F, H = m_pose[fa], m_pose[hd]
+    Fr, Hr = F.to_3x3().normalized(), H.to_3x3().normalized()
+    axis = Fr.inverted() @ (H.translation - F.translation).normalized()
+    rel = (Fr.inverted() @ Hr).to_quaternion()
+    proj = axis * Vector((rel.x, rel.y, rel.z)).dot(axis)
+    tw = Quaternion((rel.w, proj.x, proj.y, proj.z))
+    if tw.magnitude < 1e-8:
+        return
+    tw.normalize()
+    ang = 2 * math.atan2(Vector((tw.x, tw.y, tw.z)).dot(axis), tw.w)
+    ang = math.atan2(math.sin(ang), math.cos(ang))
+    part = Quaternion(axis, ang * TWIST_SHARE)
+    m_pose[fa] = Matrix.Translation(F.translation) @ (Fr @ part.to_matrix()).to_4x4()
+
+
+SPIKE = 0.28          # rad fra due chiavi (8,4 rad/s): sotto non e' uno scatto
+SPIKE_RATIO = 2.5     # ... e tante volte piu' veloce delle chiavi vicine
+
+
+def despike(frames, cyclic):
+    """Scatti isolati nelle catture Studio33 (un piede o una mano che in una
+    chiave ruota 3 volte piu' veloce delle vicine, fino a 35 rad/s): la
+    rotazione locale di quell'osso si leviga (1-4-6-4-1) solo attorno allo
+    scatto, poi le pose si ricompongono dall'alto. Ritorna gli scatti tolti."""
+    n = len(frames)
+    if n < 5:
+        return 0
+    m = n - 1 if cyclic else n
+    loc = []
+    for fr in frames:
+        P = fr["pose"]
+        loc.append({pb.name: (P[pb.parent.name].inverted() @ P[pb.name]) if pb.parent else P[pb.name].copy() for pb in M_ORDER})
+    fixed = 0
+    for pb in M_ORDER:
+        b = pb.name
+        qs = [loc[i][b].to_quaternion() for i in range(n)]
+        for i in range(1, n):
+            if qs[i].dot(qs[i - 1]) < 0:
+                qs[i].negate()
+        d = [qs[i].rotation_difference(qs[(i + 1) % m if cyclic else i + 1]).angle for i in range(m if cyclic else n - 1)]
+        k = len(d)
+        hit = set()
+        for i in range(k):
+            a = d[(i - 1) % k] if (cyclic or i > 0) else 0.0
+            c = d[(i + 1) % k] if (cyclic or i < k - 1) else 0.0
+            if d[i] > SPIKE and d[i] > SPIKE_RATIO * max(a, c, 0.02):
+                for j in range(i - 1, i + 3):
+                    hit.add(j % m if cyclic else j)
+        hit = {j for j in hit if 0 <= j < m}
+        if not hit:
+            continue
+        fixed += 1
+        new = {}
+        for i in hit:
+            acc = Quaternion((0, 0, 0, 0))
+            for kk, w in ((-2, 1), (-1, 4), (0, 6), (1, 4), (2, 1)):
+                j = (i + kk) % m if cyclic else min(n - 1, max(0, i + kk))
+                q = qs[j] if qs[j].dot(qs[i]) >= 0 else -qs[j]
+                acc = Quaternion((acc.w + q.w * w, acc.x + q.x * w, acc.y + q.y * w, acc.z + q.z * w))
+            acc.normalize()
+            new[i] = acc
+        for i, q in new.items():
+            t = loc[i][b].translation.copy()
+            loc[i][b] = Matrix.Translation(t) @ q.to_matrix().to_4x4()
+            if cyclic and i == 0:
+                loc[n - 1][b] = loc[i][b].copy()
+    if fixed:
+        for i, fr in enumerate(frames):
+            P = {}
+            for pb in M_ORDER:
+                P[pb.name] = (P[pb.parent.name] @ loc[i][pb.name]) if pb.parent else loc[i][pb.name]
+            fr["pose"] = P
+    return fixed
+
+
+def smooth_toes(frames, cyclic):
+    """Punte dei piedi levigate nel tempo (rispetto al piede, 1-4-6-4-1): nelle
+    catture Studio33 la punta torna piatta in un solo fotogramma a fine spinta
+    (fino a 25 rad/s), uno scatto visibile della scarpa. I cicli restano chiusi."""
+    n = len(frames)
+    if n < 5:
+        return
+    m = n - 1 if cyclic else n        # nei cicli l'ultimo fotogramma ripete il primo
+    for M in ("Left", "Right"):
+        ft, tb = mb(M + "Foot"), mb(M + "ToeBase")
+        rel = [(fr["pose"][ft].inverted() @ fr["pose"][tb]) for fr in frames]
+        qs = [r.to_quaternion() for r in rel]
+        for i in range(1, n):
+            if qs[i].dot(qs[i - 1]) < 0:
+                qs[i].negate()
+        out = []
+        for i in range(m):
+            acc = Quaternion((0, 0, 0, 0))
+            for k, w in ((-2, 1), (-1, 4), (0, 6), (1, 4), (2, 1)):
+                j = (i + k) % m if cyclic else min(n - 1, max(0, i + k))
+                q = qs[j] if qs[j].dot(qs[i]) >= 0 else -qs[j]
+                acc = Quaternion((acc.w + q.w * w, acc.x + q.x * w, acc.y + q.y * w, acc.z + q.z * w))
+            acc.normalize()
+            out.append(acc)
+        if cyclic:
+            out.append(out[0].copy())
+        for fr, r, q in zip(frames, rel, out):
+            fr["pose"][tb] = fr["pose"][ft] @ (Matrix.Translation(r.translation) @ q.to_matrix().to_4x4())
+            te = mb(M + "Toe_End")
+            if te in fr["pose"]:
+                fr["pose"][te] = fr["pose"][tb] @ M_REL[te]
 
 
 def root_frame(D):
@@ -301,10 +419,11 @@ def rf_matrix(pos, yaw):
 
 
 # ---------------------------------------------------------------- una clip
-def sample_clip(src, keep_yaw=False):
+def sample_clip(src, keep_yaw=False, cyclic=False):
     """Fotogrammi della clip: pose Mixamo sul posto e punti utili, in metri,
     nel riferimento del Root del fotogramma (x sinistra, y su, z avanti).
-    keep_yaw: si toglie solo lo spostamento, la rotazione resta nella clip."""
+    keep_yaw: si toglie solo lo spostamento, la rotazione resta nella clip.
+    cyclic: clip in ciclo (le punte si levigano senza aprire il ciclo)."""
     acts_before = set(bpy.data.actions)
     objs = import_fbx(os.path.join(LIB, src + ".fbx"), False)
     D = next(o for o in objs if o.type == 'ARMATURE')
@@ -359,6 +478,11 @@ def sample_clip(src, keep_yaw=False):
     for a in list(bpy.data.actions):
         if a not in acts_before:
             bpy.data.actions.remove(a)
+    smooth_toes(frames, cyclic)
+    # una levigatura puo' lasciare uno scatto piu' piccolo accanto: al massimo tre passate
+    for _ in range(3):
+        if not despike(frames, cyclic):
+            break
     return frames
 
 
@@ -783,7 +907,7 @@ for pack in PACKS:
     metas, cache, t_sample = {}, {}, 0.0
     for i, e in enumerate(todo):
         t0 = time.time()
-        frames = cache.get(e["src"]) or sample_clip(e["src"], e["role"] in KEEP_YAW)
+        frames = cache.get(e["src"]) or sample_clip(e["src"], e["role"] in KEEP_YAW, e["role"] in ("loco", "idle", "ready"))
         # l'originale serve ancora alla sua copia specchiata
         if not e.get("mirror") and any(x.get("mirror") and x["src"] == e["src"] for x in todo):
             cache[e["src"]] = frames

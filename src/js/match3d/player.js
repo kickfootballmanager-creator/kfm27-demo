@@ -95,6 +95,7 @@ export class Player {
     this.stagger = this.burst = 0;
     this.press = null;
     this.gait.reset();
+    this.avatar.resetJumps();
   }
 
   get dirX() { return Math.sin(this.heading); }
@@ -187,10 +188,10 @@ export class Player {
   sync(alpha, dt) {
     const m = this.mesh;
     m.position.lerpVectors(this.prev, this.pos, alpha);
-    // inclinazione solo in corsa libera: durante un gesto comanda la clip
-    const lean = this.gait.leanAt(alpha), free = this.avatar.one ? 0 : 1;
+    // inclinazione in corsa: l'avatar la riduce quanto pesa il gesto (update)
+    const lean = this.gait.leanAt(alpha);
     // il corpo puo' girarsi verso la corsa (anim.js, orientation warping)
-    m.rotation.set(lean.pitch * free, this.prevHeading + wrap(this.heading - this.prevHeading) * alpha + this.gait.yawAt(alpha), lean.roll * free);
+    m.rotation.set(lean.pitch, this.prevHeading + wrap(this.heading - this.prevHeading) * alpha + this.gait.yawAt(alpha), lean.roll);
     this.shadow.position.set(m.position.x, 0.011, m.position.z);
     this.avatar.update(dt, this.gait, alpha);
   }

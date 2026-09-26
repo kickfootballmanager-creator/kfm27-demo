@@ -37,16 +37,34 @@ export function aimWorld(bone, from, to, weight = 1) {
 // nel mondo, rigido rispetto a B: polso, palmo, collo del piede) su `target`.
 // A: spalla o anca, B: gomito o ginocchio. Il gomito resta dalla parte di
 // `pole` (se manca, dalla parte in cui lo mette l'animazione).
+// Sotto peso 1 l'IK si calcola pieno e poi le rotazioni di A e B si fondono
+// con quelle della clip: sfumando il bersaglio in linea retta la mano (o il
+// piede) passava dove il gomito non e' definito e il gomito si ribaltava.
 export function solveTwoBone(A, B, end, target, weight = 1, pole = null) {
   if (weight <= 0) return;
-  const a = A.getWorldPosition(_a), b = B.getWorldPosition(_b), c = end(_c);
-  const l1 = a.distanceTo(b), l2 = b.distanceTo(c);
-  _t.copy(c).lerp(target, weight);
+  if (weight < 1) {
+    _qa.copy(A.quaternion);
+    _qb.copy(B.quaternion);
+    solveFull(A, B, end, target, pole);
+    A.quaternion.copy(_qa.slerp(A.quaternion, weight));
+    B.quaternion.copy(_qb.slerp(B.quaternion, weight));
+    A.updateMatrixWorld(true);
+    return;
+  }
+  solveFull(A, B, end, target, pole);
+}
+
+const _qa = new THREE.Quaternion(), _qb = new THREE.Quaternion();
+
+function solveFull(A, B, end, target, pole) {
+  const a = A.getWorldPosition(_a), b = B.getWorldPosition(_b);
+  const l1 = a.distanceTo(b), l2 = b.distanceTo(end(_c));
+  _t.copy(target);
   const dir = _d.subVectors(_t, a);
   const d = Math.min(l1 + l2 - 1e-3, Math.max(Math.abs(l1 - l2) + 1e-3, dir.length()));
   dir.normalize();
   // piano del gomito: dalla parte del polo, o da quella attuale
-  const pv = _p.subVectors(pole || b, a);
+  const pv = pole ? _p.subVectors(pole, a) : _p.subVectors(b, a);
   pv.addScaledVector(dir, -pv.dot(dir));
   if (pv.lengthSq() < 1e-8) pv.set(0, -1, 0).addScaledVector(dir, dir.y);
   pv.normalize();

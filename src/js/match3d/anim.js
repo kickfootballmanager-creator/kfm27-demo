@@ -360,9 +360,13 @@ export class Locomotion {
     this.vis = wrapA(this.vis + clamp(wrapA(target - this.vis), -turn * dt, turn * dt));
     this.yaw = wrapA(this.vis - p.heading);
     const tg = this.targets(this.blendSpeed, wrapA(this.ang - this.yaw));
-    const k = 1 - Math.exp(-A.blend * dt);
+    // Pesi verso l'obiettivo, ma mai piu' di A.blendMax al secondo: quando
+    // l'obiettivo cambia a scatti (direzione presa da fermi, un'altra clip)
+    // una clip nuova saliva da 0 a 0,3 in un fotogramma e la posa saltava
+    // (dita, bacino). Trovato col test di continuita'.
+    const k = 1 - Math.exp(-A.blend * dt), cap = A.blendMax * dt;
     let sum = 0;
-    for (let i = 0; i < tg.length; i++) { this.w[i] += (tg[i] - this.w[i]) * k; if (this.w[i] < 1e-4 && tg[i] === 0) this.w[i] = 0; sum += this.w[i]; }
+    for (let i = 0; i < tg.length; i++) { this.w[i] += clamp((tg[i] - this.w[i]) * k, -cap, cap); if (this.w[i] < 1e-4 && tg[i] === 0) this.w[i] = 0; sum += this.w[i]; }
     if (sum > 1e-6) for (let i = 0; i < tg.length; i++) this.w[i] /= sum;
     this.releasePicks();
 
@@ -501,13 +505,19 @@ export function slotTime(loco, i, phase, cyc = 0) {
 }
 
 const _f = new THREE.Vector3(), _k = new THREE.Vector3(), _t = new THREE.Vector3();
+const _h = new THREE.Vector3(), _n = new THREE.Vector3();
 
 // Piede fermo nell'appoggio: si segna dove tocca terra e l'IK sulla gamba lo
 // tiene li' finche' dura l'appoggio, al massimo a F.drift dal piede della clip.
+// Solo a passo lento (F.maxSpeed). La gamba non si tende mai del tutto: se
+// tenere il piede chiedesse piu' di F.reach della sua lunghezza, il punto resta
+// al limite e il piede si libera fino al prossimo appoggio (bug trovato: in
+// corsa il piede restava indietro, il ginocchio si bloccava teso per qualche
+// fotogramma e poi scattava, una volta per passo).
 export class FootLock {
   constructor(rig) {
     this.rig = rig;
-    this.feet = ['Right', 'Left'].map((s) => ({ s, on: false, w: 0, p: new THREE.Vector3() }));
+    this.feet = ['Right', 'Left'].map((s) => ({ s, on: false, spent: false, w: 0, p: new THREE.Vector3() }));
   }
 
   apply(dt, loco, phase, oneW, object) {
@@ -521,8 +531,11 @@ export class FootLock {
       const foot = r[f.s + 'Foot'];
       const u = active ? loco.stance(f.s[0], phase) : -1;
       foot.getWorldPosition(_f);
-      if (u >= 0 && u < 1 - F.liftEarly) {
-        if (!f.on) { f.on = true; f.p.copy(_f); }
+      if (u < 0) f.spent = false;
+      if (u >= 0 && u < 1 - F.liftEarly && !f.spent) {
+        // se il blocco stava ancora sfumando riparte dal suo punto: un punto
+        // nuovo col peso gia' alto farebbe saltare la gamba in un fotogramma
+        if (!f.on) { f.on = true; if (f.w <= 0) f.p.copy(_f); }
         f.w = Math.min(1, f.w + dt / F.ramp);
       } else {
         f.on = false;
@@ -534,11 +547,25 @@ export class FootLock {
       const dx = f.p.x - _f.x, dz = f.p.z - _f.z, d = Math.hypot(dx, dz);
       if (d > F.drift) { const k = F.drift / d; f.p.x = _f.x + dx * k; f.p.z = _f.z + dz * k; }
       _t.set(f.p.x, _f.y, f.p.z);
+      const hip = r[f.s + 'UpLeg'].getWorldPosition(_h);
+      const len = hip.distanceTo(r[f.s + 'Leg'].getWorldPosition(_n)) + _n.distanceTo(_f);
+      const far = _t.distanceTo(hip), reach = F.reach * len;
+      // gamba mai tesa: il bersaglio si accorcia solo per questo fotogramma.
+      // Riscritto in f.p, all'aggiornamento dopo tornava all'altezza della
+      // clip, di nuovo fuori portata, e ogni chiamata (anche a passo zero)
+      // tirava il piede un po' piu' verso l'anca
+      if (far > reach) {
+        _t.sub(hip).multiplyScalar(reach / far).add(hip);
+        f.on = false;
+        f.spent = true;
+      }
       r[f.s + 'Leg'].getWorldPosition(_k);
-      _k.x += Math.sin(object.rotation.y) * 0.5; _k.z += Math.cos(object.rotation.y) * 0.5;
+      // il ginocchio resta sul piano della clip (guardia del portiere, passi
+      // laterali): un polo lontano in avanti lo girava di colpo quando il blocco entrava
+      _k.x += Math.sin(object.rotation.y) * F.pole; _k.z += Math.cos(object.rotation.y) * F.pole;
       solveTwoBone(r[f.s + 'UpLeg'], r[f.s + 'Leg'], (out) => foot.getWorldPosition(out), _t, f.w * move, _k);
     }
   }
 
-  reset() { for (const f of this.feet) { f.on = false; f.w = 0; } }
+  reset() { for (const f of this.feet) { f.on = false; f.spent = false; f.w = 0; } }
 }
