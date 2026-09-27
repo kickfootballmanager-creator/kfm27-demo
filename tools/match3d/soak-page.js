@@ -41,10 +41,15 @@
     // Un salto di velocita' fra due chiavi a 30 fps non e' uno scatto, e
     // nemmeno uno schiocco del piede in una corsa accelerata: gli scatti gia'
     // nelle catture si tolgono nella build (studio33_build.despike).
+    // - troppo veloce: un passo oltre stepMax, qualunque siano quelli vicini
+    //   (una fusione di clip che si ribalta dopo una rampa, 0,26 e poi 0,82,
+    //   sfuggiva al rapporto). Il movimento vero piu' veloce misurato nelle
+    //   clip e' 0,60 (ginocchio nello scatto), col piede bloccato 0,75.
     jumpAngle: 0.35,
     jumpRatio: 4,
     jumpFloor: 0.03,
-    frozeBelow: 0.01
+    frozeBelow: 0.01,
+    stepMax: 0.8
   };
 
   const S = window.__soak = {};
@@ -420,6 +425,9 @@
           }
           if (d2[i] < T.frozeBelow && d1[i] < T.frozeBelow && d > T.jumpAngle) {
             S.flag('animazione: osso fermo e poi scatto', p, { osso: bones[i][0], passi: [+d2[i].toFixed(3), +d1[i].toFixed(3), +d.toFixed(3)] });
+          }
+          if (d1[i] > T.stepMax) {
+            S.flag('animazione: osso oltre il limite di velocita\'', p, { osso: bones[i][0], passi: [+d2[i].toFixed(3), +d1[i].toFixed(3), +d.toFixed(3)] });
           }
         }
         if (d > S.stats.boneMax) S.stats.boneMax = d;

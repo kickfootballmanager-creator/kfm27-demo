@@ -7,12 +7,14 @@
 - un'unica texture: l'atlante del corpo a 1024
 - importa le animazioni, le rinomina, toglie lo spostamento orizzontale della radice
 - esporta un solo GLB in metri (~1,79 m) + un JSON con lo spostamento originale di ogni clip
+- nel GLB leviga le punte dei piedi che scattano o girano su se stesse (glb_toes.py)
 """
 import bpy, os, sys, json, math, statistics, tempfile
 from mathutils import Vector, Matrix
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import player_mesh  # noqa: E402
+import glb_toes  # noqa: E402
 
 ROOT = r"C:\Users\UTENTE\Desktop\kfm27\src\assets\match3d"
 SRC = os.path.join(ROOT, "source")
@@ -666,6 +668,8 @@ if dropped:
 
 bpy.ops.export_scene.gltf(**kwargs)
 say("scritto", OUT_GLB, os.path.getsize(OUT_GLB) // 1024, "KB")
+# punte dei piedi che scattano o girano su se stesse nelle catture Mixamo
+say("punte dei piedi corrette:", glb_toes.fix_toes_glb(OUT_GLB, log=say), "tracce")
 
 meta = {
     "source": "Calciatore.fbx + Mixamo",

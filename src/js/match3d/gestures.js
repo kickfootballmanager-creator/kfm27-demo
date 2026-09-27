@@ -293,12 +293,24 @@ export function startKeeperGesture(m, k, clip, from, contact, end, rate, o) {
       const tr = (a.t - tc) / rate;
       const w = tr < -I.lead ? 0 : tr < 0 ? smooth((tr + I.lead) / I.lead) : tr < I.hold ? 1 : Math.max(0, 1 - (tr - I.hold) / I.fade);
       // le mani vanno sul punto previsto e passano sulla palla vera man mano
-      // che arriva (prima il bersaglio saltava sulla palla a I.track m: braccia a scatto)
+      // che arriva (prima il bersaglio saltava sulla palla a I.track m: braccia a scatto).
+      // Solo prima del contatto: dopo, la palla respinta o in rete vola via a
+      // 20 m/s e le braccia la inseguivano (fino a 1,2 rad in un fotogramma)
       const b = m.ball;
-      if (b.live && !m.poss.owned) {
-        if (o.point) reach.target.copy(o.point).lerp(b.pos, smooth(Math.max(0, Math.min(1, 1 - b.pos.distanceTo(o.point) / I.track))));
+      // Del punto previsto si corregge solo lo scarto di lato alla traiettoria:
+      // la palla che arriva sulla linea prevista non sposta le mani. Con tutta
+      // la distanza le mani andavano incontro alla palla e tornavano al punto
+      // in 4 fotogrammi (a 25 m/s): avambraccio fino a 1,2 rad in un passo
+      if (b.live && !m.poss.owned && tr < 0) {
+        if (o.point) {
+          const P = o.point, v = b.vel, ex = b.pos.x - P.x, ey = b.pos.y - P.y, ez = b.pos.z - P.z;
+          const vv = v.x * v.x + v.y * v.y + v.z * v.z, along = vv > 1e-6 ? (ex * v.x + ey * v.y + ez * v.z) / vv : 0;
+          const s = smooth(Math.max(0, Math.min(1, 1 - b.pos.distanceTo(P) / I.track)));
+          reach.target.set(P.x + (ex - along * v.x) * s, P.y + (ey - along * v.y) * s, P.z + (ez - along * v.z) * s);
+        }
         else reach.target.copy(b.pos);
       }
+      reach.stick = tr >= 0;
       reach.weight = m.owner === k ? 0 : w;
       reach.ttl = 0.25;
     },

@@ -200,6 +200,7 @@ export class Locomotion {
     this.sw = {};                 // peso di ogni stile, sfuma verso quello chiesto
     for (const st of STYLES) this.sw[st] = st === 'normal' ? 1 : 0;
     this.picks = {};              // banda -> fessura scelta per questo giocatore
+    this.hiBand = {};             // coppia di bande all'indietro -> e' in uso la piu' veloce (bandMix)
     this.setup();
     this.phase = 0; this.prevPhase = 0;
     this.cycle = 0; this.prevCycle = 0;   // cicli della fase: quale coppia di passi nelle clip che ne hanno piu' d'una
@@ -232,6 +233,7 @@ export class Locomotion {
       }
       const picks = this.picks;
       this.picks = {};
+      this.hiBand = {};           // bande nuove: la coppia si ricalcola dalla velocita'
       for (const key in picks) {
         const s = old.slots[picks[key]], k = L.index[s.style + '|' + s.name];
         if (k !== undefined) this.picks[key] = k;
@@ -268,6 +270,24 @@ export class Locomotion {
     for (const key in this.picks) if (this.w[this.picks[key]] < 1e-4 && this.t[this.picks[key]] === 0) delete this.picks[key];
   }
 
+  // Quota della banda piu' veloce fra due bande di velocita' s0 < s1 (ancora
+  // di direzione `dir`): di solito in proporzione alla velocita'. All'indietro,
+  // fra corse, due clip di cadenza diversa con una sola fase facevano
+  // scivolare il piede d'appoggio (0,7-2 m/s fra 3,4 e 4,2 m/s; ognuna da sola
+  // 0,2): una banda sola per volta, la lenta accelerata fino a B.rate volte la
+  // sua velocita'. Il cambio ha un'isteresi di B.hyst m/s e avviene nel tempo
+  // (A.blendMax sui pesi), non mescolando a ogni velocita' intermedia. Non
+  // per il portiere: i suoi passi di guardia scivolano comunque e accelerati
+  // da soli scivolavano di piu'.
+  bandMix(style, key, dir, s0, s1, s) {
+    const B = ANIM.backBands;
+    if (!B.styles.includes(style) || Math.abs(dir) < B.from || s0 < B.minSpeed) return clamp((s - s0) / (s1 - s0), 0, 1);
+    const T = Math.min(s1 - B.hyst, s0 * B.rate);
+    if (s > T + B.hyst) this.hiBand[key] = true;
+    else if (s < T - B.hyst) this.hiBand[key] = false;
+    return this.hiBand[key] ? 1 : 0;
+  }
+
   // Pesi obiettivo per velocita' `s` e direzione `a` (+ sinistra), per ogni
   // stile secondo il suo peso. Continui ovunque: anche passando da -pi a pi.
   targets(s, a) {
@@ -302,7 +322,7 @@ export class Locomotion {
         if (s >= bands[bands.length - 1].speed) b0 = b1 = bands.length - 1;
         else {
           for (let j = 0; j < bands.length - 1; j++) {
-            if (s <= bands[j + 1].speed) { b0 = j; b1 = j + 1; f = clamp((s - bands[j].speed) / (bands[j + 1].speed - bands[j].speed), 0, 1); break; }
+            if (s <= bands[j + 1].speed) { b0 = j; b1 = j + 1; f = this.bandMix(st, st + k + ':' + j, A[k].dir, bands[j].speed, bands[j + 1].speed, s); break; }
           }
         }
         t[this.pick(st + k + ':' + b0, bands[b0].slots)] += m * (1 - f);
@@ -505,7 +525,7 @@ export function slotTime(loco, i, phase, cyc = 0) {
 }
 
 const _f = new THREE.Vector3(), _k = new THREE.Vector3(), _t = new THREE.Vector3();
-const _h = new THREE.Vector3(), _n = new THREE.Vector3();
+const _h = new THREE.Vector3(), _n = new THREE.Vector3(), _o = new THREE.Vector3();
 
 // Piede fermo nell'appoggio: si segna dove tocca terra e l'IK sulla gamba lo
 // tiene li' finche' dura l'appoggio, al massimo a F.drift dal piede della clip.
@@ -559,10 +579,17 @@ export class FootLock {
         f.on = false;
         f.spent = true;
       }
-      r[f.s + 'Leg'].getWorldPosition(_k);
+      const knee = r[f.s + 'Leg'], e = knee.matrixWorld.elements;
+      knee.getWorldPosition(_k);
       // il ginocchio resta sul piano della clip (guardia del portiere, passi
-      // laterali): un polo lontano in avanti lo girava di colpo quando il blocco entrava
-      _k.x += Math.sin(object.rotation.y) * F.pole; _k.z += Math.cos(object.rotation.y) * F.pole;
+      // laterali): un polo lontano in avanti del corpo lo girava di colpo quando
+      // il blocco entrava. Polo davanti al ginocchio della clip: asse di
+      // piegatura della tibia (X) x direzione anca-bersaglio, che non si annulla
+      // mai. Con 5 cm in avanti del ginocchio e la gamba quasi tesa il polo stava
+      // quasi sulla linea anca-bersaglio e il piano della gamba si ribaltava
+      // (0,9-1 rad di torsione in un fotogramma, piegatura ferma)
+      _o.set(e[0], e[1], e[2]).cross(_n.subVectors(_t, hip)).normalize();
+      _k.addScaledVector(_o, F.pole);
       solveTwoBone(r[f.s + 'UpLeg'], r[f.s + 'Leg'], (out) => foot.getWorldPosition(out), _t, f.w * move, _k);
     }
   }

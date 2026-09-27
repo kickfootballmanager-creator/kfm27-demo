@@ -507,7 +507,7 @@ export const KEEPER = {
   },
   // Uscite sui palloni alti: prese e pugni della libreria (keeper.js, claimOptions).
   claimPlan: { step: 2, horizon: 3, ahead: 5, behind: 1.5, maxY: 2.5, rateMax: 1.6, rateCost: 0.08, every: 0.12, accept: 0.5 },
-  ik: { lead: 0.3, hold: 0.12, fade: 0.25, gap: 0.02, track: 1.6, rate: 8 },   // secondi attorno al contatto; track: m entro cui le mani seguono la palla vera; rate: 1/s, velocita' massima del peso dell'IK
+  ik: { lead: 0.3, hold: 0.12, fade: 0.25, gap: 0.02, track: 1.6, rate: 8, turn: 12, arm: 20 },   // secondi attorno al contatto; track: m entro cui le mani seguono la palla vera; rate: 1/s, velocita' massima del peso dell'IK; turn: rad/s massimi del braccio per effetto del peso; arm: rad/s massimi della soluzione IK
   catchSpeed: 24,         // presa: sotto questa velocita' la palla resta in mano
   diveCatchSpeed: 15,     // in tuffo si blocca solo sotto questa velocita'
   diveCatch: [0.5, 0.9],  // e con questa probabilita' [attributo basso, alto]
@@ -561,7 +561,9 @@ export const MODEL = {
   roughness: 0.8,
   holdGap: 0.02,          // palla in mano: dalla superficie della palla al centro del palmo
   attachRate: 18,         // 1/s: palla che passa a una mano sola e si appoggia sul palmo
-  holdRate: 8             // 1/s: la presa a due mani entra e si scioglie senza scatti
+  holdRate: 8,            // 1/s: la presa a due mani entra e si scioglie senza scatti
+  holdTurn: 12,           // rad/s massimi del braccio per effetto del peso della presa
+  holdArm: 20             // rad/s massimi della soluzione IK della presa
 };
 
 // Animazioni, sulla libreria Studio33 (anim.js, anim-pick.js). Locomozione
@@ -573,6 +575,11 @@ export const MODEL = {
 export const ANIM = {
   borrow: { dribble: { from: 'normal', minAngle: 1.0 } },   // conduzione: di lato e all'indietro le corse normali
   bandGap: 0.12,          // clip con velocita' entro il 12%: varianti della stessa banda
+  // All'indietro (ancore oltre `from` rad) fra bande di corsa (da minSpeed
+  // m/s): una banda per volta, la lenta fino a `rate` volte la sua velocita';
+  // cambio con isteresi di `hyst` m/s (Locomotion.bandMix). Solo gli stili
+  // dei giocatori di movimento.
+  backBands: { from: 1.9, minSpeed: 2, rate: 1.55, hyst: 0.15, styles: ['normal', 'defense', 'dribble'] },
   styleRate: 7,           // 1/s: passaggio da uno stile all'altro (palla al piede, guardia...)
   slotRelease: 1.5,       // s a peso zero dopo cui l'azione di una fessura si libera
   readyRate: 4,           // 1/s: il portiere entra ed esce dalla guardia
@@ -587,9 +594,11 @@ export const ANIM = {
   blendMax: 6,            // variazione massima di un peso al secondo (niente pose che saltano)
   // Salto isolato di un osso all'uscita del mixer (Avatar.smoothJumps): oltre
   // jump rad in un passo e ratio volte il passo prima (minimo floor), la posa
-  // riparte da quella mostrata e ci arriva con costante di tempo `time` s.
-  // Con la correzione attiva basta rejump rad per farla ripartire (solo il bacino).
-  inertia: { time: 0.06, jump: 0.3, ratio: 4, floor: 0.03, rejump: 0.15 },
+  // riparte da quella mostrata e ci arriva con costante di tempo `time` s. Il
+  // bacino nel mondo (giri del corpo) con la curva (1 + t/time) e^(-t/time), che
+  // parte ferma, e nei primi burst fotogrammi riparte gia' oltre rejump rad;
+  // parte anche oltre big rad se il passo e' bigRatio volte quello prima.
+  inertia: { time: 0.06, jump: 0.3, ratio: 4, floor: 0.03, rejump: 0.15, burst: 3, big: 0.5, bigRatio: 2 },
   speedSpring: 14,        // 1/s: molla critica della velocita' che decide i pesi (partenze, arresti)
   angleRate: 30,          // 1/s: filtro dell'angolo fra corsa e busto
   maxSpeed: 12,           // m/s: oltre, uno spostamento e' un riposizionamento, non una corsa
@@ -600,7 +609,10 @@ export const ANIM = {
   // pi a minAngle (twist: rad del busto verso lo sguardo); turnSlow/turnFast/
   // gestureTurn: rad/s massimi da fermi, in corsa, durante un gesto.
   // twistFade: rad prima di pi in cui la torsione del busto torna a zero.
-  warp: { from: 3.6, to: 6, minAngle: 0.35, twist: 0.55, twistFade: 0.6, turnSlow: 7, turnFast: 5, gestureTurn: 20 },
+  // gestureTurn sotto ANIM.inertia.jump a passo (0,2 rad): a 20 rad/s, 0,33 dal
+  // primo fotogramma, il giro del corpo all'inizio di un contrasto sembrava
+  // un salto, la correzione lo teneva fermo e poi lo lasciava andare (0,36)
+  warp: { from: 3.6, to: 6, minAngle: 0.35, twist: 0.55, twistFade: 0.6, turnSlow: 7, turnFast: 5, gestureTurn: 12 },
   liftRelease: 0.6,       // m/s: il corpo alzato perche' i piedi non entrino nell'erba riscende piano
   turnStep: 0.45,         // m/s di passo per rad/s di rotazione da fermi: girandosi si fanno piccoli passi
   turnStepMax: 1.2,
@@ -611,8 +623,9 @@ export const ANIM = {
   // li porterebbe troppo lontano. Solo sotto maxSpeed m/s: in corsa il piede
   // restava indietro e la gamba si tendeva. reach: frazione della lunghezza
   // della gamba oltre cui il piede si libera (mai la gamba tesa del tutto).
-  // pole: m in avanti del ginocchio della clip che tengono il piano del ginocchio.
-  footLock: { on: true, maxSpeed: 2.5, minMove: 0.25, ramp: 0.15, release: 0.2, drift: 0.22, liftEarly: 0.25, reach: 0.985, pole: 0.05 },
+  // pole: m davanti al ginocchio della clip (asse di piegatura x gamba) che
+  // tengono il piano del ginocchio.
+  footLock: { on: true, maxSpeed: 2.5, minMove: 0.25, ramp: 0.15, release: 0.2, drift: 0.22, liftEarly: 0.25, reach: 0.985, pole: 0.4 },
   fadeIn: 0.15,           // cross-fade verso un gesto (0,15-0,25 s)
   fadeOut: 0.22,
   chainFade: 0.18,        // due gesti di fila: il primo sfuma sotto il secondo
@@ -811,7 +824,7 @@ export const REFEREE = {
   minDist: 6,             // mai piu' vicino di cosi' alla palla
   sprintDist: 6,
   armLen: 0.62,           // dalla spalla al palmo, braccio teso
-  signal: { rise: 0.2, hold: 1.4, fall: 0.3 },   // secondi del gesto
+  signal: { rise: 0.2, hold: 1.4, fall: 0.3, turn: 12 },   // secondi del gesto; turn: rad/s massimi del braccio per effetto del peso
   cardSize: [0.075, 0.105],
   attrs: { pac: 72, sho: 50, pas: 50, dri: 50, def: 50, phy: 70 }
 };
