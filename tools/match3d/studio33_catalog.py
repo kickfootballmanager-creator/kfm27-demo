@@ -131,9 +131,13 @@ for (cat, st), n in count.items():
     tot[st] += n
 lines.append("| **totale** | **%d** | **%d** | **%d** | **%d** |" % (tot["core"], tot["more"], tot["extra"], tot["scartata"]))
 lines.append("")
-lines.append("Per livello: basso %d clip (piu' 2 copie specchiate: finta e scivolata), medio e alto %d "
-             "(piu' le 3 copie specchiate: finta, scivolata, arresto laterale destro)."
-             % (tot["core"], tot["core"] + tot["more"] + tot["extra"]))
+# copie specchiate nel build (studio33_select.MIRROR), per pacchetto
+mirrors = [e for e in plan(meta) if e.get("mirror")]
+low_m = [short(e["mirror"]) for e in mirrors if e["pack"] == "core"]
+all_m = [short(e["mirror"]) for e in mirrors]
+lines.append("Per livello: basso %d clip (piu' %d copie specchiate: %s), medio e alto %d "
+             "(piu' %d copie specchiate: %s)."
+             % (tot["core"], len(low_m), ", ".join(low_m), tot["core"] + tot["more"] + tot["extra"], len(all_m), ", ".join(all_m)))
 lines.append("")
 for cat in ORDER:
     if cat not in rows:

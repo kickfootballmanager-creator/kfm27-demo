@@ -60,6 +60,7 @@ export const KICK = {
 
 export const PLAYER = {
   radius: 0.34,           // ingombro per le collisioni fra giocatori
+  pushStill: 0.5,         // m/s: sotto, chi si muove non lo spinge (separate): si sposta chi corre
   jogFactor: 0.74,        // corsa normale rispetto alla velocita' massima
   decel: 15,              // m/s^2 quando si molla il joystick, alla velocita' massima
   decelLow: 0.45,         // frazione della frenata vicino a fermi: l'arresto si ammorbidisce
@@ -373,6 +374,7 @@ export const AI = {
 export const TACKLE = {
   hit: 0.26,              // secondi reali dal via al contatto del piede
   duration: 0.55,         // secondi reali del gesto, poi si torna a correre
+  standLunge: 0.1,        // m: sotto, la clip del contrasto non si sposta: niente affondo (scivolava sull'erba)
   legReach: 0.95,         // dal centro del giocatore al pallone, gamba tesa
   manReach: 1.05,         // uomo a portata della gamba (centro a centro): se manca la palla puo' prendere lui
   contactDist: 0.62,      // l'affondo porta il corpo a questa distanza dalla palla
@@ -587,11 +589,14 @@ export const ANIM = {
   // dal busto, chi difende sotto speed m/s
   guard: { dist: 4, angle: 1.1, speed: 4.2 },
   matchBias: 0.3,         // quanto conta allontanarsi dall'istante preferito (m^2 al secondo)
+  walkFull: 0.5,          // quota della camminata dello stile oltre cui i passi pesano del tutto (niente posa ferma che trasla)
   minRate: 0.6,           // playback minimo e massimo delle clip di corsa
   maxRate: 2,
   dirMaxRate: 2.1,        // clip direzionali (sono corsette): un po' piu' accelerate
   blend: 40,              // 1/s: filtro dei pesi del blend tree
   blendMax: 6,            // variazione massima di un peso al secondo (niente pose che saltano)
+  stillDrop: 2,           // ...per le pose da fermo che scendono mentre il giocatore si sposta (oltre endMove)
+  stepRise: 1.5,          // ...e per i passi che salgono, finche' resta della posa da fermo
   // Salto isolato di un osso all'uscita del mixer (Avatar.smoothJumps): oltre
   // jump rad in un passo e ratio volte il passo prima (minimo floor), la posa
   // riparte da quella mostrata e ci arriva con costante di tempo `time` s. Il
@@ -599,6 +604,7 @@ export const ANIM = {
   // parte ferma, e nei primi burst fotogrammi riparte gia' oltre rejump rad;
   // parte anche oltre big rad se il passo e' bigRatio volte quello prima.
   inertia: { time: 0.06, jump: 0.3, ratio: 4, floor: 0.03, rejump: 0.15, burst: 3, big: 0.5, bigRatio: 2 },
+  fingerRate: 15,         // rad/s: le dita non girano mai piu' in fretta (Avatar.smoothJumps)
   speedSpring: 14,        // 1/s: molla critica della velocita' che decide i pesi (partenze, arresti)
   angleRate: 30,          // 1/s: filtro dell'angolo fra corsa e busto
   maxSpeed: 12,           // m/s: oltre, uno spostamento e' un riposizionamento, non una corsa
@@ -618,7 +624,10 @@ export const ANIM = {
   turnStepMax: 1.2,
   // Inclinazione di tutto il corpo, dai piedi: nelle curve verso l'interno,
   // in avanti quando accelera, indietro quando frena. rad per m/s^2.
-  lean: { roll: 0.02, maxRoll: 0.2, pitch: 0.012, maxPitch: 0.07, maxBack: 0.05, rate: 8 },
+  // body: rad per asse di cui s'inclina tutto il corpo, attorno ai piedi,
+  // cambiando al massimo di bodyRate rad/s; il resto lo fa il busto sopra il
+  // bacino (Avatar.lean)
+  lean: { roll: 0.02, maxRoll: 0.2, pitch: 0.012, maxPitch: 0.07, maxBack: 0.05, rate: 8, body: 0.055, bodyRate: 0.3 },
   // Piedi fermi a terra nell'appoggio (IK sulle gambe), finche' la clip non
   // li porterebbe troppo lontano. Solo sotto maxSpeed m/s: in corsa il piede
   // restava indietro e la gamba si tendeva. reach: frazione della lunghezza
@@ -629,6 +638,9 @@ export const ANIM = {
   fadeIn: 0.15,           // cross-fade verso un gesto (0,15-0,25 s)
   fadeOut: 0.22,
   chainFade: 0.18,        // due gesti di fila: il primo sfuma sotto il secondo
+  endMove: 0.5,           // m/s: oltre, un gesto la cui clip sta per finire, o non si sposta, sfuma nella corsa
+  stillRoot: 0.3,         // m/s della radice sotto cui la clip di un gesto sta ferma (Match.tick)
+  chainTurn: 0.6,         // rad: una clip che tiene la rotazione, girata almeno cosi', sfuma piano sotto il gesto nuovo (Avatar.update)
   syncMinSpeed: 1.2,      // sotto questa velocita' il calcio non cerca il passo in corso
   // Calci: `lead` secondi reali dal comando al contatto del piede, uguali a
   // ogni livello; la clip scelta parte e si accelera per rispettarli.
@@ -650,19 +662,30 @@ export const ANIM = {
   // turnAbove/turnAngle: in corsa, direzione voluta oltre tanti rad dal busto;
   // inPlace*: fermi, sguardo oltre tanti rad. rate: playback [min, max];
   // lead: secondi (reali) di clip prima che cominci la rotazione.
+  // Partenze e arresti seguono la distanza percorsa (Player.stepTransition):
+  // drive.rate e' il playback [min, max] ammesso, drive.onset i m/s della
+  // radice da cui entra una partenza da fermi, drive.match i secondi di clip
+  // attorno all'ingresso in cui si cerca la posa dei piedi piu' simile. Un arresto o un giro sul posto
+  // interrotti da una nuova corsa diventano una partenza sotto restartBelow
+  // m/s; altrimenti sfumano nella corsa in `cut` s. Un gesto fermo sotto
+  // quello nuovo sfuma in redoFade s, turnedFade se tiene la rotazione ed e'
+  // girato (Avatar.update).
   trans: {
-    startBelow: 0.35, startWant: 0.9, startTop: 4.5, startRate: 1.25, startHold: 0.45,
-    stopAbove: 2.2, stopWant: 0.3, stopTail: 0.15,
-    turnAbove: 1.0, turnAngle: 2.2, turnLag: 0.12, turnHold: 0.5,
+    startBelow: 0.35, startWant: 0.5, startTop: 4.5,
+    stopAbove: 2.2, stopWant: 0.3, stopTail: 0.15, stopFade: 0.2,
+    turnAbove: 1.0, turnAngle: 2.2, turnLag: 0.12, turnHold: 0.5, turnTail: 0.3,
     inPlaceBelow: 0.3, inPlaceWant: 0.5, inPlaceAngle: 1.3, inPlaceRate: 2.2,
     rate: [0.7, 1.8], lead: 0.06, fade: 0.12, cooldown: 0.35,
+    drive: { rate: [0.5, 2.2], fadeRate: 1.2, onset: 0.3, match: 0.35 },
+    restartBelow: 2, cut: 0.07, redoFade: 0.1, turnedFade: 0.12,
     match: { yaw: 1, speed: 0.35, dir: 1.5, accept: 1.2 }
   },
   // Pesi della scelta per corrispondenza (anim-pick.js): rad di rotazione,
   // metri di lato della palla, m/s, posa dei piedi, potenza, altezza della
   // palla; keep: vantaggio della clip gia' usata dal giocatore per quel ruolo.
   // runAbove: m/s oltre cui si scelgono solo clip che entrano in corsa (runClip: m/s d'entrata della clip)
-  match: { turn: 1.2, side: 2.5, speed: 0.25, pose: 1, power: 0.6, height: 1.5, lob: 1, inPlace: 0.8, rate: 0.4, keep: 0.2, runAbove: 2.5, runClip: 1.5 }
+  // move: per m/s che la radice di un calcio fa in meno del giocatore fino al contatto
+  match: { turn: 1.2, side: 2.5, speed: 0.25, pose: 1, power: 0.6, height: 1.5, lob: 1, inPlace: 0.8, rate: 0.4, keep: 0.2, runAbove: 2.5, runClip: 1.5, move: 0.5 }
 };
 
 // Pacchetti della libreria di animazioni per livello di qualita' (anim-lib.js):

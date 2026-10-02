@@ -290,14 +290,19 @@ export class Locomotion {
 
   // Pesi obiettivo per velocita' `s` e direzione `a` (+ sinistra), per ogni
   // stile secondo il suo peso. Continui ovunque: anche passando da -pi a pi.
-  targets(s, a) {
+  // `sm`: velocita' che divide fermo e passi (di norma `s`).
+  targets(s, a, sm = s) {
     const t = this.t, L = this.L;
     t.fill(0);
     for (const st of STYLES) {
       const sw = this.sw[st];
       if (sw < 1e-4) continue;
       const S = L.styles[st];
-      const move = clamp(s / S.walk, 0, 1);
+      // passi a pieno peso gia' da ANIM.walkFull della camminata: fra fermo e
+      // camminata in proporzione a 0,6-0,9 m/s la posa era per il 60% in piedi
+      // e il giocatore traslava (e il piede scivolava di piu' che con la
+      // camminata sola, rallentata fino a ANIM.minRate)
+      const move = clamp(sm / (S.walk * ANIM.walkFull), 0, 1);
       const ready = S.ready.length ? this.ready : 0;
       const still = sw * (1 - move);
       if (still > 0) {
@@ -379,14 +384,30 @@ export class Locomotion {
     const turn = busy ? W.gestureTurn : W.turnSlow + (W.turnFast - W.turnSlow) * smooth(1, 5, this.blendSpeed);
     this.vis = wrapA(this.vis + clamp(wrapA(target - this.vis), -turn * dt, turn * dt));
     this.yaw = wrapA(this.vis - p.heading);
-    const tg = this.targets(this.blendSpeed, wrapA(this.ang - this.yaw));
+    // fra fermo e passi conta la velocita' vera quando e' piu' alta: la molla
+    // arriva a meta' della velocita' dopo 0,12 s e il giocatore che partiva
+    // traslava in piedi per 6-8 fotogrammi. Le bande della corsa e gli arresti
+    // restano sulla molla; i pesi cambiano comunque al massimo A.blendMax al secondo
+    const tg = this.targets(this.blendSpeed, wrapA(this.ang - this.yaw), Math.max(this.blendSpeed, eff));
     // Pesi verso l'obiettivo, ma mai piu' di A.blendMax al secondo: quando
     // l'obiettivo cambia a scatti (direzione presa da fermi, un'altra clip)
     // una clip nuova saliva da 0 a 0,3 in un fotogramma e la posa saltava
     // (dita, bacino). Trovato col test di continuita'.
-    const k = 1 - Math.exp(-A.blend * dt), cap = A.blendMax * dt;
+    // Le pose da fermo (idle, guardia) scendono A.stillDrop volte piu' in
+    // fretta quando il giocatore si sposta davvero: a 0,1 per fotogramma la
+    // posa in piedi traslava ancora per 4-5 fotogrammi alla partenza. Finche'
+    // ne resta, i passi salgono A.stepRise volte piu' in fretta: alla velocita'
+    // normale superavano meta' della posa solo al quarto fotogramma; due volte,
+    // il bacino dell'idle (fino a 7,5 cm fuori asse) cambiava di 3 cm a fotogramma
+    const k = 1 - Math.exp(-A.blend * dt), cap = A.blendMax * dt, moving = eff > A.endMove;
+    const drop = moving ? cap * A.stillDrop : cap, rise = moving && this.moving < 0.98 ? cap * A.stepRise : cap;
     let sum = 0;
-    for (let i = 0; i < tg.length; i++) { this.w[i] += clamp((tg[i] - this.w[i]) * k, -cap, cap); if (this.w[i] < 1e-4 && tg[i] === 0) this.w[i] = 0; sum += this.w[i]; }
+    for (let i = 0; i < tg.length; i++) {
+      const cyc = this.isCycle(i), c = tg[i] < this.w[i] ? (cyc ? cap : drop) : (cyc ? rise : cap);
+      this.w[i] += clamp((tg[i] - this.w[i]) * k, -c, c);
+      if (this.w[i] < 1e-4 && tg[i] === 0) this.w[i] = 0;
+      sum += this.w[i];
+    }
     if (sum > 1e-6) for (let i = 0; i < tg.length; i++) this.w[i] /= sum;
     this.releasePicks();
 

@@ -88,7 +88,10 @@ def classify(name, meta=None):
 # Il gioco sceglie le clip per corrispondenza dentro un ruolo (locomozione di
 # uno stile, passaggio, parata...). (espressione, ruolo, stile)
 ROLES = [
-    (r"^Stand(_0\d)?$", "idle", "normal"),
+    # Stand_04 no: il bacino oscilla di 9,3 cm attorno alla radice e col
+    # limite di 10 cm dall'anello, partendo, lo scarto cambiava di 3 cm a
+    # fotogramma (le altre pose da fermo restano entro 7,5 cm)
+    (r"^Stand(_0[0-3])?$", "idle", "normal"),
     (r"^Defense_Stand0\d$", "idle", "defense"),
     (r"^Dribble_Stand01$", "idle", "dribble"),
     (r"^Keeper_NormalStand$", "idle", "keeper"),
@@ -172,7 +175,11 @@ LOW = {
 LOW_NUMBERED = {"557_Tricks"}
 # tutte le clip del portiere in partita stanno nel pacchetto essenziale:
 # la parata dipende dalle mani vere, deve essere la stessa a ogni livello
-LOW_ROLES = {"gkSave", "gkPunch", "gkCatch", "gkThrow", "gkKick"}
+LOW_ROLES = {"gkSave", "gkPunch", "gkCatch", "gkThrow", "gkKick",
+             # partenze e arresti: senza, al livello basso chi parte da fermo
+             # traslava in piedi (idle fuso con la camminata) e l'arresto
+             # sceglieva fra due clip sole in avanti
+             "start", "stop"}
 LOW_STYLES = {("loco", "defense"), ("loco", "keeper")}
 
 # specchiate in fase di build: [originale, nome della copia]. La libreria ha una

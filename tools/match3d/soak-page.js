@@ -49,7 +49,26 @@
     jumpRatio: 4,
     jumpFloor: 0.03,
     frozeBelow: 0.01,
-    stepMax: 0.8
+    stepMax: 0.8,
+    // Corpo agganciato alla posizione di gioco: il bacino, in orizzontale,
+    // resta entro bodyOff m dall'anello a terra (Player.anchor) e lo scarto
+    // cambia al massimo bodyStep m in 1/60 s. Root motion rimasta nelle clip,
+    // salti al giro di una clip e cambi di playback spostano il corpo senza
+    // ruotare le ossa: il controllo di continuita' non li vede (bug trovato:
+    // bacino scalato per le gambe e radice no, 20 cm indietro e poi avanti in
+    // un fotogramma a ogni giro della corsa).
+    bodyOff: 0.10,
+    bodyStep: 0.03,
+    // Niente scivolamento da fermo: oltre stillSpeed m/s, entro stillFrames
+    // fotogrammi almeno stepShare della posa viene da clip con passi (corsa
+    // del blend tree, partenza o svolta che avanza, o un gesto la cui radice
+    // si sposta oltre stepRoot m/s; un arresto conta solo finche' si sposta),
+    // mai una posa in piedi o un giro sul posto che trasla (bug trovato:
+    // l'arresto restava a peso pieno mentre il giocatore ripartiva).
+    stillSpeed: 0.5,
+    stillFrames: 3,
+    stepShare: 0.5,
+    stepRoot: 0.3
   };
 
   const S = window.__soak = {};
@@ -58,6 +77,7 @@
     const m = window.__m3d;
     const C = await import(new URL('src/js/match3d/config.js', location.href).href);
     S.C = C;
+    S.A = await import(new URL('src/js/match3d/avatar.js', location.href).href);
     cancelAnimationFrame(m.raf);
     // Bug trovato: il primo requestAnimationFrame arriva con un tempo precedente
     // all'avvio (macchina carica) e il passo negativo alzava tutti i giocatori
@@ -82,6 +102,13 @@
     m.controls.pad = null;
     m.controls._pollPad = () => null;
     m.onPad = m.onPadLost = () => {};
+    // nessuna pausa nel test: un controller vero collegato al PC la apriva
+    // per un'altra via e la partita restava ferma per sempre. Si registra da dove
+    S.pauses = [];
+    m.openExit = () => { if (S.pauses.length < 3) S.pauses.push(new Error().stack.split('\n').slice(1, 6).join(' <- ')); };
+    // ...anche durante il caricamento, prima di queste righe (controller
+    // collegato o scollegato in quel momento): la partita partiva in pausa
+    if (m.hud.exitOpen || m.paused) { S.pauses.push('aperta durante il caricamento'); Object.getPrototypeOf(m).closeExit.call(m); }
     S.m = m;
     S.frames = 0;
     S.v = {};
@@ -91,7 +118,8 @@
       noReach: 0, gestures: {}, runGestures: {}, kicks: {}, skateSum: 0, skateN: 0,
       duels: {}, foulKinds: {}, slideFrom: {}, through: 0, throughDone: 0, throughLost: 0, goalShots: [], replays: 0, kickoffs: 0, kickoffReceived: 0, kickoffWhistled: 0,
       kickFoot: { n: 0, sum: 0, max: 0, over: 0 },
-      boneMax: 0                 // rad: la rotazione piu' grande di un osso in un passo
+      boneMax: 0,                // rad: la rotazione piu' grande di un osso in un passo
+      bodyOff: 0, bodyStep: 0    // m: scarto bacino-anello piu' grande e sua variazione piu' grande in un passo
     };
     S.byAvatar = new Map();
     for (const p of [...m.everyone, m.referee.p]) S.byAvatar.set(p.avatar, p);
@@ -237,7 +265,7 @@
         let d = Infinity;
         for (const k of ['LeftToeBase', 'RightToeBase', 'LeftFoot', 'RightFoot']) {
           const e = r[k].matrixWorld.elements;
-          d = Math.min(d, Math.hypot(e[12] + p.pos.x - p.mesh.position.x - b.pos.x, e[14] + p.pos.z - p.mesh.position.z - b.pos.z));
+          d = Math.min(d, Math.hypot(e[12] + p.pos.x - p.anchor.x - b.pos.x, e[14] + p.pos.z - p.anchor.z - b.pos.z));
         }
         const K = S.stats.kickFoot;
         K.n++; K.sum += d; K.max = Math.max(K.max, d);
@@ -258,6 +286,14 @@
     const meta = S.m.tpl.meta[name];
     if (/^slide_tackle/.test(name) || (meta && meta.role === 'slide')) st.slides++;
     if (p && p.speed > T.runGestureSpeed) st.runGestures[name] = (st.runGestures[name] || 0) + 1;
+    // ultimi gesti del giocatore, negli esempi: quello che c'era prima e' gia' sfumato
+    if (p) {
+      let ps = S.st.get(p);
+      if (!ps) S.st.set(p, ps = {});
+      const r = ps.recent || (ps.recent = []);
+      r.push(S.frames + ' ' + name);
+      if (r.length > 4) r.shift();
+    }
   };
 
   S.clock = () => { const m = S.m; return m.rules && m.rules.clockText ? m.rules.clockText() + ' ' + m.rules.half + 'T' : ''; };
@@ -296,6 +332,7 @@
     if (v.examples.length < EXAMPLES) {
       const ex = Object.assign({ t: S.clock(), frame: S.frames }, S.describe(p), extra || {});
       const st = p && S.st.get(p);
+      if (st && st.recent) ex.gesti_recenti = st.recent.slice();
       if (!v.examples.length && st && st.hist) ex.storia = ['frame velocita passo angolo corpo fase freq punta_sx punta_dx scivola pesi busto', ...st.hist.map((r) => r.join(' '))];
       v.examples.push(ex);
     }
@@ -309,6 +346,32 @@
   };
 
   const wy = (b) => b.matrixWorld.elements[13];
+
+  // Velocita' della radice di una clip-gesto in m/s reali: da quanto e'
+  // avanzato il suo tempo dall'ultimo fotogramma (`was`), qualunque cosa lo
+  // muova (playback, distanza percorsa); senza, dal playback. Una partenza o
+  // un contrasto si spostano, la coda di un arresto o un giro sul posto no.
+  S.clipSpeed = (a, was) => {
+    const tpl = S.m.tpl, name = a.getClip().name, t = a.time;
+    if (was !== undefined) {
+      const u = S.A.rootAt(tpl, name, was), v = S.A.rootAt(tpl, name, t);
+      return Math.hypot(v.a - u.a, v.s - u.s) / DT;
+    }
+    const k = Math.abs(a.timeScale);
+    if (!k) return 0;
+    const u = S.A.rootAt(tpl, name, Math.max(0, t - 0.05)), v = S.A.rootAt(tpl, name, t + 0.05);
+    return Math.hypot(v.a - u.a, v.s - u.s) / 0.1 * k;
+  };
+
+  // Clip che fanno la posa, con peso e tempo: per capire chi sposta il corpo.
+  S.poseClips = (p) => {
+    const mx = p.avatar.mixer, out = [];
+    for (let i = 0; i < mx._nActiveActions; i++) {
+      const a = mx._actions[i], ew = a.getEffectiveWeight();
+      if (ew > 0.05) out.push(a.getClip().name + ' ' + ew.toFixed(2) + '@' + a.time.toFixed(2));
+    }
+    return out.join(', ');
+  };
 
   S.checkPlayer = (p) => {
     const m = S.m, av = p.avatar, g = p.gait, mx = av.mixer;
@@ -334,13 +397,15 @@
     }
     let total = 0, gestureW = 0;
     const one = av.one && av.one.a, prev = av.prevOne && av.prevOne.a;
+    // gesti ancora prima che finiscono di sfumare (Avatar.older)
+    const older = new Set((av.older || []).map((x) => x.a));
     for (let i = 0; i < mx._nActiveActions; i++) {
       const a = mx._actions[i];
       const ew = a.getEffectiveWeight();
       total += ew;
       if (slotSet.has(a)) continue;
       gestureW += ew;
-      if (a !== one && a !== prev && ew > 0.01) S.flag('mixer: clip estranea ancora attiva', p, { clip: a.getClip().name, peso: +ew.toFixed(2) });
+      if (a !== one && a !== prev && !older.has(a) && ew > 0.01) S.flag('mixer: clip estranea ancora attiva', p, { clip: a.getClip().name, peso: +ew.toFixed(2) });
     }
     if (total < 1 - T.weightTol) S.flag('mixer: pesi totali sotto 1 (entra la posa di riposo)', p, { somma: +total.toFixed(3) });
     if (total > 1 + T.weightTol) S.flag('mixer: pesi totali oltre 1', p, { somma: +total.toFixed(3) });
@@ -365,7 +430,7 @@
       // quota ferma (idle e guardia del portiere) attesa per la velocita' del passo
       // quota ferma attesa: per ogni stile, sotto la sua camminata si e' fermi
       let want = 0;
-      for (const st in g.sw) want += g.sw[st] * (1 - Math.min(1, Math.max(0, g.speed / g.L.styles[st].walk)));
+      for (const st in g.sw) want += g.sw[st] * (1 - Math.min(1, Math.max(0, g.speed / (g.L.styles[st].walk * S.C.ANIM.walkFull))));
       const still = 1 - g.moving;
       S.persist(st, 'incoh', Math.abs(still - want) > T.incoherent, T.incoherentFrames, 'clip incoerente con la velocita\'', p, { fermo: +still.toFixed(2), atteso: +want.toFixed(2) });
     } else st.incoh = 0;
@@ -403,6 +468,48 @@
 
     // 5. numeri validi
     if (!Number.isFinite(p.pos.x) || !Number.isFinite(p.pos.z) || !Number.isFinite(wy(r.Hips))) S.flag('posizione non valida (NaN)', p);
+
+    // passo continuo: niente riposizionamento (place) e nessun passo saltato (replay)
+    const cont = st.qWarm > 0 && st.qFrame === S.frames - 1;
+    const he = r.Hips.matrixWorld.elements, mp = p.anchor;
+
+    // 7. corpo agganciato alla posizione di gioco: bacino e anello a terra
+    const ox = he[12] - mp.x, oz = he[14] - mp.z, off = Math.hypot(ox, oz);
+    const offStep = cont && st.ox !== undefined ? Math.hypot(ox - st.ox, oz - st.oz) : 0;
+    if (off > S.stats.bodyOff) S.stats.bodyOff = off;
+    if (offStep > S.stats.bodyStep) S.stats.bodyStep = offStep;
+    const offBad = off > T.bodyOff;
+    if (offBad && !st.offBad) S.flag('corpo: bacino lontano dall\'anello a terra', p, { scarto_cm: +(off * 100).toFixed(1), clip: S.poseClips(p) });
+    st.offBad = offBad;
+    const ry = p.mesh.rotation.y, turn = st.ry === undefined ? 0 : Math.atan2(Math.sin(ry - st.ry), Math.cos(ry - st.ry));
+    if (offStep > T.bodyStep) S.flag('corpo: lo scarto dall\'anello salta in un fotogramma', p, { salto_cm: +(offStep * 100).toFixed(1), scarto_cm: [+(Math.hypot(st.ox, st.oz) * 100).toFixed(1), +(off * 100).toFixed(1)], giro_corpo: +turn.toFixed(3), clip: S.poseClips(p) });
+    st.ox = ox; st.oz = oz; st.ry = ry;
+
+    // 8. niente scivolamento da fermo: chi si sposta fa dei passi
+    const moved = cont && st.mx !== undefined ? Math.hypot(mp.x - st.mx, mp.z - st.mz) / DT : 0;
+    st.mx = mp.x; st.mz = mp.z;
+    let steps = 0;
+    const times = st.times || (st.times = new Map()), was = st.was || (st.was = new Map());
+    was.clear();
+    for (const [a, t] of times) was.set(a, t);
+    times.clear();
+    const cyc = new Set();
+    for (let i = 0; i < av.slots.length; i++) if (av.slots[i] && g.isCycle(i)) cyc.add(av.slots[i]);
+    for (let i = 0; i < mx._nActiveActions; i++) {
+      const a = mx._actions[i], ew = a.getEffectiveWeight();
+      if (cyc.has(a)) { if (ew > 0) steps += ew; continue; }
+      times.set(a, a.time);
+      // il gesto che sposta il giocatore con la sua radice (contrasto,
+      // scivolata, tuffo, esultanza): lo spostamento e' quello della clip
+      const driven = p.action && p.action.root && a.getClip().name === p.action.clip && a === (av.one && av.one.a);
+      // partenza o svolta che avanza: e' una clip con passi anche dove la sua
+      // radice rallenta (il passo di perno di una partenza a 270 gradi)
+      const meta = S.m.tpl.meta[a.getClip().name], prevT = cont ? was.get(a) : undefined;
+      const stepping = !!meta && (meta.role === 'start' || meta.role === 'turn') && prevT !== undefined && a.time > prevT + 1e-4;
+      if (ew > 0 && moved > T.stillSpeed && (driven || stepping || S.clipSpeed(a, prevT) > T.stepRoot)) steps += ew;
+    }
+    S.persist(st, 'still', moved > T.stillSpeed && steps < T.stepShare, T.stillFrames + 1, 'corpo: posa ferma che trasla (niente passi)', p,
+      { spostamento_ms: +moved.toFixed(2), quota_passi: +steps.toFixed(2), clip: S.poseClips(p) });
 
     // 6. continuita' di tutte le ossa: nessuna rotazione improvvisa. Riparte
     // dopo un riposizionamento o un salto di passi (replay).
@@ -599,7 +706,9 @@
         kickoffWhistled: S.stats.kickoffWhistled,
         kickFootAvg: +(S.stats.kickFoot.sum / Math.max(1, S.stats.kickFoot.n)).toFixed(3),
         kickFootMax: +S.stats.kickFoot.max.toFixed(3),
-        boneMaxDeg: +(S.stats.boneMax * 180 / Math.PI).toFixed(1)
+        boneMaxDeg: +(S.stats.boneMax * 180 / Math.PI).toFixed(1),
+        bodyOffMaxCm: +(S.stats.bodyOff * 100).toFixed(1),
+        bodyStepMaxCm: +(S.stats.bodyStep * 100).toFixed(1)
       },
       foulKinds: S.stats.foulKinds,
       slideFrom: S.stats.slideFrom,
@@ -620,6 +729,7 @@
         return out;
       })(),
       anim: { level: m.animLevel, load: m.loadStats, cycles: S.cycleClips },
+      pauses: S.pauses,
       runGestures: S.stats.runGestures,
       kicks: S.stats.kicks,
       violations: S.v

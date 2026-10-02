@@ -279,7 +279,8 @@ export class SetPieces {
     const m = this.m, set = m.rules.set, f = set.fk, C = FK;
     if (auto) this.autoAim(p, f);
     const h = headingOf(m.ball.pos.x - p.pos.x, m.ball.pos.z - p.pos.z);
-    p.heading = p.moveHeading = h;
+    p.face(h);
+    p.moveHeading = h;
     const R = this.runup(C.clip), end = Math.min(R.end, R.contact + C.after);
     p.avatar.playOnce(C.clip, 0, end);
     p.action = rootAction(m, p, C.clip, 0, end, 1, {

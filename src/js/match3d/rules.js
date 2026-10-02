@@ -78,7 +78,7 @@ export class Rules {
     if (!this.firstKick) this.firstKick = side;
     m.cameraFocus = null;
     const p = m.placeKickoff(side, instant);
-    if (!instant) for (const q of m.everyone) if (m.isCelebrating(q)) q.avatar.endGesture();
+    if (!instant) for (const q of m.everyone) if (m.isCelebrating(q)) { q.avatar.endGesture(); if (q.action && q.action.celebrate) q.action = null; }
     if (!m.poss.free) m.poss.loose('fischio');
     m.ball.reset(0, 0);
     m.gain(p, "calcio d'inizio");
@@ -520,7 +520,11 @@ export class Rules {
       // un'esultanza della libreria (pacchetto extra), diversa di gol in gol; senza, quella Mixamo
       const list = m.tpl.lib ? m.tpl.lib.role('celebrate') : [];
       const clip = list.length ? list[(scorer.number + m.goals.home + m.goals.away) % list.length].name : C.clip;
-      scorer.avatar.playOnce(clip, C.from, Math.min(C.hold, clipDuration(m.tpl, clip) || C.hold));
+      const hold = Math.min(C.hold, clipDuration(m.tpl, clip) || C.hold);
+      scorer.avatar.playOnce(clip, C.from, hold);
+      // la corsa dell'esultanza (fino a 8 m nella libreria) sposta il
+      // giocatore: il corpo resta sulla sua posizione di gioco, con anello e ombra
+      scorer.action = rootAction(m, scorer, clip, C.from, C.from + hold, 1, { celebrate: true });
       m.cameraFocus = scorer;
     }
     this.next = m.otherSide(team);

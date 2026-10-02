@@ -3,7 +3,7 @@ import { ANIM, PLAYER, PITCH, GOAL, PASS, SHOT, ATTR, THROUGH, CROSS, FORMATIONS
 import { playerParams } from './attributes.js';
 import { Avatar } from './avatar.js';
 import { Locomotion } from './anim.js';
-import { pickTransition, stopTime } from './anim-pick.js';
+import { pickTransition, stopTime, rootPath, distAt, timeAtDist, timeAtSpeed } from './anim-pick.js';
 import { rollSpeedFor, rollTime, loftFor } from './ball.js';
 
 const HL = PITCH.length / 2;
@@ -46,6 +46,7 @@ export class Player {
     this.params = playerParams(data);
     this.pos = new THREE.Vector3();
     this.prev = new THREE.Vector3();
+    this.anchor = new THREE.Vector3();        // posizione di gioco disegnata (anello, ombra): pos interpolata
     this.vel = new THREE.Vector3();
     this.heading = headingOf(attackDir, 0);   // busto
     this.moveHeading = this.heading;          // direzione della corsa
@@ -66,6 +67,7 @@ export class Player {
     this.wantSpeed = 0;        // ultima corsa voluta (drive): velocita' e direzione, per partenze e arresti
     this.wantDir = this.heading;
     this.transCool = 0;        // secondi prima della prossima partenza, arresto o svolta
+    this.trans = null;         // transizione in corso: { one, role, drive } (transition)
 
     this.avatar = new Avatar(tpl, material, data.number, kit.primary);
     this.mesh = this.avatar.object;
@@ -94,8 +96,27 @@ export class Player {
     this.knockTimer = 0;
     this.stagger = this.burst = 0;
     this.press = null;
+    // una partenza o un arresto in corso seguivano la distanza: senza la loro
+    // transizione la clip restava ferma a peso pieno mentre il giocatore camminava
+    if (this.trans) this.avatar.endGesture();
+    this.trans = null;
+    this.concedeWait = null;
     this.gait.reset();
     this.avatar.resetJumps();
+  }
+
+  // Gira di colpo il busto verso `h` (calcio piazzato, primo tocco orientato,
+  // scivolata, caduta, stacco di testa). Busto prima e dopo il passo e corpo
+  // visibile rispetto al busto (gait.yaw) si spostano insieme: il corpo
+  // mostrato resta dov'era e raggiunge il busto alla sua velocita' (anim.js).
+  // Cambiando solo heading, per un fotogramma il corpo mostrato saltava
+  // dell'intera rotazione (0,87 rad nella punizione) e il bacino con lui.
+  face(h) {
+    const d = wrap(h - this.heading);
+    this.heading = wrap(this.heading + d);
+    this.prevHeading = wrap(this.prevHeading + d);
+    this.gait.yaw = wrap(this.gait.yaw - d);
+    this.gait.prevYaw = wrap(this.gait.prevYaw - d);
   }
 
   get dirX() { return Math.sin(this.heading); }
@@ -149,8 +170,9 @@ export class Player {
     // Spinta forte alla partenza e dolce vicino al massimo; frenata piena in
     // corsa e piu' morbida all'ultimo passo.
     const run = Math.min(1, this.speed / Math.max(1, top));
+    this.decel = o.decel || PLAYER.decel;     // frenata di questo passo (stopDistance)
     const rate = want > this.speed ? P.accel * (PLAYER.accelLow + (PLAYER.accelHigh - PLAYER.accelLow) * run)
-      : (o.decel || PLAYER.decel) * (PLAYER.decelLow + (1 - PLAYER.decelLow) * run);
+      : this.decel * (PLAYER.decelLow + (1 - PLAYER.decelLow) * run);
     this.speed += clamp(want - this.speed, -rate * dt, rate * dt);
     this.vel.set(Math.sin(this.moveHeading) * this.speed, 0, Math.cos(this.moveHeading) * this.speed);
     this.pos.addScaledVector(this.vel, dt);
@@ -187,12 +209,13 @@ export class Player {
 
   sync(alpha, dt) {
     const m = this.mesh;
-    m.position.lerpVectors(this.prev, this.pos, alpha);
+    this.anchor.lerpVectors(this.prev, this.pos, alpha);
+    m.position.copy(this.anchor);
     // inclinazione in corsa: l'avatar la riduce quanto pesa il gesto (update)
     const lean = this.gait.leanAt(alpha);
     // il corpo puo' girarsi verso la corsa (anim.js, orientation warping)
     m.rotation.set(lean.pitch, this.prevHeading + wrap(this.heading - this.prevHeading) * alpha + this.gait.yawAt(alpha), lean.roll);
-    this.shadow.position.set(m.position.x, 0.011, m.position.z);
+    this.shadow.position.set(this.anchor.x, 0.011, this.anchor.z);
     this.avatar.update(dt, this.gait, alpha);
   }
 
@@ -204,58 +227,163 @@ export class Player {
 
   // Partenze, arresti e cambi di direzione con le clip della libreria, sopra
   // il blend tree (skill "Fluidita'"). Il movimento resta quello della
-  // fisica: la clip si sceglie per rotazione e velocita' e si riproduce
-  // alla velocita' che fa coincidere i suoi tempi con quelli del codice.
+  // fisica: la clip si sceglie per rotazione e velocita'. Partenze e arresti
+  // seguono la distanza percorsa (stepTransition); svolte e giri sul posto
+  // si riproducono alla velocita' che fa coincidere i tempi con quelli del codice.
   transition(dt) {
     const T = ANIM.trans, av = this.avatar;
-    if ((this.transCool -= dt) > 0) return;
+    // la transizione in corso: finita o sostituita da un altro gesto. Anche
+    // mentre sfuma resta sua: un arresto che sfuma e un comando di corsa
+    // diventano una partenza (l'attesa fra due transizioni la impediva e il
+    // giocatore ripartiva in piedi, con la corsa del blend tree)
+    if (this.trans && av.one !== this.trans.one) { this.trans = null; this.transCool = T.cooldown; }
+    const redo = !!this.trans && this.stepTransition(dt, this.trans);
+    if ((this.transCool -= dt) > 0 && !redo) return;
     const style = this.locoStyle === 'dribble' || this.locoStyle === 'normal' || this.locoStyle === 'defense' ? this.locoStyle : null;
-    if (!style || av.one || this.action || this.down || this.keeper || this.sentOff || !av.tpl.lib) return;
+    if (!style || (av.one && !redo) || this.action || this.down || this.keeper || this.sentOff || !av.tpl.lib) { if (redo) this.cutTransition(); return; }
     const tpl = av.tpl, g = this.gait, v = this.speed, want = this.wantSpeed;
-    let e = null, from = 0, rate = 1, hold = 0;
+    let e = null, from = 0, rate = 1, hold = 0, drive = null, role = null;
     const turn = wrap(this.wantDir - this.heading);
+    // fermi: i pesi della corsa; ripartendo da un arresto la velocita' vera
+    const still = redo ? v < T.restartBelow : g.blendSpeed < T.startBelow;
     if (style === 'defense') {
       // in guardia solo i giri sul posto verso il portatore; il resto e' il blend tree
-    } else if (g.blendSpeed < T.startBelow && want > T.startWant && Math.abs(wrap(this.wantDir - this.moveHeading)) < 0.3) {
-      // partenza da fermo verso `turn`
+    } else if (still && want > T.startWant && Math.abs(wrap(this.wantDir - this.moveHeading)) < 0.3) {
+      // partenza verso `turn`, dal passo che ha la velocita' del giocatore
       e = pickTransition(tpl, this, 'start', style, { yaw: turn, vOut: Math.min(want, T.startTop) });
-      if (e) { rate = T.startRate; hold = Math.min(e.meta.dur, T.startHold); }
-    } else if (v > T.stopAbove && want < T.stopWant) {
-      // arresto: la clip si ferma quando si ferma il codice
+      const path = e && rootPath(tpl, e.name);
+      if (path) {
+        role = 'start';
+        // i piedi si cercano solo dopo: prima la radice va piu' piano del giocatore
+        const at = timeAtSpeed(path, Math.max(v, T.drive.onset));
+        from = av.matchStart(e.name, at, at + T.drive.match, at);
+        drive = { path, from, end: e.meta.dur, until: Infinity };
+      } else e = null;
+    } else if (!redo && v > T.stopAbove && want < T.stopWant) {
+      // arresto: la radice della clip si ferma dove si ferma il codice
       // si ferma girandosi verso dove guardera' (la palla, il suo posto)
       const face = this.faceTo !== undefined ? wrap(this.faceTo - this.heading) : 0;
       e = pickTransition(tpl, this, 'stop', style, { yaw: Math.abs(face) > 0.6 ? face : 0, vIn: v, dir: wrap(this.moveHeading - this.heading) });
-      if (e) {
-        const codeStop = v / (PLAYER.decel * PLAYER.decelLow * 1.4);
-        rate = clamp(stopTime(tpl, e.name) / Math.max(0.15, codeStop), T.rate[0], T.rate[1]);
-        hold = Math.min(e.meta.dur / rate, stopTime(tpl, e.name) / rate + T.stopTail);
-      }
-    }
-    if (e) {
-      // gia' scelta
-    } else if (style !== 'defense' && v > T.turnAbove && Math.abs(turn) > T.turnAngle && want > T.startWant) {
-      // inversione in corsa
-      e = pickTransition(tpl, this, 'turn', style, { yaw: turn, vIn: v, dir: wrap(this.moveHeading - this.heading) });
-      if (e && e.meta.ev && e.meta.ev.turn) {
-        const tr = e.meta.ev.turn, codeTurn = Math.abs(turn) / PLAYER.faceMax + T.turnLag;
-        rate = clamp((tr.to - tr.from) / codeTurn, T.rate[0], T.rate[1]);
-        from = Math.max(0, tr.from - T.lead * rate);
-        hold = Math.min((e.meta.dur - from) / rate, T.turnHold);
+      const path = e && rootPath(tpl, e.name);
+      if (path) {
+        role = 'stop';
+        const halt = stopTime(tpl, e.name), at = timeAtDist(path, Math.max(0, distAt(path, halt) - this.stopDistance()));
+        // dal fotogramma con i piedi dove li ha il passo in corso: dal primo
+        // fotogramma, con la gamba sbagliata avanti, a meta' della dissolvenza
+        // il ginocchio girava di 0,42 rad in un passo e un piede entrava nell'erba
+        from = av.matchStart(e.name, Math.max(0, at - T.drive.match), Math.min(halt, at + T.drive.match), at);
+        drive = { path, from, end: Math.min(e.meta.dur, halt + T.stopTail), until: halt };
       } else e = null;
-    } else if (v < T.inPlaceBelow && want < T.inPlaceWant && this.faceTo !== undefined && Math.abs(wrap(this.faceTo - this.heading)) > T.inPlaceAngle) {
+    }
+    if (!e && !redo && style !== 'defense' && v > T.turnAbove && Math.abs(turn) > T.turnAngle && want > T.startWant) {
+      // inversione in corsa: anche lei segue la distanza percorsa. La clip
+      // gira piantando i piedi, la fisica fa una curva a 2-2,6 m/s: a tempo,
+      // la posa della girata traslava. La rotazione che si vede e' quella del
+      // gioco (la clip sta sul posto nel riferimento della sua radice)
+      e = pickTransition(tpl, this, 'turn', style, { yaw: turn, vIn: v, dir: wrap(this.moveHeading - this.heading) });
+      const path = e && e.meta.ev && e.meta.ev.turn && rootPath(tpl, e.name);
+      if (path) {
+        const tr = e.meta.ev.turn, at = Math.max(0, tr.from - T.lead);
+        role = 'turn';
+        from = av.matchStart(e.name, Math.max(0, at - T.drive.match), Math.min(tr.to, at + T.drive.match), at);
+        drive = { path, from, end: Math.min(e.meta.dur, tr.to + T.turnTail), until: Infinity };
+      } else e = null;
+    } else if (!e && !redo && v < T.inPlaceBelow && want < T.inPlaceWant && this.faceTo !== undefined && Math.abs(wrap(this.faceTo - this.heading)) > T.inPlaceAngle) {
       // giro sul posto verso lo sguardo
       const yaw = wrap(this.faceTo - this.heading);
       e = pickTransition(tpl, this, 'turnInPlace', style === 'dribble' ? 'normal' : style, { yaw });
       if (e && e.meta.ev && e.meta.ev.turn) {
         const tr = e.meta.ev.turn, codeTurn = Math.abs(yaw) / PLAYER.faceMax + T.turnLag;
+        role = 'turnInPlace';
         rate = clamp((tr.to - tr.from) / codeTurn, T.rate[0], T.inPlaceRate);
         from = Math.max(0, tr.from - T.lead * rate);
         hold = Math.min((e.meta.dur - from) / rate, (tr.to - from) / rate + T.stopTail);
       } else e = null;
     }
-    if (!e) return;
-    av.playOnce(e.name, from, hold, rate, T.fade, true);
-    this.transCool = hold + T.cooldown;
+    if (drive) {
+      drive.d0 = distAt(drive.path, from);
+      drive.d = 0;
+      drive.t = drive.prev = from;
+      // limite di sicurezza: di norma la clip sfuma prima (stepTransition);
+      // una svolta al massimo T.turnHold secondi
+      hold = role === 'turn' ? T.turnHold : (drive.end - from) / T.drive.rate[0] + ANIM.fadeOut;
+      rate = 0;
+    }
+    if (!e) { if (redo) this.cutTransition(); return; }
+    // un arresto interrotto sfuma sotto la partenza (Avatar.playOnce) in
+    // T.redoFade s: in 0,12 s la sua coda ferma traslava ancora per 4
+    // fotogrammi; in 0,07 s, con pose molto diverse, le ossa giravano di 0,35
+    // rad in un passo
+    // un arresto entra in T.stopFade s: da 5 m/s in curva, in 0,12 s, il
+    // ginocchio girava di 0,36 rad in un passo (l'arresto si sposta: niente posa ferma)
+    // Un arresto gia' nella sua coda ferma (radice ferma) se ne va in T.cut s:
+    // nel vuoto entra la corsa del blend tree, che ha i passi
+    const old = redo && this.trans && this.trans.drive, tail = !!old && old.t >= old.until;
+    av.playOnce(e.name, from, hold, rate, redo ? T.redoFade : role === 'stop' ? T.stopFade : T.fade, true, tail ? T.cut : redo ? T.redoFade : ANIM.chainFade);
+    this.trans = { one: av.one, role, drive };
+    av.one.drive = drive;
+    this.transCool = T.cooldown;
+  }
+
+  // Un passo della transizione in corso. Partenze e arresti: il tempo della
+  // clip e' quello in cui la sua radice ha fatto i metri fatti dal giocatore
+  // (niente piede che scivola, niente corpo che resta indietro rispetto
+  // all'anello), con il playback nei limiti di drive.rate; dopo il punto in
+  // cui la radice si ferma, la coda dell'arresto va a velocita' normale.
+  // true: la transizione va sostituita (un arresto o un giro sul posto
+  // interrotti da una nuova corsa).
+  stepTransition(dt, tr) {
+    const T = ANIM.trans, want = this.wantSpeed, d = tr.drive;
+    if (!tr.cut && (tr.role === 'stop' || tr.role === 'turnInPlace') && want > T.startWant) return true;
+    // partenza lasciata subito: torna la corsa, dalla posa in cui e'. La clip
+    // segue ancora la distanza: ferma per un passo, traslava sotto la corsa
+    if (!tr.cut && tr.role === 'start' && want < T.stopWant) this.cutTransition();
+    if (!d || !(dt > 0)) return false;
+    d.prev = d.t;
+    d.d += Math.hypot(this.pos.x - this.prev.x, this.pos.z - this.prev.z);
+    // arresti e svolte, mentre la clip entra, al massimo drive.fadeRate: da
+    // 7,5 m/s la clip correva a 2,2 volte e, fusa a meta' con lo scatto, il
+    // ginocchio girava di 0,4 rad in un passo; il ritardo si recupera dopo.
+    // Non le partenze: la fisica accelera subito e la clip deve seguirla.
+    // Le svolte al massimo T.rate[1], come quando andavano a tempo
+    const R = T.drive.rate, entering = tr.role !== 'start' && tr.one.t < tr.one.fade;
+    const top = Math.min(R[1], entering ? T.drive.fadeRate : tr.role === 'turn' ? T.rate[1] : R[1]);
+    let t = d.t < d.until ? timeAtDist(d.path, d.d0 + d.d) : d.t + dt;
+    t = Math.min(d.end, clamp(t, d.t + R[0] * dt, d.t + top * dt));
+    d.t = t;
+    // la clip sfuma nella corsa prima del suo ultimo fotogramma: ferma li',
+    // traslerebbe durante la dissolvenza
+    const rate = (d.t - d.prev) / dt;
+    // radice della clip gia' ferma e giocatore ancora in movimento (frenata
+    // piu' lunga del previsto): la corsa riprende, la posa ferma traslerebbe.
+    // Anche un arresto che non sta dietro alla fisica: frenando piano (fischio,
+    // PLAYER.coastDecel) la sua radice arrivava al trascinamento finale a meno
+    // di ANIM.stillRoot m/s anche a playback massimo, col giocatore a 0,6-0,7
+    const slow = tr.role === 'stop' && (distAt(d.path, d.t) - distAt(d.path, d.prev)) / dt < ANIM.stillRoot;
+    const cut = this.speed > ANIM.endMove && (d.t >= d.until || slow);
+    if (cut || d.t + rate * ANIM.fadeOut >= d.end) this.avatar.fadeGesture(cut ? T.cut : undefined);
+    return false;
+  }
+
+  // Transizione interrotta senza una partenza: la corsa riprende in fretta.
+  // Mentre sfuma la clip segue ancora la distanza (ferma, traslerebbe).
+  cutTransition() {
+    this.avatar.fadeGesture(ANIM.trans.cut);
+    if (this.trans) this.trans.cut = true;
+    this.transCool = ANIM.trans.cooldown;
+  }
+
+  // Metri che servono per fermarsi da qui con la frenata dell'ultimo drive()
+  // (joystick lasciato, o quella lenta dei fischi: PLAYER.coastDecel).
+  stopDistance() {
+    const dt = 1 / 60, top = Math.max(1, this.params.maxSpeed), decel = this.decel || PLAYER.decel;
+    let v = this.speed, d = 0;
+    for (let i = 0; i < 600 && v > 0; i++) {
+      const run = Math.min(1, v / top);
+      v = Math.max(0, v - decel * (PLAYER.decelLow + (1 - PLAYER.decelLow) * run) * dt);
+      d += v * dt;
+    }
+    return d;
   }
 
   // Sposta il giocatore senza passare dalla corsa (radice di una clip,
@@ -278,8 +406,13 @@ export class Player {
 }
 
 // Due giocatori non si compenetrano; chi e' fermo non viene spostato.
-export function separate(players, anchored) {
+// Priorita' (`firm`: 2 ancorato, 3 piu' che ancorato, 0 altrimenti): poi chi
+// sta fermo (sotto PLAYER.pushStill: spinto, la sua posa in piedi scivolava
+// sull'erba), poi chi si muove, che si scosta di tutto; a pari priorita'
+// meta' per uno, nessuno dei due se ancorati.
+export function separate(players, firm) {
   const min = PLAYER.radius * 2;
+  const rank = (p) => firm(p) || (p.speed < PLAYER.pushStill ? 1 : 0);
   for (let i = 0; i < players.length; i++) {
     for (let j = i + 1; j < players.length; j++) {
       const a = players[i], b = players[j];
@@ -288,8 +421,9 @@ export function separate(players, anchored) {
       if (d >= min) continue;
       const nx = d > 1e-4 ? dx / d : 1, nz = d > 1e-4 ? dz / d : 0;
       const push = min - d;
-      const fa = anchored(a) ? 0 : anchored(b) ? 1 : 0.5;
-      const fb = anchored(b) ? 0 : 1 - fa;
+      const ra = rank(a), rb = rank(b), lock = ra === rb && ra >= 2;
+      const fa = lock || ra > rb ? 0 : rb > ra ? 1 : 0.5;
+      const fb = lock || rb > ra ? 0 : 1 - fa;
       a.pos.x -= nx * push * fa; a.pos.z -= nz * push * fa;
       b.pos.x += nx * push * fb; b.pos.z += nz * push * fb;
     }

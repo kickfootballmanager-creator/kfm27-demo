@@ -7,7 +7,7 @@ import { Hud } from './hud.js';
 import { Controls, glyph } from './controls.js';
 import { buildTeam, separate, choosePass, passAim, shotVelocity, pressure, chooseThrough, chooseCross, loftError, headingOf, passSpeed, throughSpeed, throughPoint } from './player.js';
 import { loadPlayerModel, kitMaterial, rootAt, clipDuration, attachLibrary } from './avatar.js';
-import { pickKick, pickTrap, pickIntercept } from './anim-pick.js';
+import { pickKick, pickTrap, pickIntercept, kickStill } from './anim-pick.js';
 import { Possession } from './possession.js';
 import { Debug } from './debug.js';
 import { TeamAI } from './team-ai.js';
@@ -465,9 +465,9 @@ class Match {
   syncMarkers(dt) {
     const c = this.ctrl, t = this.passTarget;
     this.ctrlRing.visible = !!c;
-    if (c) this.ctrlRing.position.set(c.mesh.position.x, 0.02, c.mesh.position.z);
+    if (c) this.ctrlRing.position.set(c.anchor.x, 0.02, c.anchor.z);
     this.targetRing.visible = !!t;
-    if (t) this.targetRing.position.set(t.mesh.position.x, 0.02, t.mesh.position.z);
+    if (t) this.targetRing.position.set(t.anchor.x, 0.02, t.anchor.z);
 
     if (this.charging) this.hud.setPower(this.charge);
     else if (this.barTimer > 0) {
@@ -535,8 +535,11 @@ class Match {
     const celebrating = this.isCelebrating(p);
     const waiting = this.phase === 'goal' && this.rules.t < R.returnDelay;
     const t = p.homeTarget;
-    // al fischio si finisce la corsa rallentando, senza inchiodare
-    if (!t || celebrating || waiting) { p.drive(dt, 0, 0, 0, { decel: PLAYER.coastDecel }); return; }
+    // al fischio si finisce la corsa rallentando, senza inchiodare; il
+    // portiere battuto si ferma e poi si dispera (KeeperAI.concede)
+    const C = p.concedeWait;
+    if (C && p.speed < ANIM.endMove) { p.concedeWait = null; p.avatar.playOnce(C.clip, C.from, C.end); }
+    if (!t || celebrating || waiting) { p.drive(dt, 0, 0, 0, { decel: p.concedeWait ? undefined : PLAYER.coastDecel }); return; }
     p.goTo(dt, t.x, t.z, t.h);
   }
 
@@ -629,7 +632,10 @@ class Match {
       }
     }
     if (inp.mag > 0) {
-      const mag = p.avatar.busy && !withBall ? inp.mag * ANIM.recoverMove : inp.mag;
+      // joystick ridotto solo mentre si finisce un gesto vero: partenze e
+      // arresti fanno parte della corsa (con l'arresto a peso pieno il
+      // giocatore ripartiva a un terzo della velocita', in piedi)
+      const mag = p.avatar.acting && !withBall ? inp.mag * ANIM.recoverMove : inp.mag;
       p.drive(dt, inp.x, inp.z, mag, { sprint: inp.sprint, withBall, close: p.close });
     } else if (inp.sprint && !o && b.live) this.runToBall(dt, p);
     else p.drive(dt, 0, 0, 0, { withBall });
@@ -894,15 +900,32 @@ class Match {
     if (live || setting) this.referee.update(dt);
     else this.referee.p.drive(dt, 0, 0, 0, { face: { x: b.pos.x - this.referee.p.pos.x, z: b.pos.z - this.referee.p.pos.z } });
     this.walkOff(dt);
-    separate(this.bodies, (p) => p === this.ctrl || p.down || (p.action && p.action.root) || p === this.owner);
+    // chi contrasta tiene la posizione anche contro il portatore, che gli
+    // gira attorno: spinto via nella posa del contrasto, scivolava sull'erba
+    // Chi e' a terra o in un gesto guidato dalla radice (caduta, scivolata) non
+    // si sposta mai: spinto via, al passo dopo la radice lo riportava indietro
+    // e oscillava di 0,3-0,6 m a fotogramma
+    separate(this.bodies, (p) => (p.down || (p.action && (p.action.root || p.action.tackle)) ? 3 : p === this.ctrl || p === this.owner ? 2 : 0));
     for (const p of this.everyone) p.confine();
     // chi va addosso al portatore di corsa, soprattutto alle spalle, fa fallo
     bodyContact(this);
     // pesi e fase delle animazioni dopo il movimento: servono subito ai tocchi di palla
     for (const p of this.bodies) { p.locoStyle = this.locoStyleOf(p); p.animStep(dt); }
     for (const p of this.leaving) p.animStep(dt);
-    // lo stop di palla e' un gesto da fermi: chi riparte di corsa lo lascia sfumare nella corsa
-    for (const p of this.everyone) if (!p.action && p.speed > FIRST_TOUCH.cancelAbove && this.isTrap(p.avatar.gestureName())) p.avatar.endGesture();
+    // lo stop di palla e' un gesto da fermi: chi riparte di corsa lo lascia
+    // sfumare nella corsa. Una clip di stop da fermo (radice che non si
+    // sposta) sfuma gia' oltre ANIM.endMove: fino a cancelAbove traslava
+    for (const p of this.everyone) {
+      const g = p.avatar.gestureName();
+      if (!p.action && this.isTrap(g) && p.speed > (this.tpl.meta[g].vIn * this.tpl.scale < ANIM.match.runClip ? ANIM.endMove : FIRST_TOUCH.cancelAbove)) p.avatar.fadeGesture();
+      // un gesto fermo non trascina chi si muove: se la sua clip non si
+      // sposta e il giocatore si', sfuma nella corsa (calcio dopo il contatto,
+      // portiere battuto, stop di palla). Mai durante un'azione in corso.
+      // Anche un giro sul posto: spinto da chi corre, girava traslando
+      const o = p.avatar.one, a = p.action;
+      const moved = Math.hypot(p.pos.x - p.prev.x, p.pos.z - p.prev.z) / dt;
+      if (o && !o.drive && o.t < o.hold && moved > ANIM.endMove && (!a || (a.kick && a.done)) && p.avatar.gestureSpeed() < ANIM.stillRoot) p.avatar.fadeGesture(ANIM.trans.cut);
+    }
 
     if (live || this.rules.userTaking()) this.actions(dt, inp);
 
@@ -1048,14 +1071,24 @@ class Match {
     const bx = b.pos.x - p.pos.x, bz = b.pos.z - p.pos.z;
     const pick = pickKick(this.tpl, p, K, {
       lead, speed: p.speed, ballY: b.pos.y,
+      // durante il calcio il giocatore va verso il bersaglio a K.moveMag del joystick
+      move: (p.speed + K.moveMag * p.params.maxSpeed * PLAYER.jogFactor) / 2,
       turn: wrapAngle(Math.atan2(a.dx, a.dz) - p.heading),
       ballLeft: -(bx * p.rightX + bz * p.rightZ),
       power: kind === 'shot' ? power : clamp(Math.hypot(a.dx, a.dz) / 40, 0, 1),
       lob: kind === 'cross' && a.cross === 'cross'
     });
-    if (pick) p.avatar.playOnce(pick.clip, pick.from, a.end, pick.rate);
-    else if (K.fallback) p.avatar.playOnce(K.fallback.clip, Math.max(0, K.fallback.contact - lead), a.end);
+    // il gesto sfuma prima che la clip finisca (mai prima del contatto): i
+    // passaggi durano 0,33-0,37 s e l'ultimo fotogramma restava fermo a peso
+    // pieno per tutto il recupero mentre il giocatore si spostava
+    const hold = (clip, from, rate) => Math.max(lead, Math.min(a.end, (clipDuration(this.tpl, clip) - from) / rate - ANIM.fadeOut));
+    if (pick) p.avatar.playOnce(pick.clip, pick.from, hold(pick.clip, pick.from, pick.rate), pick.rate);
+    else if (K.fallback) { const from = Math.max(0, K.fallback.contact - lead); p.avatar.playOnce(K.fallback.clip, from, hold(K.fallback.clip, from, 1)); }
     a.clip = pick ? pick.clip : K.fallback && K.fallback.clip;
+    // calcio da fermo: il giocatore non avanza. Quasi fermo al comando prende
+    // una clip sul posto, poi andava verso il bersaglio fino a 1,7 m/s e la
+    // posa del calcio traslava
+    if (a.clip && kickStill(this.tpl, a.clip)) a.moveMag = 0;
     p.action = a;
   }
 
@@ -1292,7 +1325,8 @@ class Match {
   firstTouch(p, inp, cause) {
     const R = ANIM.receive, b = this.ball;
     // intercetto: la gamba che va sulla palla avversaria (clip Intercept della libreria)
-    if (cause === 'intercetto' && !p.keeper && !p.avatar.busy) {
+    // mai durante un'azione (il recupero di un calcio): il gesto sarebbe un altro
+    if (cause === 'intercetto' && !p.keeper && !p.avatar.busy && !p.action) {
       const bx = b.pos.x - p.pos.x, bz = b.pos.z - p.pos.z;
       const pk = pickIntercept(this.tpl, p, { ballLeft: -(bx * p.rightX + bz * p.rightZ), ballAhead: bx * p.dirX + bz * p.dirZ, speed: p.speed });
       if (pk) { p.avatar.playOnce(pk.clip, Math.max(0, pk.contact - R.lead), R.length, 1, R.fade, p.speed > FIRST_TOUCH.receiveBelow); return; }
@@ -1301,18 +1335,18 @@ class Match {
       const ang = Math.acos(Math.max(-1, Math.min(1, inp.x * p.dirX + inp.z * p.dirZ)));
       if (ang > FIRST_TOUCH.minAngle) {
         const want = Math.atan2(inp.x, inp.z), turn = wrapAngle(want - p.heading);
-        p.heading = wrapAngle(p.heading + turn * FIRST_TOUCH.turn);
+        p.face(wrapAngle(p.heading + turn * FIRST_TOUCH.turn));
         p.moveHeading = want;
         p.ballDist = DRIBBLE.touch[1] + DRIBBLE.swing[1] * 0.5;
         // primo tocco orientato: lo stop che porta la palla da quella parte
-        if (!p.avatar.busy) {
+        if (!p.avatar.busy && !p.action) {
           const pk = pickTrap(this.tpl, p, { turn, ballY: b.pos.y, speed: p.speed });
           if (pk) p.avatar.playOnce(pk.clip, 0, R.length, 1, R.fade, true);
         }
         return;
       }
     }
-    if (p.avatar.busy) return;
+    if (p.avatar.busy || p.action) return;
     // stop di palla scelto per altezza della palla e velocita' (la clip parte
     // con la palla al piede); in corsa lo stop in corsa, parte della corsa
     const pk = pickTrap(this.tpl, p, { turn: 0, ballY: b.pos.y, speed: p.speed });

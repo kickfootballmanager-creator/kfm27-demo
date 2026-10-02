@@ -329,6 +329,8 @@ const _twist = new THREE.Quaternion(), _up = new THREE.Vector3(0, 1, 0);
 const smooth01 = (u) => { const c = Math.max(0, Math.min(1, u)); return c * c * (3 - 2 * c); };
 const _hq = new THREE.Quaternion();
 const _id = new THREE.Quaternion();
+const _leanFull = new THREE.Quaternion(), _leanBody = new THREE.Quaternion(), _eul = new THREE.Euler();
+const _yv = new THREE.Vector3(), _fq = new THREE.Quaternion();
 const _iv = new THREE.Quaternion(), _iw = new THREE.Quaternion(), _iq = new THREE.Quaternion(), _ip = new THREE.Quaternion();
 
 // Un calciatore in scena: copia dello scheletro, clip condivise, fusione
@@ -379,6 +381,9 @@ export class Avatar {
     this.feet = new FootLock(this.rig);
     this.one = null;
     this.prevOne = null;       // gesto precedente che sfuma sotto quello nuovo
+    this.older = [];           // gesti ancora prima: finiscono di sfumare, mai via di colpo
+    this.leanRest = new THREE.Quaternion();   // inclinazione in corsa che fa il busto (lean)
+    this.bodyLean = { x: 0, z: 0 };           // ...e quella di tutto il corpo, attorno ai piedi
     this.feat = new Float32Array(6);
     this.lift = 0;              // metri di cui il corpo e' alzato perche' i piedi non entrino nell'erba
     this.yawFix = 0;            // rad: rotazione del gesto passata al busto (gestures.bakeYaw), tolta all'anca mentre sfuma
@@ -386,6 +391,8 @@ export class Avatar {
     // three.js riscrive un osso solo se il suo valore cambia, quindi un
     // ritocco su un osso fermo nella clip restava e poi scattava via.
     this.boneList = Object.values(this.rig);
+    this.fingers = Object.keys(this.rig).map((k) => /Hand(Thumb|Index|Middle|Ring|Pinky)/.test(k));
+    this.fingerStep = ANIM.fingerRate / 60;   // rad al passo (smoothJumps)
     this.animPose = this.boneList.map((b) => b.quaternion.clone());
     // salti isolati dell'uscita del mixer (smoothJumps)
     this.shown = this.boneList.map((b) => b.quaternion.clone());
@@ -450,18 +457,30 @@ export class Avatar {
 
   // Gesto sopra la corsa da `from`; dopo `hold` secondi sfuma verso la corsa.
   // Un gesto gia' in corso sfuma sotto il nuovo: niente pose in piedi fra due gesti a terra.
-  playOnce(name, from, hold, rate = 1, fade = ANIM.fadeIn, loco = false) {
+  // `chain`: dissolvenza fra il gesto in corso e questo (di norma ANIM.chainFade).
+  playOnce(name, from, hold, rate = 1, fade = ANIM.fadeIn, loco = false, chain = ANIM.chainFade) {
     const clip = this.gestureClip(name);
     if (!clip) return;
-    if (this.prevOne) { this.dropAction(this.prevOne.a); this.prevOne = null; }
+    // il gesto precedente che sfuma ancora continua a sfumare: buttato via col
+    // peso che aveva, le dita giravano di 0,35 rad in un fotogramma (arresto,
+    // partenza lasciata e partenza nuova). La stessa clip non puo' restare:
+    // il mixer le darebbe la stessa azione
+    if (this.prevOne) { this.older.push(this.prevOne); this.prevOne = null; }
+    for (let i = this.older.length - 1; i >= 0; i--) {
+      if (this.older[i].a.getClip() === clip) { this.dropAction(this.older[i].a); this.older.splice(i, 1); }
+    }
     let chained = false;
     if (this.one) {
       const w = this.one.a.getEffectiveWeight();
       if (w > 0.05 && this.one.a.getClip() !== clip) {
-        // il gesto che sfuma resta fermo alla sua posa: una finta che gira il
-        // corpo, fusa con una caduta, passava i 180 gradi e il bacino si ribaltava
-        this.one.a.timeScale = 0;
-        this.prevOne = { a: this.one.a, w, t: 0 };
+        // il gesto che tiene la rotazione e sfuma resta fermo alla sua posa:
+        // una finta che gira il corpo, fusa con una caduta, passava i 180 gradi
+        // e il bacino si ribaltava. Gli altri continuano a scorrere (una
+        // partenza o una svolta a velocita' normale): fermi, sotto una
+        // scivolata a 6 m/s traslavano in piedi
+        if (this.keepsYaw(this.one.a)) this.one.a.timeScale = 0;
+        else if (this.one.drive) this.one.a.timeScale = 1;
+        this.prevOne = { a: this.one.a, w, t: 0, fade: chain };
         chained = true;
       }
       else this.one.a.stop();
@@ -475,7 +494,7 @@ export class Avatar {
     a.setEffectiveWeight(0);
     a.play();
     // loco: partenza, arresto o svolta, parte della corsa (non un gesto da fermo)
-    this.one = { a, t: 0, hold, fade: chained ? ANIM.chainFade : fade, loco, name };
+    this.one = { a, t: 0, hold, fade: chained ? chain : fade, loco, name };
   }
 
   // Gesto in ciclo (a terra, in attesa) finche' non se ne chiede un altro.
@@ -487,6 +506,27 @@ export class Avatar {
   // Ferma il gesto in corso: sfuma subito verso la corsa.
   endGesture() {
     if (this.one) this.one.hold = Math.min(this.one.hold, this.one.t);
+  }
+
+  // Il gesto in corso comincia a sfumare al prossimo aggiornamento, in `out`
+  // s (di norma ANIM.fadeOut), e la corsa riparte dalla fase con i piedi
+  // dove sono (update). Con endGesture la fase non si riallineava.
+  // Gia' in dissolvenza: una piu' corta continua dal peso che ha (un arresto
+  // che sfumava in ANIM.fadeOut con la radice gia' ferma traslava per 4 fotogrammi).
+  fadeGesture(out) {
+    const o = this.one;
+    if (!o) return;
+    if (o.t >= o.hold) {
+      const cur = o.out || ANIM.fadeOut;
+      if (out && out < cur) {
+        o.base = o.base ?? Math.min(1, o.hold / o.fade);
+        o.hold = o.t - (o.t - o.hold) * out / cur;
+        o.out = out;
+      }
+      return;
+    }
+    if (out) o.out = out;
+    o.hold = o.t + 1e-3;
   }
 
   // Riprende un gesto fermato con playOnce(..., rate 0) dallo stesso
@@ -557,6 +597,7 @@ export class Avatar {
     const B = this.boneList, FP = this.finalPrev, SH = this.shown, SP = this.shownPrev, I = this.inert, D = this.jumpD, K = ANIM.inertia;
     const I0 = this.inert0, T = this.inertT, N = this.inertN, hips = this.rig.Hips;
     const keep = dt > 0 ? Math.exp(-dt / K.time) : 1;
+    if (dt > 0) this.fingerStep = ANIM.fingerRate * dt;
     this.object.updateMatrixWorld(true);
     let touched = false;
     for (let i = 0; i < B.length; i++) {
@@ -617,6 +658,14 @@ export class Avatar {
           touched = true;
         }
       }
+      // dita mai piu' veloci di ANIM.fingerRate rad/s: 102 clip su 271 della
+      // corsa tengono la mano in una posa a 1,8 rad dalle altre, e fondendo le
+      // due famiglie a 0,2 per fotogramma le dita giravano di 0,36 rad. Con
+      // passo zero si riparte dalla posa del passo prima: stesso risultato
+      if (this.fingers[i] && this.inertReady) {
+        const ref = dt > 0 ? SH[i] : SP[i], d = ref.angleTo(q);
+        if (d > this.fingerStep) { _fq.copy(q); q.copy(ref).slerp(_fq, this.fingerStep / d); touched = true; }
+      }
       // dopo un riposizionamento (resetJumps) la velocita' riparte da zero:
       // la posa di prima, altrove e girata, dava al bacino 2,66 rad a passo
       if (dt > 0) SP[i].copy(this.inertReady ? SH[i] : q);
@@ -648,6 +697,20 @@ export class Avatar {
   }
 
   get busy() { return !!this.one || !!this.proc; }
+  // Clip che tiene dentro la rotazione (caduta, finta, tuffo): sfumando sotto
+  // un altro gesto resta ferma alla sua posa (playOnce)
+  keepsYaw(a) { const m = this.tpl.meta[a.getClip().name]; return !!m && !!m.keepYaw; }
+  // m/s della radice del gesto in corso, al suo tempo e al suo playback
+  // (o di `act`, un'altra azione del mixer)
+  gestureSpeed(act) {
+    const x = act || (this.one && this.one.a);
+    if (!x) return 0;
+    const name = x.getClip().name, t = x.time, a = rootAt(this.tpl, name, Math.max(0, t - 0.05)), b = rootAt(this.tpl, name, t + 0.05);
+    return Math.hypot(b.a - a.a, b.s - a.s) / 0.1 * Math.abs(x.timeScale);
+  }
+  // Un gesto vero (calcio, contrasto, stop da fermo), non una partenza, un
+  // arresto o una svolta, che fanno parte della corsa.
+  get acting() { return !!this.proc || (!!this.one && !this.one.loco); }
 
   // Animazione creata in codice (moves.js) sopra la clip in corso.
   playProc(move) {
@@ -673,35 +736,84 @@ export class Avatar {
     if (this.one) {
       const o = this.one, was = o.t;
       o.t += dt;
+      // una clip che sta per finire mentre il giocatore si sposta sfuma nella
+      // corsa (al massimo in `left` s): ferma sull'ultimo fotogramma a peso
+      // pieno traslava (stop di palla, colpi di testa, tuffi). Da fermi la posa
+      // finale resta (a terra, palla in mano)
+      if (dt > 0 && o.t < o.hold && !o.drive && o.a.loop === THREE.LoopOnce && o.a.timeScale > 0 && loco.speed > ANIM.endMove) {
+        const left = (o.a.getClip().duration - o.a.time) / o.a.timeScale;
+        if (left <= ANIM.fadeOut) { o.out = Math.max(ANIM.trans.cut, left); o.hold = Math.max(o.t - dt + 1e-4, Math.min(o.hold, o.t)); }
+      }
       // dopo `hold` sfuma dal peso che aveva: un gesto fermato mentre entrava
       // non salta a peso pieno per un fotogramma (trovato dal test di continuita')
-      gw = o.t < o.hold ? Math.min(1, o.t / o.fade) : Math.min(1, o.hold / o.fade) * Math.max(0, 1 - (o.t - o.hold) / ANIM.fadeOut);
+      // un gesto (non una partenza o un arresto) che sfuma mentre il giocatore
+      // si sposta finisce di sfumare in ANIM.trans.cut s, dal peso che ha: a
+      // 0,22 s la sua posa ferma traslava per 7-10 fotogrammi
+      const out = o.out || ANIM.fadeOut, cut = ANIM.trans.cut;
+      if (dt > 0 && was >= o.hold && out > cut && !o.loco && loco.speed > ANIM.endMove) {
+        o.base = o.base ?? Math.min(1, o.hold / o.fade);
+        o.hold = was - (was - o.hold) * cut / out;
+        o.out = cut;
+      }
+      gw = o.t < o.hold ? Math.min(1, o.t / o.fade) : (o.base ?? Math.min(1, o.hold / o.fade)) * Math.max(0, 1 - (o.t - o.hold) / (o.out || ANIM.fadeOut));
       // il gesto comincia a sfumare: la corsa riparte dalla fase con i piedi dove
       // sono. Solo se il gesto era entrato del tutto: il salto di fase della
       // corsa si vede quanto la corsa pesa (con 0,5 il ginocchio scattava)
       // Dalla posa appena mostrata e prima dei tempi della corsa: dopo il mixer
       // la fase nuova si vedeva solo al fotogramma successivo
-      if (was < o.hold && o.t >= o.hold && o.hold >= o.fade * 0.95) {
+      if (was < o.hold && o.t >= o.hold && o.hold >= o.fade * 0.95 && o.base === undefined) {
         this.object.updateMatrixWorld(true);
         loco.resync(feetPose(this.rig, this.object.rotation.y, this.feat));
       }
       if (o.t >= o.hold && gw <= 0) { this.dropAction(o.a); this.one = null; gw = 0; }
     }
-    if (this.prevOne) {
-      const p = this.prevOne;
+    // fermo sotto il gesto nuovo con la radice che non si sposta (coda di un
+    // arresto, contrasto da fermo): se il giocatore si sposta sfuma in
+    // ANIM.trans.redoFade s, dallo stesso punto della dissolvenza. In 0,07 s
+    // le dita giravano di 0,38 rad in un fotogramma. Una clip che tiene la
+    // rotazione (congelata), girata almeno di ANIM.chainTurn, in
+    // ANIM.trans.turnedFade: la roulette ferma a meta' giro sotto una caduta,
+    // sfumata in 0,07 s, girava il bacino di 1,2 rad a fotogramma; in 0,18 s,
+    // sotto lo sgambetto che trascina il corpo a 2,5 m/s, traslava.
+    // Quello che si sposta sfuma con calma.
+    // Finito il gesto in corso, il precedente finisce la sua dissolvenza
+    // (prima spariva con lui, col peso che aveva)
+    const turned = (a) => { const y = rootAt(this.tpl, a.getClip().name, a.time).yaw; return Math.abs(Math.atan2(Math.sin(y), Math.cos(y))) >= ANIM.chainTurn; };
+    const fadeStep = (p) => {
+      if (dt > 0 && loco.speed > ANIM.endMove && this.gestureSpeed(p.a) < ANIM.stillRoot) {
+        const f = this.keepsYaw(p.a) && turned(p.a) ? ANIM.trans.turnedFade : ANIM.trans.redoFade;
+        if (p.fade > f) { p.t *= f / p.fade; p.fade = f; }
+      }
       p.t += dt;
-      pw = p.w * Math.max(0, 1 - p.t / ANIM.chainFade);
-      if (pw <= 0 || !this.one) { this.dropAction(p.a); this.prevOne = null; pw = 0; }
+      return p.w * Math.max(0, 1 - p.t / p.fade);
+    };
+    if (this.prevOne) {
+      pw = fadeStep(this.prevOne);
+      if (pw <= 0) { this.dropAction(this.prevOne.a); this.prevOne = null; pw = 0; }
     }
-    const g = gw + pw;
-    if (g > 1) { gw /= g; pw /= g; }
-    const base = 1 - Math.min(1, gw + pw);
+    let ow = 0;
+    for (let i = this.older.length - 1; i >= 0; i--) {
+      const p = this.older[i];
+      p.cw = fadeStep(p);
+      if (p.cw <= 0) { this.dropAction(p.a); this.older.splice(i, 1); } else ow += p.cw;
+    }
+    const g = gw + pw + ow;
+    if (g > 1) { gw /= g; pw /= g; for (const p of this.older) p.cw /= g; }
+    const base = 1 - Math.min(1, g);
     // inclinazione della corsa (player.sync) quanto pesa la corsa: tutta o
     // niente scattava di colpo (fino a 0,19 rad) quando un gesto entrava o finiva
     this.object.rotation.x *= base;
     this.object.rotation.z *= base;
-    if (this.one) this.one.a.setEffectiveWeight(gw);
+    this.lean(dt, loco.moving);
+    if (this.one) {
+      this.one.a.setEffectiveWeight(gw);
+      // partenza o arresto: il tempo della clip lo decide la distanza percorsa
+      // (Player.stepTransition), interpolato fra gli ultimi due passi di fisica
+      const d = this.one.drive;
+      if (d) this.one.a.time = d.prev + (d.t - d.prev) * alpha;
+    }
     if (this.prevOne) this.prevOne.a.setEffectiveWeight(pw);
+    for (const p of this.older) p.a.setEffectiveWeight(p.cw);
     if (loco.version !== this.tpl.locoVersion) loco.setup();
     const phase = loco.phaseAt(alpha), cyc = loco.cycleAt(alpha), L = loco.slots, n = loco.w.length;
     for (const x of this.acts.values()) x.w = 0;
@@ -743,18 +855,25 @@ export class Avatar {
     for (let i = 0; i < B.length; i++) AP[i].copy(B[i].quaternion);   // uscita del mixer: si rimette al prossimo aggiornamento
     this.lastDt = dt;
     this.twist(-loco.yawAt(alpha) * base);
+    this.spineLean();
     // il gesto che sfuma ha ancora dentro la rotazione gia' passata al busto
     if (this.yawFix) {
-      const w = Math.min(1, gw + pw);
+      const w = 1 - base;
       if (w > 1e-3) {
         this.object.updateMatrixWorld(true);
         _twist.setFromAxisAngle(_up, this.yawFix * w);
         rotateWorld(this.rig.Hips, _twist);
+        // ...e la sua posizione attorno ai piedi: il corpo gira attorno a
+        // loro, e un bacino fuori asse (portiere dopo il tuffo) saltava di 3 cm
+        const h = this.rig.Hips, o = this.object.position;
+        h.parent.localToWorld(_yv.copy(h.position)).sub(o).applyQuaternion(_twist).add(o);
+        h.position.copy(h.parent.worldToLocal(_yv));
+        h.updateMatrixWorld(true);
       } else this.yawFix = 0;
     }
     // anche con passo zero (pausa): la posa del mixer si rimette a ogni
     // aggiornamento e senza l'IK la gamba bloccata tornerebbe alla clip
-    this.feet.apply(dt, loco, phase, gw + pw, this.object);
+    this.feet.apply(dt, loco, phase, 1 - base, this.object);
     if (this.proc && !this.proc.update(this, dt)) this.proc = null;
     // palla fra le due mani (holdWant, dal gioco): la presa entra e si scioglie
     // a MODEL.holdRate al secondo; sciolta (rinvio, rimessa, palla in una mano)
@@ -771,6 +890,43 @@ export class Avatar {
     } else if (this.holdMemo.Left.a || this.holdMemo.Right.a) this.holdMemo = { Left: {}, Right: {} };
     this.smoothJumps(dt);
     this.ground(dt);
+  }
+
+  // L'inclinazione in corsa (rotation.x e .z, attorno ai piedi) spostava il
+  // bacino fino a 19 cm dall'anello verso l'interno della curva; spostare il
+  // corpo indietro di tanto faceva scivolare i piedi (a 2-4 m/s, nelle svolte
+  // strette e quando l'inclinazione si ribalta). Tutto il corpo s'inclina al
+  // massimo di ANIM.lean.body rad per asse (bacino entro 7 cm, piedi fermi),
+  // col quadrato della quota dei passi (da fermi l'oscillazione dell'idle
+  // arriva gia' a 9 cm, e partendo cambia di 2 cm a fotogramma) e cambiando
+  // al massimo di bodyRate rad/s: quando l'inclinazione si ribalta in curva il
+  // bacino saltava di 3-4 cm in un fotogramma. Il resto lo fa il busto sopra
+  // il bacino (spineLean, dopo il mixer).
+  lean(dt, moving) {
+    const o = this.object, L = ANIM.lean, B = L.body * moving * moving, rx = o.rotation.x, rz = o.rotation.z, b = this.bodyLean;
+    if (dt > 0) {
+      const s = L.bodyRate * dt;
+      b.x += Math.max(-s, Math.min(s, Math.max(-B, Math.min(B, rx)) - b.x));
+      b.z += Math.max(-s, Math.min(s, Math.max(-B, Math.min(B, rz)) - b.z));
+    }
+    o.rotation.x = b.x;
+    o.rotation.z = b.z;
+    _leanFull.setFromEuler(_eul.set(rx, o.rotation.y, rz, 'YXZ'));
+    _leanBody.setFromEuler(o.rotation);
+    // rotazione nel mondo che il busto aggiunge a quella del corpo per arrivare all'inclinazione piena
+    this.leanRest.copy(_leanFull).multiply(_leanBody.invert());
+  }
+
+  spineLean() {
+    const q = this.leanRest;
+    if (1 - Math.abs(q.w) < 1e-7) return;
+    this.object.updateMatrixWorld(true);
+    const r = this.rig;
+    for (const [bone, share] of [[r.Spine, 0.3], [r.Spine1, 0.3], [r.Spine2, 0.4]]) {
+      if (!bone) continue;
+      _twist.copy(_id).slerp(q, share);
+      rotateWorld(bone, _twist);
+    }
   }
 
   // Busto verso dove guarda il giocatore quando il corpo e' girato verso la

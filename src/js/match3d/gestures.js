@@ -32,6 +32,13 @@ export function bakeYaw(m, p, clip, t) {
   if (!meta || !meta.keepYaw) return;
   const y = wrap(rootAt(m.tpl, clip, t).yaw);
   if (Math.abs(y) < 0.05) return;
+  // gesto gia' sfumato (respinta del portiere): il corpo che si vede e' la
+  // corsa, che girata di colpo portava con se' il bacino fuori asse (3 cm in
+  // un fotogramma); si gira come a ogni cambio di direzione
+  const av = p.avatar;
+  let w = 0;
+  for (const g of [av.one, av.prevOne, ...av.older]) if (g && g.a.getClip().name === clip) w = Math.max(w, g.a.getEffectiveWeight());
+  if (w < 0.05) { p.face(wrap(p.heading + y)); p.moveHeading = p.heading; return; }
   p.heading = p.prevHeading = p.moveHeading = wrap(p.heading + y);
   if (p.gait.vis !== null) p.gait.vis = wrap(p.gait.vis + y);
   p.avatar.yawFix = -y;
@@ -48,11 +55,24 @@ export function startTackle(m, p, manual = false) {
   const car = m.owner;
   if (car && car.team !== p.team && car !== m.ctrl && !car.keeper && Math.random() < passFirstChance(m, car)) m.teams[car.team].ai.passNow(car);
   const bx = b.pos.x - p.pos.x, bz = b.pos.z - p.pos.z;
-  const pk = pickTackle(m.tpl, p, { lead: T.hit, speed: p.speed, ballLeft: -(bx * p.rightX + bz * p.rightZ) });
+  // velocita' dell'affondo verso dove sara' la palla al contatto: la clip
+  // scelta si sposta quanto lui (una clip da fermo trascinata dall'affondo
+  // traslava fino a 6 m/s). In conduzione la palla si stacca e rallenta fra
+  // un tocco e l'altro: conta la corsa del portatore
+  // un tocco appena dato la manda avanti piu' veloce di lui: la piu' lontana delle due
+  const own = m.owner, cv = own && own.team !== p.team ? own.vel : b.vel;
+  const far = (v) => Math.hypot(bx + v.x * T.hit, bz + v.z * T.hit);
+  const reach = Math.min(T.lunge + p.speed * T.hit, Math.max(0, Math.max(far(cv), far(b.vel)) - T.contactDist));
+  const lungeV = Math.min(p.speed + T.lungeSpeed, reach / Math.max(0.05, T.hit - T.lungeFrom));
+  const pk = pickTackle(m.tpl, p, { lead: T.hit, speed: Math.max(p.speed, lungeV), reach, ballLeft: -(bx * p.rightX + bz * p.rightZ) });
   if (pk) p.avatar.playOnce(pk.clip, pk.from, T.duration, pk.rate);
   const h0 = p.heading, x0 = p.pos.x, z0 = p.pos.z;
-  // l'affondo insegue dove sara' la palla al contatto e si somma allo slancio della corsa
-  const range = T.lunge + p.speed * T.hit;
+  // l'affondo insegue dove sara' la palla al contatto e si somma allo slancio
+  // della corsa; con una clip che non si sposta (contrasto da fermo, quando la
+  // palla scappa dopo la scelta) resta corto: il corpo non scivola verso la palla
+  const r0 = pk && rootAt(m.tpl, pk.clip, pk.from), r1 = pk && rootAt(m.tpl, pk.clip, pk.contact);
+  const still = pk && Math.hypot(r1.a - r0.a, r1.s - r0.s) < T.standLunge;
+  const range = still ? 0 : T.lunge + p.speed * T.hit;
   const pace = p.speed + T.lungeSpeed;
   p.action = {
     tackle: true, moves: true, clip: pk ? pk.clip : null, t: 0, rate: 1, end: T.duration,
@@ -118,7 +138,7 @@ export function startSlide(m, p, dx, dz) {
   if (p.action || p.down) return;
   const S = SLIDE, b = m.ball;
   const l = Math.hypot(dx, dz) || 1;
-  p.heading = headingOf(dx / l, dz / l);
+  p.face(headingOf(dx / l, dz / l));
   p.moveHeading = p.heading;
   const toBall = (b.pos.x - p.pos.x) * p.rightX + (b.pos.z - p.pos.z) * p.rightZ;
   const side = toBall < 0 ? 'left' : 'right';
@@ -167,7 +187,7 @@ export function startSlide(m, p, dx, dz) {
 // ferma nell'ultimo istante a terra per DOWN.groundTime secondi.
 export function trip(m, o) {
   const s = Math.hypot(o.vel.x, o.vel.z);
-  if (s > 0.5) o.heading = headingOf(o.vel.x, o.vel.z);
+  if (s > 0.5) o.face(headingOf(o.vel.x, o.vel.z));
   o.down = true;
   if (m.ctrl === o) m.buffer = null;
   const D = DOWN, meta = m.tpl.meta[D.clip];
@@ -234,7 +254,7 @@ function aerialSpec(m, C) {
 }
 
 function startAerial(m, p, C, intent, bicycle, s) {
-  if (!bicycle && Math.hypot(s.x - p.pos.x, s.z - p.pos.z) > 0.2) p.heading = headingOf(s.x - p.pos.x, s.z - p.pos.z);
+  if (!bicycle && Math.hypot(s.x - p.pos.x, s.z - p.pos.z) > 0.2) p.face(headingOf(s.x - p.pos.x, s.z - p.pos.z));
   const end = Math.min(C.end, clipDuration(m.tpl, C.clip));
   p.avatar.playOnce(C.clip, C.from, end - C.from);
   p.action = rootAction(m, p, C.clip, C.from, end, 1, {

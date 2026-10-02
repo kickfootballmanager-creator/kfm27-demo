@@ -200,12 +200,18 @@ ANKLE_FIX = {}
 for S, M in (("L", "Left"), ("R", "Right")):
     want = m_rest[mb(M + "UpLeg")].translation + (s_rest["Bip001-%s-Foot" % S].translation - s_rest["Bip001-%s-Thigh" % S].translation) * RATIO
     ANKLE_FIX[M] = m_rest[mb(M + "Foot")].translation - want
+# a riposo il bacino Mixamo sta qui (in orizzontale) rispetto a quello Biped
+# scalato: tolto, il bacino della clip sta sopra la radice come nella libreria
+# (prima tutto il corpo era 4,7 cm avanti rispetto alla posizione di gioco e
+# alla palla dei metadati)
+REST_OFF = m_rest[mb("Hips")].translation - s_rest["Bip001-Pelvis"].translation * RATIO
+REST_OFF = Vector((REST_OFF.x, 0.0, REST_OFF.z))
 LEG = {}
 for M in ("Left", "Right"):
     a, b, c = (m_rest[mb(M + x)].translation for x in ("UpLeg", "Leg", "Foot"))
     LEG[M] = ((b - a).length, (c - b).length)
-say("rapporto gambe %.4f, correzione caviglia %.1f/%.1f cm, unita' %.3f" % (
-    RATIO, ANKLE_FIX["Left"].length, ANKLE_FIX["Right"].length, UNIT))
+say("rapporto gambe %.4f, correzione caviglia %.1f/%.1f cm, bacino a riposo %.1f cm, unita' %.3f" % (
+    RATIO, ANKLE_FIX["Left"].length, ANKLE_FIX["Right"].length, REST_OFF.length * UNIT * 100, UNIT))
 
 # asse "avanti" dell'osso Root: nel riposo il personaggio guarda +Z (armatura)
 ROOT_FWD_LOCAL = s_rest["Root"].to_3x3().inverted() @ Vector((0, 0, 1))
@@ -419,11 +425,12 @@ def rf_matrix(pos, yaw):
 
 
 # ---------------------------------------------------------------- una clip
-def sample_clip(src, keep_yaw=False, cyclic=False):
+def sample_clip(src, keep_yaw=False, cyclic=False, still=False):
     """Fotogrammi della clip: pose Mixamo sul posto e punti utili, in metri,
     nel riferimento del Root del fotogramma (x sinistra, y su, z avanti).
     keep_yaw: si toglie solo lo spostamento, la rotazione resta nella clip.
-    cyclic: clip in ciclo (le punte si levigano senza aprire il ciclo)."""
+    cyclic: clip in ciclo (le punte si levigano senza aprire il ciclo).
+    still: posa da fermo (la radice resta quella della libreria, centrata)."""
     acts_before = set(bpy.data.actions)
     objs = import_fbx(os.path.join(LIB, src + ".fbx"), False)
     D = next(o for o in objs if o.type == 'ARMATURE')
@@ -440,13 +447,26 @@ def sample_clip(src, keep_yaw=False, cyclic=False):
         scene.frame_set(f)
         s_pose, m_pose = frame_pose(D)
         pos, yaw = root_frame(D)
+        if not still:
+            # radice sotto il bacino, come nella quasi totalita' della libreria:
+            # alcune clip la hanno altrove (469_Low_Pass_Stand_0 53 cm avanti,
+            # 775_Trapping_Chest_225_Run fino a 2,4 m, le esultanze fino a 8 m)
+            # e il corpo si staccava dalla posizione di gioco
+            P = s_pose["Bip001-Pelvis"].translation
+            pos = Vector((P.x, 0.0, P.z))
         if pos0 is None:
             pos0, yaw0 = pos.copy(), yaw
         if prev_yaw is not None:
             unwrap += math.atan2(math.sin(yaw - prev_yaw), math.cos(yaw - prev_yaw))
         prev_yaw = yaw
         fyaw = yaw0 if keep_yaw else yaw
-        RFi = rf_matrix(pos, fyaw).inverted()
+        # Il bacino Mixamo si sposta di (Biped - riposo) * RATIO (frame_pose):
+        # la radice va scalata allo stesso modo. Con la radice del Biped non
+        # scalata il bacino restava indietro di (1 - RATIO) volte la distanza
+        # dall'origine del file: nelle corse 20 cm a giro e poi avanti in un
+        # fotogramma, nelle pose da fermo 10-17 cm fissi
+        ps = pos * RATIO + REST_OFF
+        RFi = rf_matrix(ps, fyaw).inverted()
         ip = {k: RFi @ v for k, v in m_pose.items()}
         # traiettoria della radice nel riferimento del primo fotogramma, scalata
         d = Matrix.Rotation(-yaw0, 4, 'Y') @ (pos - pos0)
@@ -456,11 +476,11 @@ def sample_clip(src, keep_yaw=False, cyclic=False):
         def spalm(S):
             # palmo del Biped originale: dove la libreria ha registrato il contatto
             h = s_pose["Bip001-%s-Hand" % S].translation.lerp(s_pose["Bip001-%s-Finger2" % S].translation, 0.6)
-            w = Vector(((h.x - pos.x) * RATIO + pos.x, h.y * RATIO, (h.z - pos.z) * RATIO + pos.z))
+            w = Vector(((h.x - pos.x) * RATIO + ps.x, h.y * RATIO, (h.z - pos.z) * RATIO + ps.z))
             return pt(RFi @ w)
         # la palla scalata come il personaggio, rispetto al Root
         bt = D.pose.bones["Ball_Bone"].matrix.translation
-        ball = RFi @ Vector(((bt.x - pos.x) * RATIO + pos.x, bt.y * RATIO, (bt.z - pos.z) * RATIO + pos.z))
+        ball = RFi @ Vector(((bt.x - pos.x) * RATIO + ps.x, bt.y * RATIO, (bt.z - pos.z) * RATIO + ps.z))
         frames.append({
             "pose": ip,
             "root": [round(d.z * UNIT * RATIO, 4), round(d.x * UNIT * RATIO, 4), round(unwrap, 4)],
@@ -483,7 +503,31 @@ def sample_clip(src, keep_yaw=False, cyclic=False):
     for _ in range(3):
         if not despike(frames, cyclic):
             break
+    if still:
+        center_frames(frames)
     return frames
+
+
+POINTS = ("hips", "lf", "rf", "lt", "rt", "lh", "rh", "slh", "srh", "head", "ball")
+
+
+def center_frames(frames):
+    """Posa da fermo: la radice della libreria sta ferma mentre il bacino
+    oscilla (spostamento del peso), ma non sempre al centro dell'oscillazione
+    (Stand_04: 7,7 cm in media, 16 al massimo). Il centro dell'escursione va
+    sulla radice (con la media Stand_04 arrivava ancora a 10,3 cm)."""
+    xs = [fr["hips"][0] for fr in frames]
+    zs = [fr["hips"][2] for fr in frames]
+    mx = (min(xs) + max(xs)) / 2
+    mz = (min(zs) + max(zs)) / 2
+    if math.hypot(mx, mz) < 0.002:
+        return
+    T = Matrix.Translation(Vector((-mx / UNIT, 0.0, -mz / UNIT)))
+    for fr in frames:
+        fr["pose"] = {k: T @ v for k, v in fr["pose"].items()}
+        for key in POINTS:
+            p = fr[key]
+            fr[key] = [round(p[0] - mx, 4), p[1], round(p[2] - mz, 4)]
 
 
 MIRROR_S = Matrix.Diagonal((-1.0, 1.0, 1.0, 1.0))
@@ -907,7 +951,7 @@ for pack in PACKS:
     metas, cache, t_sample = {}, {}, 0.0
     for i, e in enumerate(todo):
         t0 = time.time()
-        frames = cache.get(e["src"]) or sample_clip(e["src"], e["role"] in KEEP_YAW, e["role"] in ("loco", "idle", "ready"))
+        frames = cache.get(e["src"]) or sample_clip(e["src"], e["role"] in KEEP_YAW, e["role"] in ("loco", "idle", "ready"), e["role"] in ("idle", "ready"))
         # l'originale serve ancora alla sua copia specchiata
         if not e.get("mirror") and any(x.get("mirror") and x["src"] == e["src"] for x in todo):
             cache[e["src"]] = frames

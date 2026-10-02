@@ -11,7 +11,8 @@ const BASE = (await serve()).url;
 const cdp = await launch();
 const errors = [];
 collectErrors(cdp, errors);
-await openMatch(cdp, BASE + (opt('query', '') ? '' : ''), errors);
+// --query '&anim=high': parametri in piu' per la partita (livello delle animazioni)
+await openMatch(cdp, BASE, errors, opt('query', ''));
 await evaluate(cdp, readFileSync(join(HERE, 'soak-page.js'), 'utf8'));
 await evaluate(cdp, 'window.__soak.init()');
 await evaluate(cdp, readFileSync(opt('hook'), 'utf8'));

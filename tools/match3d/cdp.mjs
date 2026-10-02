@@ -108,6 +108,12 @@ function connect(url) {
     pending.set(i, { resolve, reject });
     ws.send(JSON.stringify({ id: i, method, params }));
   });
+  // Chrome che muore a meta' partita (poca memoria): le richieste in attesa
+  // falliscono. Restavano appese, Node usciva con codice 0 e senza riepilogo
+  ws.onclose = () => {
+    for (const { reject } of pending.values()) reject(new Error('Chrome ha chiuso la connessione DevTools'));
+    pending.clear();
+  };
   return new Promise((resolve, reject) => {
     ws.onopen = () => resolve({ send, on: (f) => listeners.push(f), close: () => ws.close() });
     ws.onerror = (e) => reject(e);

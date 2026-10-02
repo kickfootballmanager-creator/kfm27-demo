@@ -64,7 +64,7 @@ const _q = new THREE.Vector3(), _s = new THREE.Vector3(), _n = new THREE.Vector3
 function bodyHit(k, b, hands) {
   const r = k.avatar.rig;
   k.avatar.object.updateMatrixWorld(true);
-  _off.set(k.pos.x - k.mesh.position.x, 0, k.pos.z - k.mesh.position.z);
+  _off.set(k.pos.x - k.anchor.x, 0, k.pos.z - k.anchor.z);
   const p0 = b.prev, seg = _s.subVectors(b.pos, p0), L2 = seg.lengthSq();
   let best = null;
   for (const [name, to, f, rad, isHand] of KEEPER.body) {
@@ -84,7 +84,7 @@ function bodyHit(k, b, hands) {
 // Palla fra i palmi: tutti e due entro `reach` metri, abbastanza per trattenerla.
 function palmsOn(k, b, reach) {
   const r = k.avatar.rig;
-  _off.set(k.pos.x - k.mesh.position.x, 0, k.pos.z - k.mesh.position.z);
+  _off.set(k.pos.x - k.anchor.x, 0, k.pos.z - k.anchor.z);
   return palm(r, 'Left', _c).add(_off).distanceTo(b.pos) < reach &&
     palm(r, 'Right', _e).add(_off).distanceTo(b.pos) < reach;
 }
@@ -487,10 +487,11 @@ export class KeeperAI {
     this.watch = null;
   }
 
-  // Dopo il gol: si dispera, finito l'eventuale tuffo.
+  // Dopo il gol: si dispera, finito l'eventuale tuffo e quando si e' fermato
+  // (Match.settle): in movimento la posa dello sconforto traslava.
   concede() {
-    const k = this.p, C = KEEPER.clips.concede;
-    const play = () => k.avatar.playOnce(C.clip, C.from, C.end);
+    const k = this.p;
+    const play = () => { k.concedeWait = KEEPER.clips.concede; };
     if (!k.action) { play(); return; }
     const prev = k.action.onEnd;
     k.action.onEnd = () => { if (prev) prev(); play(); };

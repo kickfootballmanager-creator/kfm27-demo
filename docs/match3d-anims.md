@@ -24,11 +24,11 @@ La libreria non si ridistribuisce: FBX, GLB e JSON derivati restano fuori dal re
 
 | Categoria | core | more | extra | scartate |
 |---|---:|---:|---:|---:|
-| locomozione | 33 | 14 | 0 | 5 |
-| partenze e arresti | 2 | 45 | 0 | 0 |
+| locomozione | 38 | 8 | 0 | 6 |
+| partenze e arresti | 47 | 0 | 0 | 0 |
 | svolte | 3 | 37 | 0 | 6 |
 | difesa | 25 | 7 | 0 | 10 |
-| conduzione | 4 | 73 | 0 | 2 |
+| conduzione | 34 | 43 | 0 | 2 |
 | passaggi | 10 | 23 | 0 | 13 |
 | lanci e cross | 4 | 10 | 0 | 0 |
 | tiri | 5 | 24 | 0 | 0 |
@@ -48,9 +48,9 @@ La libreria non si ridistribuisce: FBX, GLB e JSON derivati restano fuori dal re
 | cerimonie | 0 | 0 | 0 | 4 |
 | riscaldamento | 0 | 0 | 0 | 10 |
 | menu e pose | 0 | 0 | 0 | 55 |
-| **totale** | **195** | **357** | **6** | **349** |
+| **totale** | **275** | **276** | **6** | **350** |
 
-Per livello: basso 195 clip (piu' 2 copie specchiate: finta e scivolata), medio e alto 558 (piu' le 3 copie specchiate: finta, scivolata, arresto laterale destro).
+Per livello: basso 275 clip (piu' 3 copie specchiate: Sidestep_Jogging_Stop01_L_M, Tricks_M, Slide_Tackles01_M), medio e alto 557 (piu' 3 copie specchiate: Sidestep_Jogging_Stop01_L_M, Tricks_M, Slide_Tackles01_M).
 
 ## Locomozione
 
@@ -63,11 +63,11 @@ Per livello: basso 195 clip (piu' 2 copie specchiate: finta e scivolata), medio 
 | 008_Back steps_Jogging_02 | 0.60 | 2.30 m (-2.30, -0.00) | 0 | no | more | corsa (blend tree: velocita' e direzione) - alto all'avvio, medio in partita |
 | 009_Back steps_Jogging_03 | 0.97 | 2.97 m (-2.97, -0.00) | 0 | no | more | corsa (blend tree: velocita' e direzione) - alto all'avvio, medio in partita |
 | 010_Back steps_Jogging_04 | 1.00 | 3.08 m (-3.08, -0.00) | 0 | no | more | corsa (blend tree: velocita' e direzione) - alto all'avvio, medio in partita |
-| 011_Back steps_Jogging_Stop_01 | 1.07 | 1.39 m (-1.39, -0.00) | 0 | no | more | arresto - alto all'avvio, medio in partita |
+| 011_Back steps_Jogging_Stop_01 | 1.07 | 1.39 m (-1.39, -0.00) | 0 | no | core | arresto - tutti i livelli, all'avvio |
 | 012_Back steps_Sprint_01 | 0.47 | 2.37 m (-2.37, +0.02) | 0 | no | core | corsa (blend tree: velocita' e direzione) - tutti i livelli, all'avvio |
 | 013_Back steps_Sprint_01_135 | 0.47 | 2.37 m (-1.66, +1.69) | 0 | no | core | corsa (blend tree: velocita' e direzione) - tutti i livelli, all'avvio |
 | 014_Back steps_Sprint_01_225 | 0.47 | 2.37 m (-1.69, -1.66) | 0 | no | core | corsa (blend tree: velocita' e direzione) - tutti i livelli, all'avvio |
-| 015_Back steps_Sprint_Stop | 1.10 | 2.33 m (-2.33, +0.02) | 0 | no | more | arresto - alto all'avvio, medio in partita |
+| 015_Back steps_Sprint_Stop | 1.10 | 2.33 m (-2.33, +0.02) | 0 | no | core | arresto - tutti i livelli, all'avvio |
 | 016_Back steps_Walk_01 | 1.13 | 1.10 m (-1.10, -0.00) | 0 | no | core | corsa (blend tree: velocita' e direzione) - tutti i livelli, all'avvio |
 | 017_Back steps_Walk_01_135 | 1.13 | 1.10 m (-0.78, +0.78) | 0 | no | core | corsa (blend tree: velocita' e direzione) - tutti i livelli, all'avvio |
 | 018_Back steps_Walk_01_225 | 1.13 | 1.10 m (-0.78, -0.78) | 0 | no | core | corsa (blend tree: velocita' e direzione) - tutti i livelli, all'avvio |
@@ -79,12 +79,12 @@ Per livello: basso 195 clip (piu' 2 copie specchiate: finta e scivolata), medio 
 | 289_Jogging_315 | 0.67 | 2.70 m (+1.91, -1.91) | 0 | no | core | corsa (blend tree: velocita' e direzione) - tutti i livelli, all'avvio |
 | 521_Sidestep_Fast_Jogging01_L | 1.87 | 6.69 m (+0.00, +6.69) | 0 | no | core | corsa (blend tree: velocita' e direzione) - tutti i livelli, all'avvio |
 | 522_Sidestep_Fast_Jogging01_R | 1.87 | 6.69 m (+0.00, -6.69) | 0 | no | core | corsa (blend tree: velocita' e direzione) - tutti i livelli, all'avvio |
-| 523_Sidestep_Jogging_Stop01_L | 0.97 | 0.78 m (-0.12, +0.77) | 0 | no | more | arresto - alto all'avvio, medio in partita |
+| 523_Sidestep_Jogging_Stop01_L | 0.97 | 0.78 m (-0.12, +0.77) | 0 | no | core | arresto - tutti i livelli, all'avvio |
 | 524_Sidestep_Jogging_Stop01_R | 0.97 | 0.78 m (-0.12, +0.77) | 0 | no | scartata | stesso movimento di 523_Sidestep_Jogging_Stop01_L |
 | 525_Sidestep_Jogging01_L | 1.83 | 3.82 m (+0.00, +3.82) | 0 | no | core | corsa (blend tree: velocita' e direzione) - tutti i livelli, all'avvio |
 | 526_Sidestep_Jogging01_R | 1.83 | 3.82 m (+0.00, -3.82) | 0 | no | core | corsa (blend tree: velocita' e direzione) - tutti i livelli, all'avvio |
-| 527_Sidestep_Sprint_Stop01_L | 1.27 | 2.03 m (+0.15, +2.02) | 0 | no | more | arresto - alto all'avvio, medio in partita |
-| 528_Sidestep_Sprint_Stop01_R | 1.27 | 2.03 m (+0.15, -2.02) | 0 | no | more | arresto - alto all'avvio, medio in partita |
+| 527_Sidestep_Sprint_Stop01_L | 1.27 | 2.03 m (+0.15, +2.02) | 0 | no | core | arresto - tutti i livelli, all'avvio |
+| 528_Sidestep_Sprint_Stop01_R | 1.27 | 2.03 m (+0.15, -2.02) | 0 | no | core | arresto - tutti i livelli, all'avvio |
 | 529_Sidestep_Sprint01_L | 0.93 | 5.29 m (-0.00, +5.29) | 0 | no | core | corsa (blend tree: velocita' e direzione) - tutti i livelli, all'avvio |
 | 530_Sidestep_Sprint01_R | 0.93 | 5.29 m (+0.00, -5.29) | 0 | no | core | corsa (blend tree: velocita' e direzione) - tutti i livelli, all'avvio |
 | 531_Sidestep_Walk01_L | 1.80 | 1.93 m (+0.00, +1.93) | 0 | no | core | corsa (blend tree: velocita' e direzione) - tutti i livelli, all'avvio |
@@ -101,7 +101,7 @@ Per livello: basso 195 clip (piu' 2 copie specchiate: finta e scivolata), medio 
 | 686_Stand_01 | 2.47 | 0.00 m (+0.00, -0.00) | 0 | no | more | fermo (blend tree, stile normale) - alto all'avvio, medio in partita |
 | 687_Stand_02 | 5.73 | 0.00 m (+0.00, -0.00) | 0 | si' | more | fermo (blend tree, stile normale) - alto all'avvio, medio in partita |
 | 688_Stand_03 | 5.73 | 0.00 m (+0.00, -0.00) | 0 | si' | more | fermo (blend tree, stile normale) - alto all'avvio, medio in partita |
-| 689_Stand_04 | 5.27 | 0.00 m (+0.00, -0.00) | 0 | si' | more | fermo (blend tree, stile normale) - alto all'avvio, medio in partita |
+| 689_Stand_04 | 5.27 | 0.00 m (+0.00, -0.00) | 0 | si' | scartata | nessun ruolo nel gioco |
 | 743_Tired_Jogging | 0.80 | 1.59 m (+1.59, -0.00) | 0 | no | scartata | corsa stanca: la stanchezza non cambia l'animazione |
 | 744_Tired_JoggingArch_Turn_L | 0.80 | 2.15 m (+1.92, +0.95) | +45 | no | scartata | corsa stanca: la stanchezza non cambia l'animazione |
 | 745_Tired_JoggingArch_Turn_R | 0.80 | 2.15 m (+1.92, -0.95) | -45 | no | scartata | corsa stanca: la stanchezza non cambia l'animazione |
@@ -113,53 +113,53 @@ Per livello: basso 195 clip (piu' 2 copie specchiate: finta e scivolata), medio 
 
 | Clip | Durata | Root motion | Rotazione | In place | Stato | Motivo |
 |---|---:|---|---:|---|---|---|
-| 294_Jogging_Start_0 | 0.97 | 1.86 m (+1.86, -0.01) | 0 | no | more | partenza da fermo - alto all'avvio, medio in partita |
-| 295_Jogging_Start_45 | 1.03 | 1.94 m (+1.35, +1.39) | +45 | no | more | partenza da fermo - alto all'avvio, medio in partita |
-| 296_Jogging_Start_90 | 1.00 | 1.81 m (+0.00, +1.81) | +90 | no | more | partenza da fermo - alto all'avvio, medio in partita |
-| 297_Jogging_Start_135 | 0.93 | 1.50 m (-0.95, +1.16) | +135 | no | more | partenza da fermo - alto all'avvio, medio in partita |
-| 298_Jogging_Start_180 | 0.83 | 0.91 m (-0.91, +0.00) | +180 | no | more | partenza da fermo - alto all'avvio, medio in partita |
-| 299_Jogging_Start_225 | 0.70 | 0.89 m (-0.51, -0.73) | -135 | no | more | partenza da fermo - alto all'avvio, medio in partita |
-| 300_Jogging_Start_270 | 0.70 | 1.03 m (+0.03, -1.03) | -90 | no | more | partenza da fermo - alto all'avvio, medio in partita |
-| 301_Jogging_Start_315 | 0.70 | 1.03 m (+0.69, -0.76) | -45 | no | more | partenza da fermo - alto all'avvio, medio in partita |
+| 294_Jogging_Start_0 | 0.97 | 1.86 m (+1.86, -0.01) | 0 | no | core | partenza da fermo - tutti i livelli, all'avvio |
+| 295_Jogging_Start_45 | 1.03 | 1.94 m (+1.35, +1.39) | +45 | no | core | partenza da fermo - tutti i livelli, all'avvio |
+| 296_Jogging_Start_90 | 1.00 | 1.81 m (+0.00, +1.81) | +90 | no | core | partenza da fermo - tutti i livelli, all'avvio |
+| 297_Jogging_Start_135 | 0.93 | 1.50 m (-0.95, +1.16) | +135 | no | core | partenza da fermo - tutti i livelli, all'avvio |
+| 298_Jogging_Start_180 | 0.83 | 0.91 m (-0.91, +0.00) | +180 | no | core | partenza da fermo - tutti i livelli, all'avvio |
+| 299_Jogging_Start_225 | 0.70 | 0.89 m (-0.51, -0.73) | -135 | no | core | partenza da fermo - tutti i livelli, all'avvio |
+| 300_Jogging_Start_270 | 0.70 | 1.03 m (+0.03, -1.03) | -90 | no | core | partenza da fermo - tutti i livelli, all'avvio |
+| 301_Jogging_Start_315 | 0.70 | 1.03 m (+0.69, -0.76) | -45 | no | core | partenza da fermo - tutti i livelli, all'avvio |
 | 302_Jogging_Stop | 2.33 | 0.65 m (+0.65, -0.00) | 0 | no | core | arresto - tutti i livelli, all'avvio |
-| 303_Jogging_Stop_45 | 1.47 | 1.19 m (+1.19, -0.00) | +45 | no | more | arresto - alto all'avvio, medio in partita |
-| 304_Jogging_Stop_90 | 1.33 | 1.15 m (+1.15, -0.00) | +90 | no | more | arresto - alto all'avvio, medio in partita |
-| 305_Jogging_Stop_135 | 1.33 | 1.23 m (+1.23, -0.00) | +135 | no | more | arresto - alto all'avvio, medio in partita |
-| 306_Jogging_Stop_180 | 1.10 | 1.15 m (+1.15, +0.00) | -180 | no | more | arresto - alto all'avvio, medio in partita |
-| 307_Jogging_Stop_225 | 1.33 | 1.23 m (+1.23, +0.00) | -135 | no | more | arresto - alto all'avvio, medio in partita |
-| 308_Jogging_Stop_270 | 1.33 | 1.16 m (+1.15, -0.02) | -90 | no | more | arresto - alto all'avvio, medio in partita |
-| 309_Jogging_Stop_315 | 1.47 | 1.19 m (+1.19, +0.00) | -45 | no | more | arresto - alto all'avvio, medio in partita |
-| 651_Sprint_Start_0 | 0.90 | 2.40 m (+2.40, +0.02) | 0 | no | more | partenza da fermo - alto all'avvio, medio in partita |
-| 652_Sprint_Start_45 | 1.10 | 2.30 m (+1.86, +1.36) | +45 | no | more | partenza da fermo - alto all'avvio, medio in partita |
-| 653_Sprint_Start_90 | 1.10 | 2.00 m (+0.38, +1.96) | +90 | no | more | partenza da fermo - alto all'avvio, medio in partita |
-| 654_Sprint_Start_135 | 1.03 | 1.74 m (-0.99, +1.43) | +135 | no | more | partenza da fermo - alto all'avvio, medio in partita |
-| 655_Sprint_Start_180 | 1.40 | 2.54 m (-2.52, -0.31) | -180 | no | more | partenza da fermo - alto all'avvio, medio in partita |
-| 656_Sprint_Start_225 | 1.23 | 2.54 m (-1.55, -2.00) | -135 | no | more | partenza da fermo - alto all'avvio, medio in partita |
-| 657_Sprint_Start_270 | 1.33 | 2.98 m (+0.37, -2.96) | -90 | no | more | partenza da fermo - alto all'avvio, medio in partita |
-| 658_Sprint_Start_315 | 1.33 | 3.29 m (+2.56, -2.06) | -45 | no | more | partenza da fermo - alto all'avvio, medio in partita |
+| 303_Jogging_Stop_45 | 1.47 | 1.19 m (+1.19, -0.00) | +45 | no | core | arresto - tutti i livelli, all'avvio |
+| 304_Jogging_Stop_90 | 1.33 | 1.15 m (+1.15, -0.00) | +90 | no | core | arresto - tutti i livelli, all'avvio |
+| 305_Jogging_Stop_135 | 1.33 | 1.23 m (+1.23, -0.00) | +135 | no | core | arresto - tutti i livelli, all'avvio |
+| 306_Jogging_Stop_180 | 1.10 | 1.15 m (+1.15, +0.00) | -180 | no | core | arresto - tutti i livelli, all'avvio |
+| 307_Jogging_Stop_225 | 1.33 | 1.23 m (+1.23, +0.00) | -135 | no | core | arresto - tutti i livelli, all'avvio |
+| 308_Jogging_Stop_270 | 1.33 | 1.16 m (+1.15, -0.02) | -90 | no | core | arresto - tutti i livelli, all'avvio |
+| 309_Jogging_Stop_315 | 1.47 | 1.19 m (+1.19, +0.00) | -45 | no | core | arresto - tutti i livelli, all'avvio |
+| 651_Sprint_Start_0 | 0.90 | 2.40 m (+2.40, +0.02) | 0 | no | core | partenza da fermo - tutti i livelli, all'avvio |
+| 652_Sprint_Start_45 | 1.10 | 2.30 m (+1.86, +1.36) | +45 | no | core | partenza da fermo - tutti i livelli, all'avvio |
+| 653_Sprint_Start_90 | 1.10 | 2.00 m (+0.38, +1.96) | +90 | no | core | partenza da fermo - tutti i livelli, all'avvio |
+| 654_Sprint_Start_135 | 1.03 | 1.74 m (-0.99, +1.43) | +135 | no | core | partenza da fermo - tutti i livelli, all'avvio |
+| 655_Sprint_Start_180 | 1.40 | 2.54 m (-2.52, -0.31) | -180 | no | core | partenza da fermo - tutti i livelli, all'avvio |
+| 656_Sprint_Start_225 | 1.23 | 2.54 m (-1.55, -2.00) | -135 | no | core | partenza da fermo - tutti i livelli, all'avvio |
+| 657_Sprint_Start_270 | 1.33 | 2.98 m (+0.37, -2.96) | -90 | no | core | partenza da fermo - tutti i livelli, all'avvio |
+| 658_Sprint_Start_315 | 1.33 | 3.29 m (+2.56, -2.06) | -45 | no | core | partenza da fermo - tutti i livelli, all'avvio |
 | 659_Sprint_Stop | 1.47 | 2.30 m (+2.30, -0.00) | 0 | no | core | arresto - tutti i livelli, all'avvio |
-| 660_Sprint_Stop_45 | 1.50 | 2.59 m (+2.59, -0.00) | +45 | no | more | arresto - alto all'avvio, medio in partita |
-| 661_Sprint_Stop_90 | 1.30 | 2.04 m (+2.04, -0.00) | +90 | no | more | arresto - alto all'avvio, medio in partita |
-| 662_Sprint_Stop_135 | 1.27 | 2.37 m (+2.37, -0.00) | +135 | no | more | arresto - alto all'avvio, medio in partita |
-| 663_Sprint_Stop_180 | 1.33 | 1.94 m (+1.94, +0.04) | -180 | no | more | arresto - alto all'avvio, medio in partita |
-| 664_Sprint_Stop_225 | 1.27 | 2.37 m (+2.37, +0.08) | -135 | no | more | arresto - alto all'avvio, medio in partita |
-| 665_Sprint_Stop_270 | 1.33 | 1.16 m (+1.15, -0.02) | -90 | no | more | arresto - alto all'avvio, medio in partita |
-| 666_Sprint_Stop_315 | 1.50 | 2.59 m (+2.59, -0.07) | -45 | no | more | arresto - alto all'avvio, medio in partita |
-| 876_Walk_Start_0 | 1.17 | 1.26 m (+1.25, -0.09) | 0 | no | more | partenza da fermo - alto all'avvio, medio in partita |
-| 877_Walk_Start_45 | 1.40 | 1.60 m (+1.03, +1.22) | +45 | no | more | partenza da fermo - alto all'avvio, medio in partita |
-| 878_Walk_Start_90 | 1.47 | 1.54 m (+0.01, +1.54) | +90 | no | more | partenza da fermo - alto all'avvio, medio in partita |
-| 879_Walk_Start_135 | 1.37 | 1.12 m (-0.60, +0.95) | +135 | no | more | partenza da fermo - alto all'avvio, medio in partita |
-| 880_Walk_Start_180 | 1.63 | 1.59 m (-1.54, -0.39) | -180 | no | more | partenza da fermo - alto all'avvio, medio in partita |
-| 881_Walk_Start_225 | 1.53 | 1.03 m (-0.69, -0.76) | -135 | no | more | partenza da fermo - alto all'avvio, medio in partita |
-| 882_Walk_Start_270 | 0.83 | 0.68 m (+0.05, -0.68) | -90 | no | more | partenza da fermo - alto all'avvio, medio in partita |
-| 883_Walk_Start_315 | 0.83 | 0.78 m (+0.49, -0.60) | -45 | no | more | partenza da fermo - alto all'avvio, medio in partita |
-| 884_Walk_Stop_45 | 1.33 | 0.64 m (+0.63, +0.11) | +45 | no | more | arresto - alto all'avvio, medio in partita |
-| 885_Walk_Stop_90 | 1.33 | 0.65 m (+0.64, +0.14) | +90 | no | more | arresto - alto all'avvio, medio in partita |
-| 886_Walk_Stop_135 | 1.33 | 0.81 m (+0.81, +0.05) | +135 | no | more | arresto - alto all'avvio, medio in partita |
-| 887_Walk_Stop_180 | 1.83 | 0.62 m (+0.62, -0.01) | -180 | no | more | arresto - alto all'avvio, medio in partita |
-| 888_Walk_Stop_225 | 1.33 | 0.81 m (+0.81, -0.05) | -135 | no | more | arresto - alto all'avvio, medio in partita |
-| 889_Walk_Stop_270 | 1.33 | 0.65 m (+0.64, -0.14) | -90 | no | more | arresto - alto all'avvio, medio in partita |
-| 890_Walk_Stop_315 | 1.33 | 0.64 m (+0.63, -0.11) | -45 | no | more | arresto - alto all'avvio, medio in partita |
+| 660_Sprint_Stop_45 | 1.50 | 2.59 m (+2.59, -0.00) | +45 | no | core | arresto - tutti i livelli, all'avvio |
+| 661_Sprint_Stop_90 | 1.30 | 2.04 m (+2.04, -0.00) | +90 | no | core | arresto - tutti i livelli, all'avvio |
+| 662_Sprint_Stop_135 | 1.27 | 2.37 m (+2.37, -0.00) | +135 | no | core | arresto - tutti i livelli, all'avvio |
+| 663_Sprint_Stop_180 | 1.33 | 1.94 m (+1.94, +0.04) | -180 | no | core | arresto - tutti i livelli, all'avvio |
+| 664_Sprint_Stop_225 | 1.27 | 2.37 m (+2.37, +0.08) | -135 | no | core | arresto - tutti i livelli, all'avvio |
+| 665_Sprint_Stop_270 | 1.33 | 1.16 m (+1.15, -0.02) | -90 | no | core | arresto - tutti i livelli, all'avvio |
+| 666_Sprint_Stop_315 | 1.50 | 2.59 m (+2.59, -0.07) | -45 | no | core | arresto - tutti i livelli, all'avvio |
+| 876_Walk_Start_0 | 1.17 | 1.26 m (+1.25, -0.09) | 0 | no | core | partenza da fermo - tutti i livelli, all'avvio |
+| 877_Walk_Start_45 | 1.40 | 1.60 m (+1.03, +1.22) | +45 | no | core | partenza da fermo - tutti i livelli, all'avvio |
+| 878_Walk_Start_90 | 1.47 | 1.54 m (+0.01, +1.54) | +90 | no | core | partenza da fermo - tutti i livelli, all'avvio |
+| 879_Walk_Start_135 | 1.37 | 1.12 m (-0.60, +0.95) | +135 | no | core | partenza da fermo - tutti i livelli, all'avvio |
+| 880_Walk_Start_180 | 1.63 | 1.59 m (-1.54, -0.39) | -180 | no | core | partenza da fermo - tutti i livelli, all'avvio |
+| 881_Walk_Start_225 | 1.53 | 1.03 m (-0.69, -0.76) | -135 | no | core | partenza da fermo - tutti i livelli, all'avvio |
+| 882_Walk_Start_270 | 0.83 | 0.68 m (+0.05, -0.68) | -90 | no | core | partenza da fermo - tutti i livelli, all'avvio |
+| 883_Walk_Start_315 | 0.83 | 0.78 m (+0.49, -0.60) | -45 | no | core | partenza da fermo - tutti i livelli, all'avvio |
+| 884_Walk_Stop_45 | 1.33 | 0.64 m (+0.63, +0.11) | +45 | no | core | arresto - tutti i livelli, all'avvio |
+| 885_Walk_Stop_90 | 1.33 | 0.65 m (+0.64, +0.14) | +90 | no | core | arresto - tutti i livelli, all'avvio |
+| 886_Walk_Stop_135 | 1.33 | 0.81 m (+0.81, +0.05) | +135 | no | core | arresto - tutti i livelli, all'avvio |
+| 887_Walk_Stop_180 | 1.83 | 0.62 m (+0.62, -0.01) | -180 | no | core | arresto - tutti i livelli, all'avvio |
+| 888_Walk_Stop_225 | 1.33 | 0.81 m (+0.81, -0.05) | -135 | no | core | arresto - tutti i livelli, all'avvio |
+| 889_Walk_Stop_270 | 1.33 | 0.65 m (+0.64, -0.14) | -90 | no | core | arresto - tutti i livelli, all'avvio |
+| 890_Walk_Stop_315 | 1.33 | 0.64 m (+0.63, -0.11) | -45 | no | core | arresto - tutti i livelli, all'avvio |
 
 ## Svolte
 
@@ -267,10 +267,10 @@ Per livello: basso 195 clip (piu' 2 copie specchiate: finta e scivolata), medio 
 | 130_Dribble_FastSprint01 | 2.50 | 14.15 m (+14.15, -0.00) | 0 | no | more | conduzione (tocchi di palla dal Ball_Bone) - alto all'avvio, medio in partita |
 | 131_Dribble_Jogging_LF01 | 0.70 | 2.40 m (+2.40, -0.00) | 0 | no | more | conduzione (tocchi di palla dal Ball_Bone) - alto all'avvio, medio in partita |
 | 132_Dribble_Jogging_RF01 | 0.70 | 2.40 m (+2.40, +0.00) | 0 | no | more | conduzione (tocchi di palla dal Ball_Bone) - alto all'avvio, medio in partita |
-| 133_Dribble_Jogging_Stop | 0.53 | 0.48 m (+0.48, -0.01) | 0 | no | more | arresto in conduzione - alto all'avvio, medio in partita |
-| 134_Dribble_Jogging_Stop_90 | 0.53 | 1.11 m (+1.06, -0.34) | +90 | no | more | arresto in conduzione - alto all'avvio, medio in partita |
-| 135_Dribble_Jogging_Stop_180 | 1.00 | 1.63 m (+1.63, -0.03) | +180 | no | more | arresto in conduzione - alto all'avvio, medio in partita |
-| 136_Dribble_Jogging_Stop_270 | 0.53 | 1.11 m (+1.06, +0.34) | -90 | no | more | arresto in conduzione - alto all'avvio, medio in partita |
+| 133_Dribble_Jogging_Stop | 0.53 | 0.48 m (+0.48, -0.01) | 0 | no | core | arresto in conduzione - tutti i livelli, all'avvio |
+| 134_Dribble_Jogging_Stop_90 | 0.53 | 1.11 m (+1.06, -0.34) | +90 | no | core | arresto in conduzione - tutti i livelli, all'avvio |
+| 135_Dribble_Jogging_Stop_180 | 1.00 | 1.63 m (+1.63, -0.03) | +180 | no | core | arresto in conduzione - tutti i livelli, all'avvio |
+| 136_Dribble_Jogging_Stop_270 | 0.53 | 1.11 m (+1.06, +0.34) | -90 | no | core | arresto in conduzione - tutti i livelli, all'avvio |
 | 137_Dribble_Jogging_Turn_180_L | 0.73 | 0.86 m (+0.83, +0.23) | +180 | no | more | inversione in conduzione - alto all'avvio, medio in partita |
 | 138_Dribble_Jogging_Turn_180_R | 0.73 | 0.86 m (+0.83, -0.23) | -180 | no | more | inversione in conduzione - alto all'avvio, medio in partita |
 | 139_Dribble_Jogging_Turn_LF_45 | 0.67 | 2.49 m (+2.23, +1.12) | +40 | no | more | inversione in conduzione - alto all'avvio, medio in partita |
@@ -295,14 +295,14 @@ Per livello: basso 195 clip (piu' 2 copie specchiate: finta e scivolata), medio 
 | 158_Dribble_NoBall_Sprint_LF | 0.57 | 2.66 m (+2.66, -0.00) | 0 | no | scartata | conduzione mimata senza palla |
 | 159_Dribble_Sprint_LF01 | 0.57 | 2.66 m (+2.66, -0.00) | 0 | no | more | conduzione (tocchi di palla dal Ball_Bone) - alto all'avvio, medio in partita |
 | 160_Dribble_Sprint_RF01 | 0.57 | 2.66 m (+2.66, -0.00) | 0 | no | more | conduzione (tocchi di palla dal Ball_Bone) - alto all'avvio, medio in partita |
-| 161_Dribble_Sprint_Stop | 0.97 | 1.35 m (+1.35, -0.00) | 0 | no | more | arresto in conduzione - alto all'avvio, medio in partita |
-| 162_Dribble_Sprint_Stop_45 | 1.03 | 2.39 m (+2.38, +0.22) | +45 | no | more | arresto in conduzione - alto all'avvio, medio in partita |
-| 163_Dribble_Sprint_Stop_90 | 1.13 | 1.53 m (+1.53, -0.04) | +90 | no | more | arresto in conduzione - alto all'avvio, medio in partita |
-| 164_Dribble_Sprint_Stop_135 | 1.20 | 2.51 m (+2.50, +0.29) | +135 | no | more | arresto in conduzione - alto all'avvio, medio in partita |
-| 165_Dribble_Sprint_Stop_180 | 1.33 | 2.01 m (+1.97, +0.44) | +180 | no | more | arresto in conduzione - alto all'avvio, medio in partita |
-| 166_Dribble_Sprint_Stop_225 | 1.07 | 2.56 m (+2.41, -0.86) | -135 | no | more | arresto in conduzione - alto all'avvio, medio in partita |
-| 167_Dribble_Sprint_Stop_270 | 1.33 | 2.69 m (+2.60, -0.68) | -90 | no | more | arresto in conduzione - alto all'avvio, medio in partita |
-| 168_Dribble_Sprint_Stop_315 | 1.07 | 2.96 m (+2.81, -0.93) | -45 | no | more | arresto in conduzione - alto all'avvio, medio in partita |
+| 161_Dribble_Sprint_Stop | 0.97 | 1.35 m (+1.35, -0.00) | 0 | no | core | arresto in conduzione - tutti i livelli, all'avvio |
+| 162_Dribble_Sprint_Stop_45 | 1.03 | 2.39 m (+2.38, +0.22) | +45 | no | core | arresto in conduzione - tutti i livelli, all'avvio |
+| 163_Dribble_Sprint_Stop_90 | 1.13 | 1.53 m (+1.53, -0.04) | +90 | no | core | arresto in conduzione - tutti i livelli, all'avvio |
+| 164_Dribble_Sprint_Stop_135 | 1.20 | 2.51 m (+2.50, +0.29) | +135 | no | core | arresto in conduzione - tutti i livelli, all'avvio |
+| 165_Dribble_Sprint_Stop_180 | 1.33 | 2.01 m (+1.97, +0.44) | +180 | no | core | arresto in conduzione - tutti i livelli, all'avvio |
+| 166_Dribble_Sprint_Stop_225 | 1.07 | 2.56 m (+2.41, -0.86) | -135 | no | core | arresto in conduzione - tutti i livelli, all'avvio |
+| 167_Dribble_Sprint_Stop_270 | 1.33 | 2.69 m (+2.60, -0.68) | -90 | no | core | arresto in conduzione - tutti i livelli, all'avvio |
+| 168_Dribble_Sprint_Stop_315 | 1.07 | 2.96 m (+2.81, -0.93) | -45 | no | core | arresto in conduzione - tutti i livelli, all'avvio |
 | 169_Dribble_Sprint_Turn_180_L | 0.93 | 0.83 m (+0.83, -0.05) | +180 | no | more | inversione in conduzione - alto all'avvio, medio in partita |
 | 170_Dribble_Sprint_Turn_180_R | 0.93 | 0.83 m (+0.83, -0.05) | -180 | no | more | inversione in conduzione - alto all'avvio, medio in partita |
 | 171_Dribble_Sprint_Turn_LF_45 | 0.60 | 2.27 m (+1.92, +1.22) | +45 | no | more | inversione in conduzione - alto all'avvio, medio in partita |
@@ -324,24 +324,24 @@ Per livello: basso 195 clip (piu' 2 copie specchiate: finta e scivolata), medio 
 | 187_Dribble_SprintArch_Turn_L | 0.57 | 2.65 m (+2.45, +1.02) | +45 | no | more | inversione in conduzione - alto all'avvio, medio in partita |
 | 188_Dribble_SprintArch_Turn_R | 0.57 | 2.65 m (+2.45, -1.02) | -45 | no | more | inversione in conduzione - alto all'avvio, medio in partita |
 | 189_Dribble_Stand01 | 3.50 | 0.00 m (+0.00, -0.00) | 0 | si' | core | fermo con la palla - tutti i livelli, all'avvio |
-| 190_Dribble_Start_Jogging_180_L | 1.30 | 1.99 m (-1.99, +0.07) | +180 | no | more | partenza in conduzione - alto all'avvio, medio in partita |
-| 191_Dribble_Start_Jogging_180_R | 1.03 | 0.87 m (-0.87, +0.00) | -180 | no | more | partenza in conduzione - alto all'avvio, medio in partita |
-| 192_Dribble_Start_Jogging_LF_0 | 0.70 | 2.02 m (+2.02, -0.05) | 0 | no | more | partenza in conduzione - alto all'avvio, medio in partita |
-| 193_Dribble_Start_Jogging_LF_45 | 1.07 | 2.18 m (+1.57, +1.52) | +45 | no | more | partenza in conduzione - alto all'avvio, medio in partita |
-| 194_Dribble_Start_Jogging_LF_90 | 0.90 | 1.46 m (+0.09, +1.46) | +90 | no | more | partenza in conduzione - alto all'avvio, medio in partita |
-| 195_Dribble_Start_Jogging_LF_135 | 0.77 | 0.86 m (-0.71, +0.49) | +135 | no | more | partenza in conduzione - alto all'avvio, medio in partita |
-| 196_Dribble_Start_Jogging_LF_225 | 1.00 | 0.66 m (-0.28, -0.60) | -135 | no | more | partenza in conduzione - alto all'avvio, medio in partita |
-| 197_Dribble_Start_Jogging_LF_270 | 1.13 | 1.77 m (+0.52, -1.69) | -90 | no | more | partenza in conduzione - alto all'avvio, medio in partita |
-| 198_Dribble_Start_Jogging_LF_315 | 0.60 | 1.42 m (+0.98, -1.03) | -45 | no | more | partenza in conduzione - alto all'avvio, medio in partita |
-| 199_Dribble_Start_Jogging_RF_0 | 0.70 | 2.02 m (+2.02, +0.05) | 0 | no | more | partenza in conduzione - alto all'avvio, medio in partita |
-| 200_Dribble_Start_Jogging_RF_45 | 0.60 | 1.42 m (+0.98, +1.03) | +45 | no | more | partenza in conduzione - alto all'avvio, medio in partita |
-| 201_Dribble_Start_Jogging_RF_90 | 1.13 | 1.77 m (+0.52, +1.69) | +90 | no | more | partenza in conduzione - alto all'avvio, medio in partita |
-| 202_Dribble_Start_Jogging_RF_135 | 1.00 | 0.66 m (-0.28, +0.60) | +135 | no | more | partenza in conduzione - alto all'avvio, medio in partita |
-| 203_Dribble_Start_Jogging_RF_225 | 0.77 | 0.86 m (-0.71, -0.49) | -135 | no | more | partenza in conduzione - alto all'avvio, medio in partita |
-| 204_Dribble_Start_Jogging_RF_270 | 0.90 | 1.46 m (+0.09, -1.46) | -90 | no | more | partenza in conduzione - alto all'avvio, medio in partita |
-| 205_Dribble_Start_Jogging_RF_315 | 1.07 | 2.18 m (+1.57, -1.52) | -45 | no | more | partenza in conduzione - alto all'avvio, medio in partita |
-| 206_Dribble_Start_Sprint_180_L | 1.27 | 1.84 m (-1.84, +0.08) | +180 | no | more | partenza in conduzione - alto all'avvio, medio in partita |
-| 207_Dribble_Start_Sprint_180_R | 1.57 | 3.28 m (-3.28, +0.03) | -180 | no | more | partenza in conduzione - alto all'avvio, medio in partita |
+| 190_Dribble_Start_Jogging_180_L | 1.30 | 1.99 m (-1.99, +0.07) | +180 | no | core | partenza in conduzione - tutti i livelli, all'avvio |
+| 191_Dribble_Start_Jogging_180_R | 1.03 | 0.87 m (-0.87, +0.00) | -180 | no | core | partenza in conduzione - tutti i livelli, all'avvio |
+| 192_Dribble_Start_Jogging_LF_0 | 0.70 | 2.02 m (+2.02, -0.05) | 0 | no | core | partenza in conduzione - tutti i livelli, all'avvio |
+| 193_Dribble_Start_Jogging_LF_45 | 1.07 | 2.18 m (+1.57, +1.52) | +45 | no | core | partenza in conduzione - tutti i livelli, all'avvio |
+| 194_Dribble_Start_Jogging_LF_90 | 0.90 | 1.46 m (+0.09, +1.46) | +90 | no | core | partenza in conduzione - tutti i livelli, all'avvio |
+| 195_Dribble_Start_Jogging_LF_135 | 0.77 | 0.86 m (-0.71, +0.49) | +135 | no | core | partenza in conduzione - tutti i livelli, all'avvio |
+| 196_Dribble_Start_Jogging_LF_225 | 1.00 | 0.66 m (-0.28, -0.60) | -135 | no | core | partenza in conduzione - tutti i livelli, all'avvio |
+| 197_Dribble_Start_Jogging_LF_270 | 1.13 | 1.77 m (+0.52, -1.69) | -90 | no | core | partenza in conduzione - tutti i livelli, all'avvio |
+| 198_Dribble_Start_Jogging_LF_315 | 0.60 | 1.42 m (+0.98, -1.03) | -45 | no | core | partenza in conduzione - tutti i livelli, all'avvio |
+| 199_Dribble_Start_Jogging_RF_0 | 0.70 | 2.02 m (+2.02, +0.05) | 0 | no | core | partenza in conduzione - tutti i livelli, all'avvio |
+| 200_Dribble_Start_Jogging_RF_45 | 0.60 | 1.42 m (+0.98, +1.03) | +45 | no | core | partenza in conduzione - tutti i livelli, all'avvio |
+| 201_Dribble_Start_Jogging_RF_90 | 1.13 | 1.77 m (+0.52, +1.69) | +90 | no | core | partenza in conduzione - tutti i livelli, all'avvio |
+| 202_Dribble_Start_Jogging_RF_135 | 1.00 | 0.66 m (-0.28, +0.60) | +135 | no | core | partenza in conduzione - tutti i livelli, all'avvio |
+| 203_Dribble_Start_Jogging_RF_225 | 0.77 | 0.86 m (-0.71, -0.49) | -135 | no | core | partenza in conduzione - tutti i livelli, all'avvio |
+| 204_Dribble_Start_Jogging_RF_270 | 0.90 | 1.46 m (+0.09, -1.46) | -90 | no | core | partenza in conduzione - tutti i livelli, all'avvio |
+| 205_Dribble_Start_Jogging_RF_315 | 1.07 | 2.18 m (+1.57, -1.52) | -45 | no | core | partenza in conduzione - tutti i livelli, all'avvio |
+| 206_Dribble_Start_Sprint_180_L | 1.27 | 1.84 m (-1.84, +0.08) | +180 | no | core | partenza in conduzione - tutti i livelli, all'avvio |
+| 207_Dribble_Start_Sprint_180_R | 1.57 | 3.28 m (-3.28, +0.03) | -180 | no | core | partenza in conduzione - tutti i livelli, all'avvio |
 
 ## Passaggi
 

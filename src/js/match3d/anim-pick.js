@@ -59,12 +59,27 @@ export function roleClips(tpl, role) {
   return tpl.lib ? tpl.lib.role(role) : [];
 }
 
+// Calcio da fermo: la radice della clip non si sposta attorno al contatto.
+export function kickStill(tpl, name) {
+  const m = tpl.meta[name], c = m && m.ev && m.ev.contact;
+  if (!c) return false;
+  const a = rootAt(tpl, name, Math.max(0, c.t - 0.1)), b = rootAt(tpl, name, c.t + 0.15);
+  return traitsOf(name).inPlace || Math.hypot(b.a - a.a, b.s - a.s) / 0.25 <= ANIM.stillRoot;
+}
+
 // Calcio (passaggio, filtrante, cross, tiro). `want`: { turn (rad, + sinistra),
-// ballLeft (m), speed, power, ballY, lead (s dal comando al contatto) }.
+// ballLeft (m), speed, power, ballY, lead (s dal comando al contatto), move
+// (m/s medi del giocatore fino al contatto) }.
 // Restituisce { clip, from, rate, hold } o null (nessuna clip: resta la corsa).
 export function pickKick(tpl, p, K, want) {
   const M = ANIM.match, R = ANIM.kickRate;
-  const cands = roleClips(tpl, K.role).filter((e) => e.meta.ev && e.meta.ev.contact);
+  let cands = roleClips(tpl, K.role).filter((e) => e.meta.ev && e.meta.ev.contact);
+  // il giocatore avanza durante il calcio: niente clip la cui radice si ferma
+  // attorno al contatto (traslavano in piedi), se ce ne sono altre
+  if (want.move > 2 * ANIM.endMove) {
+    const moving = cands.filter((e) => !kickStill(tpl, e.name));
+    if (moving.length) cands = moving;
+  }
   if (!cands.length) return null;
   const feet = p.speed >= ANIM.syncMinSpeed ? p.avatar.currentFeet() : null;
   let pickFrom = 0;
@@ -80,7 +95,7 @@ export function pickKick(tpl, p, K, want) {
     cost += M.power * Math.abs(tr.power - want.power);
     if (want.ballY !== undefined) cost += M.height * Math.abs(Math.max(0.1, c.ball[1] * tpl.scale) - Math.max(0.1, want.ballY));
     if (K.role === 'long') cost += M.lob * (tr.lob === !!want.lob ? 0 : 1);
-    if (tr.inPlace && want.speed > 1.5) cost += M.inPlace;
+    if (tr.inPlace && want.speed > ANIM.endMove) cost += M.inPlace;
     let t0 = clamp(contact - want.lead, lo, hi);
     if (feet) {
       const pm = matchPoseCost(gestureTable(tpl, e.name), feet, lo, hi, t0);
@@ -90,6 +105,12 @@ export function pickKick(tpl, p, K, want) {
     cost += M.speed * Math.abs(rootSpeed(tpl, e.name, t0) - want.speed);
     // meglio una clip che resta vicina alla sua velocita' naturale
     cost += M.rate * Math.abs(Math.log(clamp((contact - t0) / Math.max(0.01, want.lead), 0.2, 5)));
+    // e che si sposta quanto il giocatore fino al contatto: una clip da fermo
+    // con il giocatore che avanza a 2 m/s traslava
+    if (want.move) {
+      const a = rootAt(tpl, e.name, t0), b = rootAt(tpl, e.name, contact);
+      cost += M.move * Math.max(0, want.move - Math.hypot(b.a - a.a, b.s - a.s) / Math.max(0.05, want.lead));
+    }
     e._t0 = t0;
     return cost;
   });
@@ -142,7 +163,9 @@ export function pickIntercept(tpl, p, want) {
 }
 
 // Contrasto in piedi: palla a `ballLeft` m dal busto, giocatore a `speed`
-// m/s; il contatto deve cadere dopo `lead` secondi reali.
+// m/s; il contatto deve cadere dopo `lead` secondi reali. `reach`: metri
+// dell'affondo del codice fino al contatto, che la radice della clip deve
+// fare anche lei (una clip da fermo trascinata dall'affondo traslava).
 export function pickTackle(tpl, p, want) {
   const M = ANIM.match, R = ANIM.kickRate;
   const cands = roleClips(tpl, 'tackle').filter((e) => e.meta.ev && e.meta.ev.contact);
@@ -155,6 +178,10 @@ export function pickTackle(tpl, p, want) {
     let cost = c.ball ? M.side * Math.abs(c.ball[0] * tpl.scale - want.ballLeft) : M.side * 0.3;
     cost += M.speed * Math.abs(rootSpeed(tpl, e.name, t0) - want.speed);
     cost += M.rate * Math.abs(Math.log(clamp((c.t - t0) / Math.max(0.01, want.lead), 0.2, 5)));
+    if (want.reach) {
+      const a = rootAt(tpl, e.name, t0), b = rootAt(tpl, e.name, c.t);
+      cost += M.side * Math.abs(Math.hypot(b.a - a.a, b.s - a.s) - want.reach);
+    }
     e._t0 = t0;
     return cost;
   });
@@ -197,6 +224,51 @@ export function stopTime(tpl, clip, v = 0.3) {
   const d = clipDuration(tpl, clip);
   for (let t = 0.1; t < d; t += 1 / 30) if (rootSpeed(tpl, clip, t) < v) return t;
   return d;
+}
+
+// Metri percorsi dalla radice della clip dall'inizio, un valore per
+// fotogramma a 30 Hz (calcolati una volta). Partenze e arresti legano il
+// tempo della clip alla distanza percorsa dal giocatore: la radice fa gli
+// stessi metri della fisica, il piede d'appoggio resta dov'e'.
+export function rootPath(tpl, clip) {
+  const m = tpl.meta[clip];
+  if (!m) return null;
+  if (!m._path) {
+    const n = Math.max(2, Math.round(clipDuration(tpl, clip) * 30) + 1), cum = new Float32Array(n);
+    let a = rootAt(tpl, clip, 0);
+    for (let i = 1; i < n; i++) {
+      const b = rootAt(tpl, clip, i / 30);
+      cum[i] = cum[i - 1] + Math.hypot(b.a - a.a, b.s - a.s);
+      a = b;
+    }
+    m._path = cum;
+  }
+  return m._path;
+}
+
+// Metri della radice al tempo t (s) della clip.
+export function distAt(path, t) {
+  const x = clamp(t * 30, 0, path.length - 1), i = Math.floor(x), j = Math.min(path.length - 1, i + 1);
+  return path[i] + (path[j] - path[i]) * (x - i);
+}
+
+// Tempo (s) in cui la radice ha fatto `d` metri (inversa di distAt).
+export function timeAtDist(path, d) {
+  const n = path.length;
+  if (d <= 0) return 0;
+  if (d >= path[n - 1]) return (n - 1) / 30;
+  let lo = 0, hi = n - 1;
+  while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (path[mid] < d) lo = mid; else hi = mid; }
+  const span = path[hi] - path[lo];
+  return (lo + (span > 1e-6 ? (d - path[lo]) / span : 0)) / 30;
+}
+
+// Primo istante in cui la radice va ad almeno `v` m/s, entro `share` della
+// clip: una partenza entra dal passo che ha la velocita' del giocatore.
+export function timeAtSpeed(path, v, share = 0.6) {
+  const last = Math.max(1, Math.floor((path.length - 1) * share));
+  for (let i = 0; i < last; i++) if ((path[i + 1] - path[i]) * 30 >= v) return i / 30;
+  return last / 30;
 }
 
 // La clip fissa di un'azione che decide il gioco (tempi, spostamenti): sempre
