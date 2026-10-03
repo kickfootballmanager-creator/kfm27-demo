@@ -18,6 +18,7 @@ const PAD = ['cross', 'circle', 'square', 'triangle', 'l1', 'r1', 'r2', 'feint']
 // Gamepad API, mappatura standard: indice del tasto per ogni nome.
 const PAD_INDEX = { cross: 0, circle: 1, square: 2, triangle: 3, l1: 4, r1: 5, r2: 7 };
 const PAD_START = 9, PAD_UP = 12, PAD_DOWN = 13;
+const PAD_SHARE = 8;   // Share/Create (PlayStation), View (Xbox): replay di debug
 
 const ACTIONS = {
   attack: { cross: 'pass', triangle: 'through', circle: 'cross', square: 'shot', r1: 'sprint', r2: 'close', feint: 'feint' },
@@ -94,7 +95,7 @@ function el(tag, cls) {
 export class Controls {
   constructor(root, layer, on = {}) {
     this.root = root;
-    this.on = on;                 // onPad(type), onPadLost(), onPause()
+    this.on = on;                 // onPad(type), onPadLost(), onPause(), onMenu(azione), onSave()
     this.keys = new Set();
     this.joy = { id: null, ox: 0, oy: 0, x: 0, y: 0 };
     this.btn = {};                // tasti touch tenuti premuti
@@ -299,8 +300,9 @@ export class Controls {
     const pressed = (i) => !!(g.buttons[i] && (g.buttons[i].pressed || g.buttons[i].value > 0.5));
     const now = {};
     for (const k in PAD_INDEX) now[k] = pressed(PAD_INDEX[k]);
-    now.start = pressed(PAD_START); now.up = pressed(PAD_UP); now.down = pressed(PAD_DOWN);
+    now.start = pressed(PAD_START); now.up = pressed(PAD_UP); now.down = pressed(PAD_DOWN); now.share = pressed(PAD_SHARE);
     const prev = this.padPrev;
+    if (now.share && !prev.share && this.on.onSave) this.on.onSave();
     for (const k in PAD_INDEX) {
       if (now[k] && !prev[k]) { this.downs[k]++; this.device = 'pad'; }
       if (!now[k] && prev[k]) this.ups[k]++;

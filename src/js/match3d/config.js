@@ -71,6 +71,11 @@ export const PLAYER = {
   faceGain: 14,           // 1/s: il busto insegue la direzione voluta come una molla...
   faceAccel: 70,          // ...con un'accelerazione angolare massima (rad/s^2): niente scatti
   faceMax: 9,             // rad/s massimi del busto: mezzo giro in 0,35 s
+  // ...che calano con la corsa: faceMax fino a faceRun[0] m/s, faceRun[2]
+  // rad/s da faceRun[1] m/s in su (non nei calci). A 9 rad/s in corsa la
+  // fusione passava in 0,3 s da avanti a laterale a indietro: piede
+  // appoggiato che scivolava a 2-4 m/s e bacino che saltava
+  faceRun: [1, 3, 2.5],
   strafeSpeed: 0.6,       // corsa laterale o all'indietro: frazione della velocita' massima
   closeSpeed: 0.55,       // controllo stretto (R2): frazione della velocita'
   turnSlowBoost: 2,       // da fermo si gira fino a 3 volte piu' in fretta
@@ -443,13 +448,33 @@ export const SLIDE = {
   lead: 0.45              // senza joystick si mira dove sara' la palla fra tanti secondi
 };
 
-// Chi subisce una scivolata: cade, resta a terra, si rialza. Una clip sola
-// della libreria (caduta, a terra, rialzo): ferma nell'ultimo istante a terra
-// per groundTime secondi, poi riparte.
-export const DOWN = {
-  clip: '742_Tackles01_Reaction_03',
-  fallTravel: 0.6,        // frazione dello spostamento della clip
-  groundTime: 0.5
+// Reazioni ai contatti (skill: "Arbitro, falli e cartellini"), quattro
+// livelli per gravita' dell'intervento (rules.foul): 1 sbilanciamento sul
+// posto o inciampo che continua la corsa, 2 colpo con un passo di recupero,
+// 3 caduta e rialzo, 4 solo per i falli violenti (scivolata da dietro in
+// piena corsa, intervento da rosso) la caduta spettacolare. Dentro il livello
+// la clip e' quella il cui spostamento somiglia di piu' alla spinta (gestures.react).
+export const REACT = {
+  clips: {
+    1: ['640_Small_Hit_Reaction_00', '641_Small_Hit_Reaction_90', '642_Small_Hit_Reaction_180', '643_Small_Hit_Reaction_270',
+      '734_Tackles_Reaction_L_01', '735_Tackles_Reaction_R_01', '109_Defense_Jump_Fall_Reaction_03'],
+    2: ['264_Hit_Reaction_00', '265_Hit_Reaction_90', '266_Hit_Reaction_180', '267_Hit_Reaction_270',
+      '698_Stand_Hit_Reaction_90', '699_Stand_Hit_Reaction_180', '700_Stand_Hit_Reaction_270',
+      '084_Defense_Fall_Reaction_L', '085_Defense_Fall_Reaction_R', '086_Defense_Fall_Reaction_UP'],
+    3: ['105_Defense_Jump_Fall_Reaction_01_L', '106_Defense_Jump_Fall_Reaction_01_R', '107_Defense_Jump_Fall_Reaction_02_L', '108_Defense_Jump_Fall_Reaction_02_R'],
+    4: ['742_Tackles01_Reaction_03']
+  },
+  levels: [0.3, 0.75],    // gravita' da cui si passa al livello 2 e al 3; la scivolata e' almeno 3
+  violentSpeed: 8,        // m/s di chi entra in scivolata da dietro (in piena corsa ne fa 10-11): violento (livello 4), come la gravita' da rosso
+  push: 1,                // m: la spinta, dall'avversario verso chi la subisce...
+  carry: 0.15,            // ...piu' tanti secondi della corsa dell'avversario...
+  momentum: { 1: 0.3, 2: 0.3, 3: 0.6, 4: 0.6 },   // ...e della propria: chi cade (3, 4) ha i piedi portati via e va avanti con lo slancio
+  window: 0.8,            // s della clip in cui si misura il suo spostamento
+  angleCost: 1,           // per radiante fra spinta e spostamento della clip
+  speedCost: 0.3,         // per m/s fra la corsa e la velocita' d'entrata della clip
+  travel: { 1: 1, 2: 1, 3: 0.8, 4: 0.6 },   // frazione dello spostamento della clip; 3 e 4 crescono con la corsa
+  ground: { 3: 0.3, 4: 0.5 },              // secondi a terra prima del rialzo
+  wonChance: 0.5          // contrasto pulito: probabilita' che il portatore sbilanciato reagisca (livello 1)
 };
 
 // Palloni alti: colpo di testa, rovesciata, al volo.
@@ -483,6 +508,7 @@ export const KEEPER = {
   chargeDist: 40,         // uscita chiesta dall'utente: solo con la palla entro tanti metri dalla porta
   holdTime: 1.4,          // secondi con la palla in mano prima del rinvio
   throwMax: 28,           // compagno libero entro questa distanza: rimessa con le mani
+  stepSpeed: 2.6,         // m/s massimi in guardia senza scatto (passi del portiere che non scivolano)
   // Parate. Per ogni tiro il portiere cerca, lungo la traiettoria, il punto,
   // la clip e il fotogramma (dentro `window`) in cui i suoi palmi arrivano
   // sulla palla, deformando la clip nel tempo e nello spostamento della
@@ -493,7 +519,9 @@ export const KEEPER = {
   // Ball_Bone. Sono tutte nel pacchetto essenziale: uguali a ogni livello.
   // before/after: secondi della clip prima e dopo il contatto in cui le mani
   // possono incontrare la palla; lead: da quanto prima del contatto parte la clip.
-  saveWindow: { before: 0.3, after: 0.2, lead: 0.6 },
+  // Prese con la palla in mano dal primo fotogramma (Keeper_Ball_*): da `held`
+  // s in poi, in tuffo fino a quando il bacino scende sotto `landY` m.
+  saveWindow: { before: 0.3, after: 0.2, lead: 0.6, held: 0.15, landY: 0.5 },
   saveScale: { dive: { a: [0, 1.2], s: [0.5, 1.3] }, stand: { a: [0, 1.2], s: [0, 1.6] }, claim: { a: [0.2, 1.6], s: [0, 2.2] } },
   saveBias: { catch: 0, parry: 0.1, dive: 0.02, punch: 0.08 },
   plan: {
@@ -595,16 +623,23 @@ export const ANIM = {
   dirMaxRate: 2.1,        // clip direzionali (sono corsette): un po' piu' accelerate
   blend: 40,              // 1/s: filtro dei pesi del blend tree
   blendMax: 6,            // variazione massima di un peso al secondo (niente pose che saltano)
+  hipsTurn: 6,            // rad/s massimi di cui la fusione della corsa gira il bacino (Locomotion.limitHips)...
+  hipsMinStep: 0.25,      // ...ma i pesi fanno sempre almeno questa frazione del loro passo
+  hipsOutlier: 1.6,       // rad: in una direzione, fuori dalla corsa la clip col bacino girato oltre tanto dalle altre (buildLoco)
   stillDrop: 2,           // ...per le pose da fermo che scendono mentre il giocatore si sposta (oltre endMove)
   stepRise: 1.5,          // ...e per i passi che salgono, finche' resta della posa da fermo
   // Salto isolato di un osso all'uscita del mixer (Avatar.smoothJumps): oltre
   // jump rad in un passo e ratio volte il passo prima (minimo floor), la posa
-  // riparte da quella mostrata e ci arriva con costante di tempo `time` s. Il
-  // bacino nel mondo (giri del corpo) con la curva (1 + t/time) e^(-t/time), che
-  // parte ferma, e nei primi burst fotogrammi riparte gia' oltre rejump rad;
-  // parte anche oltre big rad se il passo e' bigRatio volte quello prima.
-  inertia: { time: 0.06, jump: 0.3, ratio: 4, floor: 0.03, rejump: 0.15, burst: 3, big: 0.5, bigRatio: 2 },
+  // riparte da quella mostrata e ci arriva con costante di tempo `time` s.
+  inertia: { time: 0.06, jump: 0.3, ratio: 4, floor: 0.03 },
+  // Bacino nel mondo (Avatar.trackHips): la velocita' angolare mostrata cambia
+  // al massimo di accel rad/s^2 (0,11 rad/passo di differenza fra un passo e
+  // il successivo: niente picchi ne' "fermo e poi scatto"), mai oltre vmax
+  // rad/s (0,67 rad/passo, sotto il limite di 0,8 del test). Un giro di 180
+  // gradi saltato dalla fusione si recupera in circa 0,18 s.
+  hipsTrack: { accel: 400, vmax: 40 },
   fingerRate: 15,         // rad/s: le dita non girano mai piu' in fretta (Avatar.smoothJumps)
+  boneRate: 45,           // rad/s: nessun altro osso gira piu' in fretta (0,75 rad a 60 fps; il test ne ammette 0,8)
   speedSpring: 14,        // 1/s: molla critica della velocita' che decide i pesi (partenze, arresti)
   angleRate: 30,          // 1/s: filtro dell'angolo fra corsa e busto
   maxSpeed: 12,           // m/s: oltre, uno spostamento e' un riposizionamento, non una corsa
@@ -635,6 +670,12 @@ export const ANIM = {
   // pole: m davanti al ginocchio della clip (asse di piegatura x gamba) che
   // tengono il piano del ginocchio.
   footLock: { on: true, maxSpeed: 2.5, minMove: 0.25, ramp: 0.15, release: 0.2, drift: 0.22, liftEarly: 0.25, reach: 0.985, pole: 0.4 },
+  // limiti naturali del braccio in gradi (rig.armAngles): asse del gomito
+  // fuori dalla cerniera, torsione dell'avambraccio e della mano, piega del
+  // polso. Nelle 601 clip: 12,7 / 63 / 82 (99,9 percentile) / 99; nelle
+  // dissolvenze fra due clip il gomito arriva a 29. Il gomito storto
+  // dell'IK di prima stava fra 90 e 180
+  armLimits: { hinge: 35, twist: 70, hand: 95, wrist: 100 },
   fadeIn: 0.15,           // cross-fade verso un gesto (0,15-0,25 s)
   fadeOut: 0.22,
   chainFade: 0.18,        // due gesti di fila: il primo sfuma sotto il secondo
@@ -781,7 +822,13 @@ export const RULES = {
   // Rimessa: in attesa si resta fermi nel primo fotogramma (palla in mano),
   // poi la clip riparte da li'; la rincorsa della radice (2,07 m fino al
   // rilascio) riporta il battitore sulla linea.
-  throwIn: { clip: 'throw_in', from: 0, release: 1.55, end: 2.3, rate: 1.25, outside: 2.3, shortApex: 0.9, longApex: 3.2, shortMax: 16, longMax: 30 },
+  throwIn: { clip: 'throw_in', from: 0, release: 1.55, end: 2.3, rate: 1.25, outside: 2.3, shortApex: 0.9, longApex: 3.2, shortMax: 16, longMax: 30,
+    // prima del lancio (PES) chi batte si gira verso dove la mandera': al
+    // massimo turnMax rad dalla perpendicolare alla linea, coi giri sul posto
+    // della libreria gia' da turnFrom rad; l'IA lancia girata entro aimTol
+    // rad (o dopo aimWait s). Intanto la palla sta al petto: chest = metri
+    // davanti e sotto l'osso Spine2
+    turnMax: 1.4, turnFrom: 0.35, aimTol: 0.15, aimWait: 2.6, chest: [0.3, -0.1] },
   goalKick: { x: 5.5, z: 5 },  // metri dalla linea di porta, dal centro della porta
   cornerInset: 0.4,
   foulPause: 2.4,         // fischio del fallo: caduta, cartellino, poi la punizione
@@ -826,9 +873,6 @@ export const FOUL = {
   // entro dist metri, al massimo `defenders` avversari fra lei e la porta
   promising: { add: 0.28, dist: 45, speed: 3, defenders: 2 },
   dogsoDist: 26,          // chiara occasione da gol: vittima entro tanti metri dalla porta avversaria
-  // Chi subisce il fallo in un contrasto in piedi: caduta e rialzo della
-  // libreria, dal lato del contatto; in scivolata: DOWN.
-  standFall: { clip: { left: '105_Defense_Jump_Fall_Reaction_01_L', right: '106_Defense_Jump_Fall_Reaction_01_R' }, travel: 0.4 }
 };
 
 // Regola del vantaggio: l'arbitro aspetta `decide` secondi; se la squadra che
@@ -859,6 +903,11 @@ export const SOUND = {
 
 // Rallentatore di debug (F4): per guardare transizioni e contatti piede-palla.
 export const DEBUG = { slowMotion: 0.25 };
+
+// Replay di debug (tape.js): gli ultimi `seconds` s a `hz` fotogrammi al
+// secondo, salvati con F9, Share/View o dal menu di pausa. events: fatti di
+// gioco tenuti in memoria; videoBits: qualita' del video WebM.
+export const TAPE = { hz: 60, seconds: 10, events: 300, videoBits: 8e6 };
 
 // Dopo il gol (replay.js): esultanza dal vivo per `celebrate` s, poi il
 // replay degli ultimi `pre` s prima del gol, laterale basso a velocita'

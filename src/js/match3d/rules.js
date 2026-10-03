@@ -1,7 +1,7 @@
-import { RULES, PITCH, BALL, CONTROL, PASS, FOUL, ADVANTAGE, FK, REPLAY } from './config.js';
+import { RULES, PITCH, BALL, CONTROL, PASS, FOUL, ADVANTAGE, FK, REPLAY, REACT } from './config.js';
 import { headingOf, choosePass, freeness } from './player.js';
 import { rollSpeedFor } from './ball.js';
-import { rootAction, standFall } from './gestures.js';
+import { rootAction, react } from './gestures.js';
 import { whistle } from './audio.js';
 import { clipDuration } from './avatar.js';
 
@@ -116,6 +116,7 @@ export class Rules {
     this.pendingFoul = null;
     this.pending = { type, side, spot };
     m.hud.toast({ throw: 'Rimessa laterale', corner: "Calcio d'angolo", goalkick: 'Rinvio dal fondo' }[type]);
+    m.note('fuori', { ripresa: type, squadra: side });
     // l'arbitro fischia e indica chi riprende
     const d = m.dirOf(side), r = m.referee.p.pos;
     m.referee.signal('point', { x: r.x + d * 10, z: r.z });
@@ -128,7 +129,7 @@ export class Rules {
     if (type === 'freekick' || type === 'penalty') { this.freeKick(pending); return; }
     const m = this.m, b = m.ball, team = m.teams[side];
     // via azioni e gesti in corso: anche le pose senza fine (palla in mano del portiere)
-    for (const p of m.everyone) { p.action = null; p.avatar.endGesture(); p.holding = false; p.dropping = false; p.holdHand = null; p.homeTarget = null; }
+    for (const p of m.everyone) { p.action = null; p.avatar.endGesture(); p.holding = false; p.dropping = false; p.holdHand = null; p.homeTarget = null; p.throwHold = false; p.inPlaceMin = undefined; }
     m.offside = m.indirect = null;
     let taker;
     if (type === 'goalkick') taker = team.keeper;
@@ -145,9 +146,18 @@ export class Rules {
     }
     m.gain(taker, { throw: 'rimessa', corner: "calcio d'angolo", goalkick: 'rinvio' }[type]);
     taker.holding = type === 'throw';
-    // in attesa: fermo nel primo fotogramma della rimessa, palla in mano
-    if (type === 'throw') taker.avatar.playOnce(RULES.throwIn.clip, RULES.throwIn.from, Infinity, 0);
     this.set = { type, side, taker, spot, ready: true };
+    if (type === 'throw') {
+      // in attesa: palla al petto con le due mani (Avatar.holdChest), girato
+      // verso dove la mandera' (aimThrow); l'IA sceglie subito il compagno
+      taker.throwHold = true;
+      taker.inPlaceMin = RULES.throwIn.turnFrom;
+      Object.assign(this.set, { h0: h, aim: h });
+      if (side !== m.userSide || m.auto) {
+        this.set.aimPower = 0.2 + Math.random() * 0.75;
+        this.set.aimTo = this.throwTarget(taker, 'auto', taker.dirX, taker.dirZ, this.set.aimPower);
+      }
+    }
     if (side === m.userSide && !taker.keeper) m.setControlled(taker);
     else if (!m.ctrl || m.ctrl === taker || m.ctrl.team !== m.userSide || m.ctrl.keeper) m.setControlled(m.nearestTo(m.squad.players, spot.x, spot.z));
     this.go('restart');
@@ -222,7 +232,9 @@ export class Rules {
     const aiming = s.fk && (s.fk.mode === 'direct' || s.fk.mode === 'penalty');
     if (user && aiming) m.setpieces.aim(dt, inp);
     if (user && m.charging) return;
-    if (this.t > (user ? (aiming ? FK.userWait : RULES.userWait) : RULES.aiTake)) this.take('auto', 0.2 + Math.random() * 0.75, null);
+    // rimessa dell'IA: si lancia girati verso il compagno (aimThrow)
+    const facing = s.type !== 'throw' || user || Math.abs(Math.atan2(Math.sin(p.heading - s.aim), Math.cos(p.heading - s.aim))) < RULES.throwIn.aimTol || this.t > RULES.throwIn.aimWait;
+    if (facing && this.t > (user ? (aiming ? FK.userWait : RULES.userWait) : RULES.aiTake)) this.take('auto', s.aimPower ?? 0.2 + Math.random() * 0.75, null);
   }
 
   // `btn`: pulsante dell'utente (pass, through, cross, shot) o 'auto' per l'IA.
@@ -271,16 +283,37 @@ export class Rules {
   }
 
   // Rimessa laterale: rincorsa della clip fino alla linea, palla lasciata al fotogramma misurato.
-  throwIn(p, kind, inp, power = 0.3) {
+  // Compagno a cui va la rimessa nella direzione (ax, az), entro la portata del tipo.
+  throwTarget(p, kind, ax, az, power) {
     const m = this.m, T = RULES.throwIn;
     const mates = m.teams[p.team].players, opp = m.teams[m.otherSide(p.team)].players;
-    const ax = inp && inp.mag > 0 ? inp.x : p.dirX, az = inp && inp.mag > 0 ? inp.z : p.dirZ;
     let to = choosePass(p, ax, az, mates.filter((q) => !q.keeper && Math.hypot(q.pos.x - p.pos.x, q.pos.z - p.pos.z) < (kind === 'long' ? T.longMax : T.shortMax)), opp, PASS.coneNoStick, power);
     if (!to) {
       let best = -1;
       for (const q of mates) { if (q === p || q.keeper) continue; const f = freeness(q.pos.x, q.pos.z, opp) - Math.hypot(q.pos.x - p.pos.x, q.pos.z - p.pos.z) / 40; if (f > best) { best = f; to = q; } }
     }
-    // la clip riparte dal fotogramma in cui aspettava: nessun salto di posa
+    return to;
+  }
+
+  // Rimessa, come in PES: prima del lancio chi batte si gira verso dove la
+  // mandera' (giri sul posto della libreria, palla al petto). L'utente mira
+  // con la levetta, l'IA verso il compagno scelto; mai oltre T.turnMax dalla
+  // perpendicolare alla linea.
+  aimThrow(dt, p, inp) {
+    const s = this.set, T = RULES.throwIn;
+    let h = s.aim;
+    if (inp && inp.mag > 0.3) h = Math.atan2(inp.x, inp.z);
+    else if (s.aimTo && !s.aimTo.sentOff) h = Math.atan2(s.aimTo.pos.x - p.pos.x, s.aimTo.pos.z - p.pos.z);
+    s.aim = s.h0 + clamp(Math.atan2(Math.sin(h - s.h0), Math.cos(h - s.h0)), -T.turnMax, T.turnMax);
+    p.drive(dt, 0, 0, 0, { face: { x: Math.sin(s.aim), z: Math.cos(s.aim) } });
+  }
+
+  throwIn(p, kind, inp, power = 0.3) {
+    const m = this.m, T = RULES.throwIn, s = this.set;
+    // nella direzione in cui guarda (si e' girato prima, aimThrow) o della
+    // levetta; l'IA al compagno verso cui si e' girata
+    const ax = inp && inp.mag > 0 ? inp.x : p.dirX, az = inp && inp.mag > 0 ? inp.z : p.dirZ;
+    const to = !inp && s && s.aimTo && !s.aimTo.sentOff && !s.aimTo.down ? s.aimTo : this.throwTarget(p, kind, ax, az, power);
     const hold = (T.end - T.from) / T.rate;
     if (!p.avatar.resume(T.clip, T.rate, hold)) p.avatar.playOnce(T.clip, T.from, hold, T.rate);
     p.action = rootAction(m, p, T.clip, T.from, T.end, T.rate, {
@@ -288,10 +321,13 @@ export class Rules {
         // la palla lascia le mani dove l'ha tenuta l'ultimo disegno
         const b = m.ball, h = p.avatar.heldAt;
         p.holding = false;
+        p.throwHold = false;
+        p.inPlaceMin = undefined;
         b.hold(h.x, Math.max(1.2, h.y), h.z);
         if (to) b.lobTo(to.pos.x + to.vel.x * 0.6, to.pos.z + to.vel.z * 0.6, Math.max(b.pos.y, 1.8) + (kind === 'long' ? T.longApex : T.shortApex));
         else b.kick(p.dirX * 10, 3, p.dirZ * 10);
         m.poss.fly('rimessa', p, to || null);
+        m.note('rimessa', { p, a: to || null, tipo: kind, busto: p.heading });
         m.noOffsideSeq = m.poss.seq;
         m.kickLock = { p, t: CONTROL.kickLock };
         if (to && to.team === m.userSide) m.switchTo(to);
@@ -318,17 +354,30 @@ export class Rules {
     // chiara occasione da gol negata: rosso, in area giallo se l'intervento cercava la palla
     if (this.dogso(victim, off)) card = inBox && info.kind !== 'scivolata' ? (card || 'yellow') : 'red';
     m.stats.fouls[off.team]++;
-    // chi subisce cade: la scivolata lo ha gia' fatto cadere (tripped)
-    if (info.kind !== 'scivolata') standFall(m, victim);
+    // reazione di chi lo subisce, graduata (REACT): quasi tutti i falli
+    // restano sbilanciamenti e colpi senza caduta
+    const level = this.reactLevel(info.kind, from, sev, off);
+    react(m, victim, level, off);
     if (m.owner === victim) {
       m.ball.kick(victim.vel.x * 0.6, 0, victim.vel.z * 0.6);
       m.poss.loose('contrasto', off);
     }
     const f = { off, victim, spot, card, team: victim.team, penalty: inBox && RULES.penalties, t: 0, adv: false };
-    m.lastFoul = { kind: info.kind, from, sev, card, penalty: f.penalty, promising };
+    m.lastFoul = { kind: info.kind, from, sev, card, penalty: f.penalty, promising, level };
+    m.note('fallo', { off, victim, tipo: info.kind, da: from, gravita: sev, cartellino: card || '', rigore: !!f.penalty, livello: level });
     if (f.penalty) this.callFoul(f);
     else this.pendingFoul = f;
     return true;
+  }
+
+  // Livello della reazione di chi subisce il fallo (REACT): 4 solo per un
+  // intervento da rosso o una scivolata da dietro in piena corsa; la
+  // scivolata fa sempre cadere (3); per il resto decide la gravita'.
+  reactLevel(kind, from, sev, off) {
+    const R = REACT;
+    if (sev >= FOUL.red || (kind === 'scivolata' && from === 'back' && Math.hypot(off.vel.x, off.vel.z) >= R.violentSpeed)) return 4;
+    if (kind === 'scivolata' || sev >= R.levels[1]) return 3;
+    return sev >= R.levels[0] ? 2 : 1;
   }
 
   // Azione promettente: la vittima correva verso la porta, con la palla, e
@@ -444,6 +493,7 @@ export class Rules {
       if (p.yellows >= 2) { red = true; note('red', true); }
     } else note('red');
     m.referee.showCard(red ? 'red' : 'yellow', p.pos);
+    m.note('cartellino', { p, colore: red ? 'rosso' : 'giallo' });
     m.hud.setCards(m.cards);
     m.hud.toast((red ? (type === 'yellow' ? 'Secondo giallo, espulso' : 'Espulso') : 'Ammonito') + ': ' + (p.number ? p.number + ' ' : '') + (p.name || ''));
     if (red) m.sendOff(p);
@@ -452,7 +502,7 @@ export class Rules {
   // --- punizione o rigore: palla sul punto, chi batte dietro, verso la porta.
   freeKick({ type, side, spot, direct }) {
     const m = this.m, b = m.ball, team = m.teams[side], d = m.dirOf(side);
-    for (const p of m.everyone) { if (!p.down) { p.action = null; p.avatar.endGesture(); } p.holding = false; p.dropping = false; p.holdHand = null; p.homeTarget = null; }
+    for (const p of m.everyone) { if (!p.down) { p.action = null; p.avatar.endGesture(); } p.holding = false; p.dropping = false; p.holdHand = null; p.homeTarget = null; p.throwHold = false; p.inPlaceMin = undefined; }
     m.offside = m.indirect = null;
     let sp = { x: clamp(spot.x, -HL + 0.5, HL - 0.5), z: clamp(spot.z, -HW + 0.5, HW - 0.5) }, taker;
     if (type === 'penalty') {

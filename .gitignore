@@ -31,3 +31,7 @@ src/assets/match3d/**/*.fbx
 
 # file compilati degli strumenti Python
 __pycache__/
+
+# Replay di debug della partita 3D (video e pose delle animazioni Studio33):
+# restano sul PC, come la libreria da cui vengono
+debug/

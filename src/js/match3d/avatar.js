@@ -2,8 +2,8 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { MODEL, ANIM, BALL } from './config.js';
-import { boneMap, solveTwoBoneKeep, blendPath, palm, rotateWorld } from './rig.js';
+import { MODEL, ANIM, BALL, RULES } from './config.js';
+import { boneMap, solveArm, releaseArm, blendPath, palm, rotateWorld } from './rig.js';
 import { buildLoco, gaitOf, gesturePoses, groundOf, slotTime, phaseOf, FootLock, feetPose, matchPose } from './anim.js';
 import { AnimLibrary } from './anim-lib.js';
 
@@ -332,6 +332,15 @@ const _id = new THREE.Quaternion();
 const _leanFull = new THREE.Quaternion(), _leanBody = new THREE.Quaternion(), _eul = new THREE.Euler();
 const _yv = new THREE.Vector3(), _fq = new THREE.Quaternion();
 const _iv = new THREE.Quaternion(), _iw = new THREE.Quaternion(), _iq = new THREE.Quaternion(), _ip = new THREE.Quaternion();
+const _he = new THREE.Vector3(), _hd = new THREE.Vector3(), _hx = new THREE.Quaternion();
+
+// Rotazione `q` come vettore asse per angolo (rad), sul ramo corto.
+function rotVec(q, out) {
+  const g = q.w < 0 ? -1 : 1, x = q.x * g, y = q.y * g, z = q.z * g, s = Math.hypot(x, y, z);
+  if (s < 1e-9) return out.set(2 * x, 2 * y, 2 * z);
+  const k = 2 * Math.atan2(s, q.w * g) / s;
+  return out.set(x * k, y * k, z * k);
+}
 
 // Un calciatore in scena: copia dello scheletro, clip condivise, fusione
 // delle corse in base alla velocita' reale e gesti (passaggio, tiro) sopra.
@@ -393,6 +402,7 @@ export class Avatar {
     this.boneList = Object.values(this.rig);
     this.fingers = Object.keys(this.rig).map((k) => /Hand(Thumb|Index|Middle|Ring|Pinky)/.test(k));
     this.fingerStep = ANIM.fingerRate / 60;   // rad al passo (smoothJumps)
+    this.boneStep = ANIM.boneRate / 60;
     this.animPose = this.boneList.map((b) => b.quaternion.clone());
     // salti isolati dell'uscita del mixer (smoothJumps)
     this.shown = this.boneList.map((b) => b.quaternion.clone());
@@ -400,10 +410,15 @@ export class Avatar {
     this.finalPrev = this.boneList.map((b) => b.quaternion.clone());
     this.inert = this.boneList.map(() => null);
     this.inert0 = this.boneList.map(() => null);          // correzione all'inizio
-    this.inertT = new Float32Array(this.boneList.length);  // s da quando e' partita
-    this.inertN = new Uint8Array(this.boneList.length);    // passi dall'inizio del salto
     this.jumpD = new Float32Array(this.boneList.length);
     this.inertReady = false;
+    // bacino nel mondo (trackHips): posa mostrata, sua velocita' angolare,
+    // velocita' e posa al passo prima di quella che insegue
+    this.hipS = new THREE.Quaternion();
+    this.hipW = new THREE.Vector3();
+    this.hipTW = new THREE.Vector3();
+    this.hipTQ = new THREE.Quaternion();
+    this.hipStep = 0;
     // palla fra le mani (holdBall): peso della presa e ultimi punti dei palmi
     // rispetto al corpo, per sciogliere la presa piano dopo il lancio
     this.holdW = 0;
@@ -573,11 +588,21 @@ export class Avatar {
 
   // Palla fra le due mani (dentro update, prima dell'inerzializzazione): il
   // centro a meta' fra i palmi della clip, i palmi sulla superficie della palla.
+  // holdChest (rimessa in attesa, sopra la corsa o un giro sul posto): la palla
+  // al petto, davanti all'osso Spine2, quanto pesa la corsa; il gesto della
+  // rimessa che entra la riporta fra i palmi della sua clip.
   holdTargets(radius) {
     const r = this.rig;
     this.object.updateMatrixWorld(true);
     const L = palm(r, 'Left', _hl), R = palm(r, 'Right', _hr);
     const out = this.heldCenter.addVectors(L, R).multiplyScalar(0.5);
+    const cw = this.holdChest ? 1 - (this.one ? this.one.a.getEffectiveWeight() : 0) : 0;
+    if (cw > 0) {
+      const C = RULES.throwIn.chest, h = this.object.rotation.y;
+      r.Spine2.getWorldPosition(_tl);
+      _tl.x += Math.sin(h) * C[0]; _tl.z += Math.cos(h) * C[0]; _tl.y += C[1];
+      out.lerp(_tl, cw);
+    }
     const lat = _lat.subVectors(R, L);
     const n = lat.length();
     if (n > 1e-4) lat.divideScalar(n); else lat.set(-Math.cos(this.object.rotation.y), 0, Math.sin(this.object.rotation.y));
@@ -586,85 +611,84 @@ export class Avatar {
     this.object.worldToLocal(this.holdR.copy(out).addScaledVector(lat, g));
   }
 
-  // Salti isolati della posa finale (mixer, IK, torsione: due clip con il
-  // bacino girato di 180 gradi che cambiano ramo nella fusione, un IK che
-  // cambia soluzione): quell'osso prosegue dalla posa mostrata con la velocita'
-  // che aveva e raggiunge la nuova in ANIM.inertia.time secondi
+  // Salti isolati della posa finale (mixer, IK, torsione: un IK che cambia
+  // soluzione): quell'osso prosegue dalla posa mostrata con la velocita' che
+  // aveva e raggiunge la nuova in ANIM.inertia.time secondi
   // (inerzializzazione). Un movimento veloce che cresce passo dopo passo non si
-  // tocca. Il bacino si guarda nel mondo: a fine gesto la sua rotazione passa
-  // al corpo (gestures.bakeYaw) e quella locale cambia senza che la posa si muova.
+  // tocca. Il bacino ha un inseguitore suo (trackHips), nel mondo: a fine
+  // gesto la sua rotazione passa al corpo (gestures.bakeYaw) e quella locale
+  // cambia senza che la posa si muova.
   smoothJumps(dt) {
     const B = this.boneList, FP = this.finalPrev, SH = this.shown, SP = this.shownPrev, I = this.inert, D = this.jumpD, K = ANIM.inertia;
-    const I0 = this.inert0, T = this.inertT, N = this.inertN, hips = this.rig.Hips;
+    const I0 = this.inert0, hips = this.rig.Hips;
     const keep = dt > 0 ? Math.exp(-dt / K.time) : 1;
-    if (dt > 0) this.fingerStep = ANIM.fingerRate * dt;
+    if (dt > 0) { this.fingerStep = ANIM.fingerRate * dt; this.boneStep = ANIM.boneRate * dt; }
     this.object.updateMatrixWorld(true);
     let touched = false;
     for (let i = 0; i < B.length; i++) {
       const root = B[i] === hips;
       const q = root ? _iq.copy(hips.parent.getWorldQuaternion(_ip)).multiply(hips.quaternion) : B[i].quaternion;
-      let fresh = false;
-      if (dt > 0 && this.inertReady) {
-        const d = q.angleTo(FP[i]);
-        // un salto puo' durare piu' fotogrammi: con la correzione attiva ogni
-        // passo oltre K.jump la fa ripartire. Il bacino riparte gia' oltre
-        // K.rejump (il secondo passo, 0,29 rad dopo 0,36, passava intero) ma
-        // solo nei primi K.burst fotogrammi: rifatta a ogni passo la correzione
-        // prolunga la velocita' dell'osso mostrato e l'osso gira da solo
-        // il bacino anche dopo una rampa: una fusione di clip che si ribalta
-        // (corsetta difensiva) faceva 0,26 rad a passo e poi 0,82 in un colpo,
-        // sotto K.ratio volte il passo prima
-        const big = d > K.jump && d > K.ratio * Math.max(D[i], K.floor) || root && d > K.big && d > K.bigRatio * D[i];
-        const again = !!I[i] && (root ? N[i] < K.burst && d > K.rejump : d > K.jump);
-        if (big || again) {
-          // dove sarebbe andato l'osso mostrato con la velocita' dell'ultimo
-          // passo, mai oltre K.jump: una velocita' grande prolungata a ogni
-          // ripartenza faceva girare l'osso da solo
-          _iv.copy(SP[i]).invert().multiply(SH[i]);
-          const va = 2 * Math.acos(Math.min(1, Math.abs(_iv.w)));
-          if (va > K.jump) _iv.slerp(_id, 1 - K.jump / va);
-          _iw.copy(SH[i]).multiply(_iv);
-          I[i] = I[i] || new THREE.Quaternion();
-          if (!again) N[i] = 0;             // salto nuovo: si riapre la finestra
-          I0[i] = (I0[i] || new THREE.Quaternion()).copy(q).invert().multiply(_iw);
-          T[i] = 0;
-          fresh = true;
+      if (root) {
+        // con passo zero la posa resta quella mostrata: stesso risultato
+        if (!this.inertReady) this.resetHips(q);
+        else if (dt > 0) this.trackHips(q, dt);
+        if (q.angleTo(this.hipS) > 1e-6) {
+          q.copy(this.hipS);
+          hips.quaternion.copy(_ip.invert().multiply(q));
+          touched = true;
         }
-        if (I[i]) N[i] = Math.min(255, N[i] + 1);
-        D[i] = d;
-      }
-      FP[i].copy(q);
-      if (I[i]) {
-        if (root) {
-          // il bacino porta i giri del corpo (anche 180 gradi): la correzione
-          // parte ferma e si scioglie con la curva smorzata critica (1 + s) e^-s,
-          // s = t / K.time, il cui passo piu' grande e' circa un decimo della
-          // correzione (0,32 rad su 180 gradi). Con l'esponenziale il primo
-          // fotogramma ne passava il 24% (0,73 rad)
-          if (dt > 0 && !fresh) T[i] += dt;
-          const s = T[i] / K.time;
-          I[i].copy(_id).slerp(I0[i], (1 + s) * Math.exp(-s));
-        } else {
-          // le altre ossa: salti piccoli, spesso su movimenti veri della clip
-          // (il ginocchio in scatto): una correzione che parte ferma le terrebbe
-          // immobili, l'esponenziale le riaggancia subito alla clip
+      } else {
+        let fresh = false;
+        if (dt > 0 && this.inertReady) {
+          const d = q.angleTo(FP[i]);
+          // un salto puo' durare piu' fotogrammi: con la correzione attiva ogni
+          // passo oltre K.jump la fa ripartire
+          const big = d > K.jump && d > K.ratio * Math.max(D[i], K.floor);
+          const again = !!I[i] && d > K.jump;
+          if (big || again) {
+            // dove sarebbe andato l'osso mostrato con la velocita' dell'ultimo
+            // passo, mai oltre K.jump: una velocita' grande prolungata a ogni
+            // ripartenza faceva girare l'osso da solo
+            _iv.copy(SP[i]).invert().multiply(SH[i]);
+            const va = 2 * Math.acos(Math.min(1, Math.abs(_iv.w)));
+            if (va > K.jump) _iv.slerp(_id, 1 - K.jump / va);
+            _iw.copy(SH[i]).multiply(_iv);
+            I[i] = I[i] || new THREE.Quaternion();
+            I0[i] = (I0[i] || new THREE.Quaternion()).copy(q).invert().multiply(_iw);
+            fresh = true;
+          }
+          D[i] = d;
+        }
+        FP[i].copy(q);
+        if (I[i]) {
+          // salti piccoli, spesso su movimenti veri della clip (il ginocchio
+          // in scatto): una correzione che parte ferma le terrebbe immobili,
+          // l'esponenziale le riaggancia subito alla clip
           if (fresh) I[i].copy(I0[i]);
           I[i].slerp(_id, 1 - keep);
-        }
-        if (I[i].angleTo(_id) < 1e-3) I[i] = null;
-        else {
-          q.multiply(I[i]);
-          if (root) hips.quaternion.copy(_ip.invert().multiply(q));
-          touched = true;
+          if (I[i].angleTo(_id) < 1e-3) I[i] = null;
+          else {
+            q.multiply(I[i]);
+            touched = true;
+          }
         }
       }
       // dita mai piu' veloci di ANIM.fingerRate rad/s: 102 clip su 271 della
       // corsa tengono la mano in una posa a 1,8 rad dalle altre, e fondendo le
       // due famiglie a 0,2 per fotogramma le dita giravano di 0,36 rad. Con
       // passo zero si riparte dalla posa del passo prima: stesso risultato
-      if (this.fingers[i] && this.inertReady) {
+      // Nessun altro osso oltre ANIM.boneRate rad/s: una clip accelerata
+      // (tuffo del portiere fino a 1,8 volte, passaggio girato di 180 gradi)
+      // portava il piede a 0,8 rad in un fotogramma (il bacino lo tiene
+      // trackHips sotto ANIM.hipsTrack.vmax)
+      if (this.inertReady && !root) {
+        const lim = this.fingers[i] ? this.fingerStep : this.boneStep;
         const ref = dt > 0 ? SH[i] : SP[i], d = ref.angleTo(q);
-        if (d > this.fingerStep) { _fq.copy(q); q.copy(ref).slerp(_fq, this.fingerStep / d); touched = true; }
+        if (d > lim) {
+          _fq.copy(q);
+          q.copy(ref).slerp(_fq, lim / d);
+          touched = true;
+        }
       }
       // dopo un riposizionamento (resetJumps) la velocita' riparte da zero:
       // la posa di prima, altrove e girata, dava al bacino 2,66 rad a passo
@@ -681,13 +705,61 @@ export class Avatar {
     this.inertReady = false;
   }
 
-  // IK delle due braccia fusa con la clip a `w` (rig.solveTwoBoneKeep: dalla
-  // soluzione di prima, al massimo `max` rad). Partendo dalla clip, con la
-  // palla presa alta l'avambraccio del portiere girava di 1-1,7 rad a passo.
+  resetHips(q) {
+    this.hipS.copy(q);
+    this.hipTQ.copy(q);
+    this.hipW.set(0, 0, 0);
+    this.hipTW.set(0, 0, 0);
+    this.hipStep = 0;
+  }
+
+  // Bacino nel mondo, inseguitore ad accelerazione limitata: la posa mostrata
+  // ha una velocita' angolare che cambia al massimo di ANIM.hipsTrack.accel
+  // rad/s^2. Se la posa del mixer e' raggiungibile con quel limite la segue
+  // esatta; se salta (due clip col bacino girato di 180 gradi che cambiano
+  // ramo nella fusione, fine di un'esultanza) ci arriva frenando in tempo,
+  // con la velocita' che aveva. La curva di prima partiva ferma: tratteneva la
+  // posa e poi la rilasciava, e lo scatto lo faceva lei.
+  trackHips(q, dt) {
+    const H = ANIM.hipsTrack, J = ANIM.inertia, S = this.hipS, W = this.hipW, TW = this.hipTW;
+    const dvMax = H.accel * dt;
+    // velocita' della posa inseguita; il passo di un salto non e' una velocita'
+    const r = rotVec(_hx.copy(this.hipTQ).invert().premultiply(q), _hd), step = r.length();
+    if (!(step > J.jump && step > J.ratio * Math.max(this.hipStep, J.floor))) {
+      TW.copy(r).divideScalar(dt);
+      if (step / dt > H.vmax) TW.multiplyScalar(H.vmax * dt / step);
+    }
+    this.hipStep = step;
+    this.hipTQ.copy(q);
+    // velocita' che porta esattamente sulla posa in questo passo
+    const e = rotVec(_hx.copy(S).invert().premultiply(q), _he), err = e.length();
+    _hd.copy(e).divideScalar(dt);
+    if (_hd.distanceTo(W) <= dvMax && err / dt <= H.vmax) {
+      W.copy(_hd);
+      S.copy(q);
+      return;
+    }
+    // velocita' voluta: quella della posa piu' l'avvicinamento che si ferma
+    // in tempo (sqrt(2 a e)); la velocita' mostrata ci va al massimo di dvMax
+    _hd.copy(TW);
+    if (err > 1e-9) _hd.addScaledVector(e, Math.min(Math.sqrt(2 * H.accel * err), err / dt) / err);
+    _hd.sub(W);
+    const dv = _hd.length();
+    if (dv > dvMax) _hd.multiplyScalar(dvMax / dv);
+    W.add(_hd);
+    const w = W.length();
+    if (w > H.vmax) W.multiplyScalar(H.vmax / w);
+    const a = Math.min(w, H.vmax) * dt;
+    if (a > 1e-9) S.premultiply(_hx.setFromAxisAngle(_hd.copy(W).normalize(), a)).normalize();
+  }
+
+  // IK delle due braccia fusa con la clip a `w` (rig.solveArm: gomito sulla
+  // sua cerniera, torsione della clip, al massimo `max` rad dalla soluzione
+  // di prima). Con la palla presa in tuffo il gomito si piegava al contrario.
   armIK(tl, tr, w, max) {
     const r = this.rig;
     for (const [side, t] of [['Left', tl], ['Right', tr]]) {
-      solveTwoBoneKeep(r[side + 'Arm'], r[side + 'ForeArm'], (o) => palm(r, side, o), t, w, null, this.holdMemo[side], max);
+      solveArm(r[side + 'Arm'], r[side + 'ForeArm'], (o) => palm(r, side, o), t, w, side, this.holdMemo[side], max);
     }
   }
 
@@ -887,7 +959,11 @@ export class Avatar {
     if (this.holdW > 0) {
       this.object.updateMatrixWorld(true);
       this.armIK(this.object.localToWorld(_tl.copy(this.holdL)), this.object.localToWorld(_tr.copy(this.holdR)), this.holdW, MODEL.holdArm * dt);
-    } else if (this.holdMemo.Left.a || this.holdMemo.Right.a) this.holdMemo = { Left: {}, Right: {} };
+    } else if (this.holdMemo.Left.a || this.holdMemo.Right.a) {
+      // presa sciolta: le braccia tornano alla clip senza scatti (rig.releaseArm)
+      const r = this.rig, max = MODEL.holdArm * dt;
+      if (!(releaseArm(r.LeftArm, r.LeftForeArm, this.holdMemo.Left, max) | releaseArm(r.RightArm, r.RightForeArm, this.holdMemo.Right, max))) this.holdMemo = { Left: {}, Right: {} };
+    }
     this.smoothJumps(dt);
     this.ground(dt);
   }

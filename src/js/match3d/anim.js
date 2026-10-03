@@ -144,7 +144,12 @@ export function buildLoco(tpl) {
       if (!groups.has(k)) groups.set(k, []);
       groups.get(k).push(e);
     }
-    for (const list of groups.values()) {
+    for (const list0 of groups.values()) {
+      // nella stessa direzione mai una clip col bacino girato oltre
+      // ANIM.hipsOutlier dalle altre: 102_Defense_Jogging_225 (misurata a -90
+      // gradi) tiene il bacino a 155 gradi da 103 e 124, e fuse insieme il
+      // bacino si ribaltava di 0,4-0,8 rad in un fotogramma
+      const list = dropHipsOutliers(tpl, list0);
       list.sort((a, b) => gait[a.name].speed - gait[b.name].speed);
       const bands = [];
       for (const e of list) {
@@ -167,7 +172,50 @@ export function buildLoco(tpl) {
     if (!S.idle.length) S.idle = styles.normal.idle.slice();
     if (!S.anchors.length) { S.anchors = styles.normal.anchors; S.walk = styles.normal.walk; }
   }
-  return { slots, styles, index };
+  return { slots, styles, index, hips: slots.map((s) => hipsOf(tpl, s.name)) };
+}
+
+// Clip di un gruppo della stessa direzione senza quelle col bacino girato
+// oltre ANIM.hipsOutlier dalla media delle altre (servono almeno tre clip).
+function dropHipsOutliers(tpl, list) {
+  if (list.length < 3) return list;
+  return list.filter((e) => {
+    const h = hipsOf(tpl, e.name);
+    if (!h) return true;
+    let x = 0, z = 0;
+    for (const o of list) { if (o === e) continue; const v = hipsOf(tpl, o.name); if (v) { x += v[0]; z += v[1]; } }
+    const l = Math.hypot(x, z);
+    return l < 1e-6 || Math.acos(Math.max(-1, Math.min(1, (h[0] * x + h[1] * z) / l))) <= ANIM.hipsOutlier;
+  });
+}
+
+// Direzione media del bacino nel piano ([x, z]) di una clip della corsa,
+// messa in posa sul modello. Passo laterale, guardia e corsa all'indietro
+// tengono il bacino girato in modo diverso: la fusione non deve farlo girare
+// piu' in fretta di ANIM.hipsTurn (Locomotion.limitHips).
+const _hd = new THREE.Vector3();
+function hipsOf(tpl, name) {
+  const cache = tpl.hipsDir || (tpl.hipsDir = {});
+  if (cache[name] !== undefined) return cache[name];
+  const clip = tpl.clips[name];
+  let hips = null;
+  tpl.holder.traverse((o) => { if (!hips && o.isBone && /Hips$/.test(o.name)) hips = o; });
+  if (!clip || !hips) return (cache[name] = null);
+  const mx = new THREE.AnimationMixer(tpl.holder), a = mx.clipAction(clip);
+  a.play();
+  let x = 0, z = 0;
+  for (let k = 0; k < 8; k++) {
+    a.time = clip.duration * k / 8;
+    mx.update(0);
+    tpl.holder.updateMatrixWorld(true);
+    const e = hips.matrixWorld.elements;
+    _hd.set(e[8], 0, e[10]).normalize();
+    x += _hd.x; z += _hd.z;
+  }
+  mx.stopAllAction();
+  mx.uncacheRoot(tpl.holder);
+  const l = Math.hypot(x, z) || 1;
+  return (cache[name] = [x / l, z / l]);
 }
 
 // Istante della clip-gesto `info` fra lo e hi (secondi) con la posa dei piedi
@@ -409,6 +457,7 @@ export class Locomotion {
       sum += this.w[i];
     }
     if (sum > 1e-6) for (let i = 0; i < tg.length; i++) this.w[i] /= sum;
+    this.limitHips(dt);
     this.releasePicks();
 
     // una sola fase per tutte le clip in ciclo. Il piede d'appoggio della
@@ -458,6 +507,30 @@ export class Locomotion {
     // rotation.z positivo piega verso destra; curva a sinistra (lat > 0) piega a sinistra
     this.roll += (clamp(-L.roll * lat, -L.maxRoll, L.maxRoll) - this.roll) * kl;
     this.pitch += (clamp(L.pitch * fwd, -L.maxBack, L.maxPitch) - this.pitch) * kl;
+  }
+
+  // La fusione non gira il bacino oltre ANIM.hipsTurn rad/s: fra clip col
+  // bacino orientato diversamente (passo laterale, guardia, all'indietro) i
+  // pesi, al massimo della loro velocita', lo facevano girare di 20 rad/s
+  // (0,3-0,4 rad a fotogramma, e il primo passo era uno scatto). I pesi nuovi
+  // si avvicinano a quelli di prima quanto serve, ma avanzano sempre di almeno
+  // ANIM.hipsMinStep: dove le direzioni quasi si annullano non si bloccano.
+  limitHips(dt) {
+    const H = this.L.hips;
+    if (!H || !(dt > 0)) return;
+    const n = this.w.length, w = this.w, pw = this.pw;
+    const dirAt = (s) => {
+      let x = 0, z = 0;
+      for (let i = 0; i < n; i++) { const h = H[i]; if (!h) continue; const v = pw[i] + (w[i] - pw[i]) * s; x += v * h[0]; z += v * h[1]; }
+      return Math.atan2(x, z);
+    };
+    const a0 = dirAt(0), lim = ANIM.hipsTurn * dt, turn = (s) => Math.abs(wrapA(dirAt(s) - a0));
+    if (turn(1) <= lim) return;
+    let lo = ANIM.hipsMinStep, hi = 1;
+    if (turn(lo) > lim) hi = lo;
+    else for (let k = 0; k < 8; k++) { const mid = (lo + hi) / 2; if (turn(mid) > lim) hi = mid; else lo = mid; }
+    const s = hi === ANIM.hipsMinStep ? hi : lo;
+    for (let i = 0; i < n; i++) w[i] = pw[i] + (w[i] - pw[i]) * s;
   }
 
   // Riposizionamento (Player.place): il corpo visibile riparte dal busto.

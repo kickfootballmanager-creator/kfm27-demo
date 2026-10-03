@@ -6,10 +6,12 @@
 //   node tools/match3d/soak.mjs --matches 2 --seconds 120
 //   node tools/match3d/soak.mjs --parallel 3    tre Chrome insieme
 //   node tools/match3d/soak.mjs --json report.json
+//   node tools/match3d/soak.mjs --tapes debug/replays   replay di debug delle violazioni
+//                                (--tape-max: nastri per partita, di norma 4)
 //
 // Esce con codice 1 se c'e' anche una sola violazione o un errore in console.
 
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { launch, evaluate, collectErrors, openMatch, serve } from './cdp.mjs';
@@ -26,6 +28,10 @@ const JSON_OUT = opt('json', '');
 const ANIM_LEVEL = opt('anim', 'mix');
 const levelOf = (k) => (ANIM_LEVEL === 'mix' ? ['high', 'medium', 'low'][(k - 1) % 3] : ANIM_LEVEL);
 const CHUNK = 900;
+// replay di debug (tape.js) della prima violazione di ogni tipo, rigiocabili con replay-debug.mjs
+const TAPES = opt('tapes', '');
+const TAPE_MAX = +opt('tape-max', 4);
+const slug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
 
 // Obiettivi per partita, entrambe le squadre (skill match3d, "Difesa IA e disciplina").
 const TARGETS = { slides: [4, 10], fouls: [18, 28], yellows: [2, 6], reds: [0, 0.2] };
@@ -60,6 +66,7 @@ async function main() {
             console.log(`\npartita ${k}: preparazione non riuscita (${e.message.split('\n')[0]}), riprovo`);
           }
         }
+        if (TAPES) { mkdirSync(TAPES, { recursive: true }); await evaluate(cdp, `window.__soak.tapeOn(${TAPE_MAX})`); }
         if (!calibrated) {
           calibrated = true;
           console.log('calibrazione: piede piu\' alto in appoggio ' + init.feetMax.toFixed(3) + ' m, anca ' + init.hipsRange.map((v) => v.toFixed(2)).join('-') + ' m' +
@@ -68,6 +75,14 @@ async function main() {
         let st;
         do {
           st = await evaluate(cdp, `window.__soak.run(${CHUNK}, ${SECONDS || 0})`);
+          if (TAPES) {
+            for (const t of await evaluate(cdp, 'window.__soak.takeTapes()')) {
+              const file = join(TAPES, `soak-p${k}-f${t.frame}-${slug(t.note)}.json`);
+              writeFileSync(file, t.json);
+              console.log(`
+replay di debug: ${file} (${t.clock}, ${t.note})`);
+            }
+          }
           if (PARALLEL === 1) process.stdout.write(`\rpartita ${k}/${MATCHES}  ${st.clock.padEnd(10)} ${st.goals.home}-${st.goals.away}  violazioni ${st.violations}   `);
         } while (!st.done);
         const rep = await evaluate(cdp, 'window.__soak.report()');
@@ -126,6 +141,7 @@ async function main() {
   };
   if (tally('foulKinds')) console.log('\nfalli (tipo, provenienza, cartellino), totale: ' + tally('foulKinds'));
   if (tally('slideFrom')) console.log('scivolate rispetto al portatore, totale: ' + tally('slideFrom'));
+  if (tally('reacts')) console.log('reazioni ai contatti per livello, totale: ' + tally('reacts'));
   const gs = results.flatMap((r) => r.goalShots || []);
   if (gs.length) {
     const by = {};

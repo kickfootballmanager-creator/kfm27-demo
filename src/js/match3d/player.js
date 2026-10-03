@@ -154,7 +154,8 @@ export class Player {
     // Il busto segue la corsa o guarda o.face, come una molla con
     // accelerazione angolare limitata: parte e si ferma senza scatti.
     const faceTo = o.face ? headingOf(o.face.x, o.face.z) : this.moveHeading;
-    const ft = Math.min(PLAYER.faceMax, turn * PLAYER.faceTurn / Math.max(dt, 1e-6));
+    const FR = PLAYER.faceRun, runMax = o.turnMul ? PLAYER.faceMax : PLAYER.faceMax + (FR[2] - PLAYER.faceMax) * clamp((this.speed - FR[0]) / (FR[1] - FR[0]), 0, 1);
+    const ft = Math.min(runMax, turn * PLAYER.faceTurn / Math.max(dt, 1e-6));
     const wantVel = clamp(wrap(faceTo - this.heading) * PLAYER.faceGain, -ft, ft);
     this.faceVel += clamp(wantVel - this.faceVel, -PLAYER.faceAccel * dt, PLAYER.faceAccel * dt);
     const turnStep = this.faceVel * dt, gap = wrap(faceTo - this.heading);
@@ -288,7 +289,7 @@ export class Player {
         from = av.matchStart(e.name, Math.max(0, at - T.drive.match), Math.min(tr.to, at + T.drive.match), at);
         drive = { path, from, end: Math.min(e.meta.dur, tr.to + T.turnTail), until: Infinity };
       } else e = null;
-    } else if (!e && !redo && v < T.inPlaceBelow && want < T.inPlaceWant && this.faceTo !== undefined && Math.abs(wrap(this.faceTo - this.heading)) > T.inPlaceAngle) {
+    } else if (!e && !redo && v < T.inPlaceBelow && want < T.inPlaceWant && this.faceTo !== undefined && Math.abs(wrap(this.faceTo - this.heading)) > (this.inPlaceMin ?? T.inPlaceAngle)) {
       // giro sul posto verso lo sguardo
       const yaw = wrap(this.faceTo - this.heading);
       e = pickTransition(tpl, this, 'turnInPlace', style === 'dribble' ? 'normal' : style, { yaw });

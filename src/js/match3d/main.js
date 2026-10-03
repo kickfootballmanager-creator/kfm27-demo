@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { PHYSICS, RENDER, REPLAY, RULES, PLAYER, CONTROL, DRIBBLE, SHOT, PASS, KIT, RECEIVE, FIRST_TOUCH, ANIM, ANIMLIB, POWER, FEINT, AI, AERIAL, SHAPE, PITCH, SLIDE, BALL, DUEL, OFFSIDE, DEBUG, PRESS, THROUGH } from './config.js';
+import { PHYSICS, RENDER, REPLAY, RULES, PLAYER, CONTROL, DRIBBLE, SHOT, PASS, KIT, RECEIVE, FIRST_TOUCH, ANIM, ANIMLIB, POWER, FEINT, AI, AERIAL, SHAPE, PITCH, SLIDE, BALL, DUEL, OFFSIDE, DEBUG, PRESS, THROUGH, TAPE } from './config.js';
 import { buildPitch } from './pitch.js';
 import { Ball, shadowTexture } from './ball.js';
 import { BroadcastCamera } from './camera.js';
@@ -21,6 +21,7 @@ import { SetPieces } from './setpieces.js';
 import { Graphics, savedQuality, detectQuality } from './render.js';
 import { Stadium } from './stadium.js';
 import { Recorder, Replay } from './replay.js';
+import { Tape, replayFolder, saveReplayFiles } from './tape.js';
 
 const KICKS = ['pass', 'through', 'cross', 'shot'];
 // Legenda: una riga per l'attacco e una per la difesa, un elemento per comando.
@@ -231,6 +232,8 @@ class Match {
     this.bodies = [...this.everyone, this.referee.p];
     // replay dopo il gol: gli ultimi secondi di tutti i corpi e della palla
     this.recorder = new Recorder([...this.bodies], this.ball);
+    // replay di debug: gli ultimi secondi fotogramma per fotogramma (F9)
+    this.tape = new Tape(this, [...this.bodies]);
     // calci piazzati: mira, traiettoria, barriera, telecamera
     this.setpieces = new SetPieces(this);
     scene.add(this.setpieces.mesh);
@@ -244,14 +247,17 @@ class Match {
       simulate: () => this.finish('simulate'),
       back: () => this.finish('back'),
       skip: () => this.skipGoal(),
-      quality: (level) => this.gfx.setLevel(level)
+      quality: (level) => this.gfx.setLevel(level),
+      saveTape: () => this.saveTape()
     });
     this.controls = new Controls(root, this.hud.layer, {
       onPad: (type) => this.onPad(type),
       onPadLost: () => this.onPadLost(),
       // Options/Start (PlayStation), Menu (Xbox): durante gol e replay salta
       onPause: () => { if (this.phase === 'end') return; if (this.phase === 'goal' && !this.hud.exitOpen) { this.skipGoal(); return; } if (this.hud.exitOpen) this.closeExit(); else this.openExit(); },
-      onMenu: (a) => { if (this.hud.exitOpen) this.hud.menu(a); }
+      onMenu: (a) => { if (this.hud.exitOpen) this.hud.menu(a); },
+      // Share/Create (PlayStation), View (Xbox): replay di debug
+      onSave: () => this.saveTape()
     });
     this.hud.setHint(this.controls.padKind ? this.padHint(this.controls.padKind) : KEY_HINT);
     this.debug = new Debug(root, this);
@@ -312,6 +318,11 @@ class Match {
     if (e.code === 'F4') {
       e.preventDefault();
       if (down && !e.repeat) this.timeScale = this.timeScale === 1 ? DEBUG.slowMotion : 1;
+      return;
+    }
+    if (e.code === 'F9') {
+      e.preventDefault();
+      if (down && !e.repeat) this.saveTape();
       return;
     }
     if (this.hud.exitOpen) return;
@@ -378,7 +389,7 @@ class Match {
     const dt = Math.max(0, Math.min(0.25, (now - this.last) / 1000)) * this.timeScale;
     this.last = now;
     this.advance(dt);
-    this.gfx.update(dt, this.replay ? this.ball.mesh.position : this.ball.pos);
+    this.gfx.update(dt, this.replay || this.tapePlay ? this.ball.mesh.position : this.ball.pos);
     this.gfx.render();
     this.debug.update(dt);
   }
@@ -387,6 +398,8 @@ class Match {
   // interpolate: tutto tranne il disegno. Il test di durata la chiama da solo.
   advance(dt) {
     const step = 1 / PHYSICS.hz;
+    // replay di debug in registrazione video: la partita resta ferma
+    if (this.tapePlay) { this.tapePlayFrame(dt); return; }
     // dissolvenza al nero dopo il gol: a nero si schierano le squadre
     if (this.fadeOut && !this.paused && (this.fadeOut.t += dt) >= REPLAY.fade) { const f = this.fadeOut; this.fadeOut = null; f.then(); }
     if (this.replay) { this.replayFrame(dt); return; }
@@ -409,7 +422,7 @@ class Match {
     this.ball.sync(alpha, this.paused ? 0 : dt);
     // palla fra le due mani: l'avatar la mette in posa dentro il suo aggiornamento
     const holder = this.owner;
-    for (const p of this.everyone) p.avatar.holdWant = p === holder && !!p.holding && !p.holdHand;
+    for (const p of this.everyone) { p.avatar.holdWant = p === holder && !!p.holding && !p.holdHand; p.avatar.holdChest = !!p.throwHold; }
     for (const p of this.everyone) p.sync(alpha, this.paused ? 0 : dt);
     for (const p of this.leaving) p.sync(alpha, this.paused ? 0 : dt);
     this.referee.sync(alpha, this.paused ? 0 : dt, this.camera.cam);
@@ -419,7 +432,76 @@ class Match {
     this.syncMarkers(dt);
     this.blobShadows();
     this.stadium.update(this.paused ? 0 : dt);
-    if (!this.paused && this.phase !== 'end') this.recorder.tick(dt);
+    if (!this.paused && this.phase !== 'end') { this.recorder.tick(dt); this.tape.tick(dt); }
+  }
+
+  // Fatto di gioco per il replay di debug (fallo, tiro, parata, rimessa...).
+  note(kind, data) { if (this.tape) this.tape.event(kind, data); }
+
+  // Replay di debug (F9, Share/View, menu di pausa): gli ultimi TAPE.seconds
+  // in due file con lo stesso nome, il JSON del nastro e il video della scena
+  // rigiocata dal nastro (tape.js). La partita resta ferma e poi riprende
+  // esattamente da dov'era.
+  async saveTape() {
+    if (this.tapeSaving || !this.tape.length || this.replay || this.phase === 'end') return;
+    this.tapeSaving = true;
+    const wasOpen = this.hud.exitOpen, wasPaused = this.paused;
+    this.paused = true;
+    this.stopInput();
+    const d = new Date(), two = (v) => String(v).padStart(2, '0');
+    const name = 'm3d-' + d.getFullYear() + two(d.getMonth() + 1) + two(d.getDate()) + '-' + two(d.getHours()) + two(d.getMinutes()) + two(d.getSeconds()) +
+      '-' + this.rules.clockText().replace(':', '');
+    const snap = this.tape.snapshot();
+    try {
+      // la cartella per prima: il permesso vuole il gesto dell'utente ancora valido
+      const dir = await replayFolder();
+      const json = JSON.stringify(this.tape.toJSON({ name, user: this.userSide }));
+      if (wasOpen) this.hud.closeExit();
+      this.hud.status('Replay di debug: registrazione del video');
+      const video = await this.recordTape();
+      const files = [{ name: name + '.json', blob: new Blob([json], { type: 'application/json' }) }];
+      if (video) files.push({ name: name + video.ext, blob: video.blob });
+      const where = await saveReplayFiles(dir, files);
+      this.hud.status(null);
+      this.hud.toast('Replay salvato in ' + where + ': ' + name);
+    } catch (e) {
+      this.hud.status(null);
+      this.hud.toast('Replay non salvato');
+    } finally {
+      this.tapePlay = null;
+      this.tape.restore(snap);
+      this.placeHeldBall();
+      if (wasOpen && !this.hud.exitOpen) this.hud.openExit();
+      this.paused = wasPaused || this.hud.exitOpen;
+      this.last = performance.now();
+      this.tapeSaving = false;
+    }
+  }
+
+  // Video della scena rigiocata dal nastro, in tempo reale; null se il
+  // browser non sa registrare il canvas.
+  recordTape() {
+    const canvas = this.renderer.domElement;
+    const MR = window.MediaRecorder;
+    const type = MR && canvas.captureStream && ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm', 'video/mp4'].find((t) => MR.isTypeSupported(t));
+    if (!type) return Promise.resolve(null);
+    return new Promise((ok) => {
+      const rec = new MR(canvas.captureStream(TAPE.hz), { mimeType: type, videoBitsPerSecond: TAPE.videoBits });
+      const chunks = [];
+      rec.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+      rec.onstop = () => ok({ blob: new Blob(chunks, { type }), ext: type.includes('mp4') ? '.mp4' : '.webm' });
+      this.tapePlay = { t: 0, end: () => rec.stop() };
+      rec.start(500);
+    });
+  }
+
+  // Un fotogramma del nastro in registrazione video: pose, palla, telecamera.
+  tapePlayFrame(dt) {
+    const P = this.tapePlay, n = this.tape.length;
+    const k = Math.min(n - 1, Math.floor(P.t * TAPE.hz));
+    this.tape.apply(k, this.camera.cam);
+    P.t += dt;
+    if (k >= n - 1 && P.end) { const end = P.end; P.end = null; end(); }
   }
 
   // Replay dopo il gol: la partita e' ferma, si rigiocano le pose registrate.
@@ -575,7 +657,7 @@ class Match {
   locoStyleOf(p) {
     if (p.keeper) return p.holding ? 'keeperBall' : 'keeper';
     const o = this.owner;
-    if (o === p) return 'dribble';
+    if (o === p) return p.holding ? 'normal' : 'dribble';
     if (o && p.team && o.team !== p.team && this.phase === 'play' && !p.down && !o.holding) {
       const G = ANIM.guard, dx = o.pos.x - p.pos.x, dz = o.pos.z - p.pos.z;
       if (Math.hypot(dx, dz) < G.dist && p.speed < G.speed && Math.abs(wrapAngle(Math.atan2(dx, dz) - p.heading)) < G.angle) return 'defense';
@@ -886,6 +968,7 @@ class Match {
     for (const p of this.everyone) {
       p.sideSpeed = 0;
       if (p.action) this.stepAction(dt, p, p === me ? inp : null);
+      else if (setting && p === taker && p.throwHold) this.rules.aimThrow(dt, p, p === me && !this.opponentsSetPiece() ? inp : null);
       else if (setting && p !== taker && !p.down) {
         if (p.keeper) this.teams[p.team].keeperAI.position(dt);
         else if (p === me && !this.opponentsSetPiece()) this.userMove(dt, p, inp, false);
@@ -904,8 +987,9 @@ class Match {
     // gira attorno: spinto via nella posa del contrasto, scivolava sull'erba
     // Chi e' a terra o in un gesto guidato dalla radice (caduta, scivolata) non
     // si sposta mai: spinto via, al passo dopo la radice lo riportava indietro
-    // e oscillava di 0,3-0,6 m a fotogramma
-    separate(this.bodies, (p) => (p.down || (p.action && (p.action.root || p.action.tackle)) ? 3 : p === this.ctrl || p === this.owner ? 2 : 0));
+    // e oscillava di 0,3-0,6 m a fotogramma. Nemmeno chi gira sul posto (clip
+    // di giro della libreria): spinto a 0,8 m/s, la posa del giro traslava
+    separate(this.bodies, (p) => (p.down || (p.action && (p.action.root || p.action.tackle)) || (p.trans && p.trans.role === 'turnInPlace' && p.avatar.one === p.trans.one) ? 3 : p === this.ctrl || p === this.owner ? 2 : 0));
     for (const p of this.everyone) p.confine();
     // chi va addosso al portatore di corsa, soprattutto alle spalle, fa fallo
     bodyContact(this);
@@ -1175,6 +1259,7 @@ class Match {
       this.poss.fly('tiro', p, null);
     }
     this.lastKick = { kind: a.kind, power: a.power, speed: b.vel.length(), dist: d };
+    this.note(a.kind === 'shot' ? 'tiro' : 'calcio', { p, tipo: a.kind, potenza: a.power, velocita: this.lastKick.speed, a: a.target || null, clip: a.clip || '' });
     // angolo e rinvio dal fondo: niente fuorigioco; punizione indiretta: il gol diretto non vale
     const set = this.phase !== 'play' && this.rules.set;
     if (set && (set.type === 'corner' || set.type === 'goalkick')) this.noOffsideSeq = this.poss.seq;
@@ -1398,6 +1483,7 @@ class Match {
     const scorer = last && last.team === team ? last : null;
     this.scorers.push({ team, playerId: scorer ? scorer.id : null, minute: this.rules.minute() });
     this.hud.setScore(this.goals.home, this.goals.away);
+    this.note('gol', { squadra: team, p: scorer });
     this.hud.showGoal((home ? this.home : this.away).name, scorer ? scorer.name : '');
     this.rules.goal(team, scorer);
     this.teams[this.otherSide(team)].keeperAI.concede();

@@ -139,7 +139,11 @@ export function collectErrors(cdp, list) {
     } else if (msg.method === 'Runtime.consoleAPICalled' && ['error', 'warning', 'assert'].includes(msg.params.type)) {
       list.push('console.' + msg.params.type + ': ' + msg.params.args.map((a) => a.value ?? a.description ?? '').join(' ').slice(0, 300));
     } else if (msg.method === 'Log.entryAdded' && msg.params.entry.level === 'error') {
-      list.push('log: ' + msg.params.entry.text.slice(0, 300) + (msg.params.entry.url ? ' ' + msg.params.entry.url : ''));
+      // risorse esterne (font di Google del manager): dipendono dalla rete del
+      // PC che fa il test, non dal gioco, che deve funzionare anche offline
+      const e = msg.params.entry, url = e.url || (e.text.match(/https?:\/\/\S+/) || [''])[0];
+      if (/Failed to load resource/.test(e.text) && url && !/^https?:\/\/(127\.0\.0\.1|localhost)[:/]/.test(url)) return;
+      list.push('log: ' + e.text.slice(0, 300) + (e.url ? ' ' + e.url : ''));
     }
   });
 }

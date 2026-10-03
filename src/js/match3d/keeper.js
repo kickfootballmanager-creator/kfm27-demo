@@ -32,16 +32,44 @@ function libOptions(tpl, claim) {
       if (!c || !tpl.poses[e.name]) continue;
       const dive = !!m.ev.dive, catchIt = role === 'gkCatch';
       const sc = claim ? SC.claim : dive ? SC.dive : SC.stand;
+      // prese con la palla in mano dal primo fotogramma (Keeper_Ball_*): il
+      // contatto del build e' dove le braccia arrivano piu' lontano, spesso
+      // l'atterraggio o il rialzo (343, tuffo alto: palla a 25 cm da terra,
+      // scelta per i rasoterra e poi l'IK tirava le braccia di un metro).
+      // La palla puo' arrivare fra le mani in tutto il gesto, in tuffo prima
+      // che il corpo tocchi terra: il piano sceglie il fotogramma dai palmi
+      const held = catchIt && /Keeper_Ball_/.test(e.name);
+      const window = held ? [W.held, dive ? landing(tpl, e.name) : c.t + W.after] : [Math.max(0.05, c.t - W.before), c.t + W.after];
       out.push({
-        name: e.name, clip: e.name, from: Math.max(0, c.t - W.lead),
-        window: [Math.max(0.05, c.t - W.before), c.t + W.after], end: m.dur,
-        scaleA: sc.a, scaleS: sc.s, catch: catchIt,
+        name: e.name, clip: e.name, from: held ? 0 : Math.max(0, c.t - W.lead),
+        window, end: m.dur,
+        scaleA: sc.a, scaleS: sc.s, catch: catchIt, held,
         bias: (catchIt ? B.catch : role === 'gkPunch' ? B.punch : B.parry) + (dive ? B.dive : 0)
       });
     }
   }
   tpl.keeperOptions[key] = out;
   return out;
+}
+
+// Istante in cui il portiere in tuffo tocca terra col bacino (sotto
+// KEEPER.saveWindow.landY), dalla clip messa in posa sul modello.
+const _hp = new THREE.Vector3();
+function landing(tpl, name) {
+  const clip = tpl.clips[name], mx = new THREE.AnimationMixer(tpl.holder), a = mx.clipAction(clip);
+  let hips = null;
+  tpl.holder.traverse((o) => { if (!hips && o.isBone && /Hips$/.test(o.name)) hips = o; });
+  a.play();
+  let t = clip.duration;
+  for (let k = 0; k <= Math.ceil(clip.duration * 30); k++) {
+    a.time = Math.min(clip.duration, k / 30);
+    mx.update(0);
+    tpl.holder.updateMatrixWorld(true);
+    if (k / 30 > KEEPER.saveWindow.held && hips.getWorldPosition(_hp).y < KEEPER.saveWindow.landY) { t = k / 30; break; }
+  }
+  mx.stopAllAction();
+  mx.uncacheRoot(tpl.holder);
+  return t;
 }
 
 // Tempi di un rinvio dai metadati: rilascio dalle mani, mano sola, contatto del piede.
@@ -159,8 +187,11 @@ export class KeeperAI {
     const face = { x: b.x - k.pos.x, z: b.z - k.pos.z };
     // frenata calcolata per fermarsi sul punto, non oltre
     const brake = Math.sqrt(2 * PLAYER.decel * d) / k.params.maxSpeed;
+    // in guardia (passi laterali e all'indietro) al massimo KEEPER.stepSpeed:
+    // le sue clip oltre i 2,5 m/s fanno scivolare il piede appoggiato
+    const guard = sprint ? 1 : KEEPER.stepSpeed / (k.params.maxSpeed * PLAYER.jogFactor);
     if (d < 0.15) k.drive(dt, 0, 0, 0, { face });
-    else k.drive(dt, dx, dz, Math.min(1, d / 1.5, brake), { face, sprint });
+    else k.drive(dt, dx, dz, Math.min(1, guard, d / 1.5, brake), { face, sprint });
     // passo laterale: velocita' lungo la destra del busto
     k.sideSpeed = sprint ? 0 : k.vel.x * k.rightX + k.vel.z * k.rightZ;
   }
@@ -322,6 +353,7 @@ export class KeeperAI {
         m.gain(k, 'parata');
         k.holding = true;
         this.lastTouch = { part: 'mani', result: 'presa', speed };
+        m.note('parata', { k, parte: 'mani', esito: 'presa', velocita: speed, clip: k.avatar.gestureName() || '' });
         return true;
       }
     }
@@ -337,6 +369,7 @@ export class KeeperAI {
     poss.loose('parata', k);
     m.kickLock = { p: k, t: KEEPER.lock };
     this.lastTouch = { part: hit.hand ? 'mani' : 'corpo', result: 'respinta', speed };
+    m.note('parata', { k, parte: this.lastTouch.part, esito: 'respinta', velocita: speed, clip: k.avatar.gestureName() || '' });
     return true;
   }
 
@@ -396,13 +429,14 @@ export class KeeperAI {
     const d = Math.hypot(b.pos.x - k.pos.x, b.pos.z - k.pos.z);
     if (d < 1.4 && Math.hypot(b.vel.x, b.vel.z) < 12) {
       // presa bassa: fra le prese con la palla vicina a terra, quella con la
-      // palla dalla stessa parte e alla stessa distanza
+      // palla dalla stessa parte e alla stessa distanza. Non quelle con la
+      // palla in mano dal primo fotogramma: il loro contatto non e' la presa
       const lat = (b.pos.x - k.pos.x) * k.rightX + (b.pos.z - k.pos.z) * k.rightZ;
       const ahead = (b.pos.x - k.pos.x) * k.dirX + (b.pos.z - k.pos.z) * k.dirZ;
       let best = null, bc = Infinity;
       for (const o of libOptions(m.tpl, false)) {
         const c = m.tpl.meta[o.clip].ev.contact, w = c.ballW;
-        if (!o.catch || !w || w[1] > 0.6) continue;
+        if (!o.catch || o.held || !w || w[1] > 0.6) continue;
         const cost = Math.abs(-w[0] * m.tpl.scale - lat) + Math.abs(w[2] * m.tpl.scale - ahead) * 0.5;
         if (cost < bc) { bc = cost; best = { o, c }; }
       }

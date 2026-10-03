@@ -1,4 +1,4 @@
-import { TACKLE, SLIDE, DOWN, AERIAL, KEEPER, PITCH, GOAL, CONTROL, ATTR, DUEL, FOUL } from './config.js';
+import { TACKLE, SLIDE, AERIAL, KEEPER, PITCH, GOAL, CONTROL, ATTR, DUEL, REACT, ANIM } from './config.js';
 import { rootAt, clipDuration } from './avatar.js';
 import { pickTackle } from './anim-pick.js';
 import { headingOf } from './player.js';
@@ -66,6 +66,7 @@ export function startTackle(m, p, manual = false) {
   const lungeV = Math.min(p.speed + T.lungeSpeed, reach / Math.max(0.05, T.hit - T.lungeFrom));
   const pk = pickTackle(m.tpl, p, { lead: T.hit, speed: Math.max(p.speed, lungeV), reach, ballLeft: -(bx * p.rightX + bz * p.rightZ) });
   if (pk) p.avatar.playOnce(pk.clip, pk.from, T.duration, pk.rate);
+  m.note('contrasto', { p, su: car && car.team !== p.team ? car : null, premuto: !!manual, clip: pk ? pk.clip : '' });
   const h0 = p.heading, x0 = p.pos.x, z0 = p.pos.z;
   // l'affondo insegue dove sara' la palla al contatto e si somma allo slancio
   // della corsa; con una clip che non si sposta (contrasto da fermo, quando la
@@ -119,6 +120,8 @@ function resolveTackle(m, p, manual) {
     m.lastDuel = { def: p, car: owner, result };
     if (result === 'won') {
       m.kickLock = { p: owner, t: T.lock };
+      // contrasto pulito: a volte chi perde palla resta sbilanciato (livello 1, senza fallo)
+      if (Math.random() < REACT.wonChance) react(m, owner, 1, p);
       if (Math.random() < T.keep) { m.gain(p, 'contrasto'); return; }
       b.kick(p.dirX * T.poke + gauss() * 1.2, 0, p.dirZ * T.poke + gauss() * 1.2);
       m.poss.loose('contrasto', p);
@@ -148,6 +151,7 @@ export function startSlide(m, p, dx, dz) {
   const tripped = new Set();
   // l'arbitro giudica la scivolata da dove e' partita, non da come si gira il portatore dopo
   const car0 = m.owner && m.owner.team !== p.team ? m.owner : null, from0 = car0 ? approach(p, car0) : null;
+  m.note('scivolata', { p, su: car0, da: from0 || '' });
   // chi entra in corsa scivola piu' lontano: la clip parte da fermo
   p.action = rootAction(m, p, clip, S.from, end, S.rate, {
     slide: true, scaleA: clamp(S.momentum[0] + p.speed / S.momentum[1], 1, S.momentum[2]) * (m.tpl.meta[clip] ? S.travel : 1),
@@ -174,50 +178,98 @@ export function startSlide(m, p, dx, dz) {
             b.kick(o.vel.x * 0.8, 0.3, o.vel.z * 0.8);
             m.poss.loose('scivolata', p);
           }
-          trip(m, o);
-          // fallo se l'uomo e' preso senza la palla, o da dietro anche dopo averla toccata
-          if (!a.hit || from === 'back') m.foul(p, o, { kind: 'scivolata', ballFirst: !!a.hit, from });
+          // fallo se l'uomo e' preso senza la palla, o da dietro anche dopo
+          // averla toccata: l'arbitro decide anche la reazione (rules.foul).
+          // Senza fallo cade lo stesso (livello 3)
+          const foul = (!a.hit || from === 'back') && m.rules.foul(p, o, { kind: 'scivolata', ballFirst: !!a.hit, from });
+          if (!foul) react(m, o, 3, p);
         }
       }
     }
   });
 }
 
-// --- caduta, a terra, rialzo: una clip della libreria (DOWN.clip) che si
-// ferma nell'ultimo istante a terra per DOWN.groundTime secondi.
-export function trip(m, o) {
+// --- reazioni ai contatti (skill: "Arbitro, falli e cartellini"), quattro
+// livelli (REACT): 1 sbilanciamento o inciampo, 2 colpo con un passo di
+// recupero, 3 caduta e rialzo, 4 la caduta spettacolare dei falli violenti.
+// Dentro il livello si sceglie per corrispondenza: lo spostamento della clip
+// piu' vicino alla spinta (dall'avversario verso chi la subisce, piu' le due
+// corse, nel riferimento di chi la subisce) e la velocita' d'entrata piu'
+// vicina alla sua corsa. 3 e 4 restano a terra REACT.ground secondi, poi il
+// rialzo della clip. `src`: chi ha causato il contatto.
+export function react(m, o, level, src) {
+  if (o.down || o.sentOff || o.keeper || (o.action && o.action.react)) return false;
+  const R = REACT, opts = reactOptions(m.tpl)[level];
+  if (!opts || !opts.length) return false;
   const s = Math.hypot(o.vel.x, o.vel.z);
-  if (s > 0.5) o.face(headingOf(o.vel.x, o.vel.z));
-  o.down = true;
+  // chi corre cade in avanti, lungo la corsa
+  if (level >= 3 && s > 0.5) o.face(headingOf(o.vel.x, o.vel.z));
+  let px = o.pos.x - src.pos.x, pz = o.pos.z - src.pos.z;
+  const pl = Math.hypot(px, pz) || 1;
+  const mo = R.momentum[level];
+  px = px / pl * R.push + src.vel.x * R.carry + o.vel.x * mo;
+  pz = pz / pl * R.push + src.vel.z * R.carry + o.vel.z * mo;
+  const want = Math.atan2(px * o.rightX + pz * o.rightZ, px * o.dirX + pz * o.dirZ);
+  let best = null, bc = Infinity;
+  for (const c of opts) {
+    const cost = Math.abs(wrap(want - c.dir)) * R.angleCost + Math.abs(s - c.vIn) * R.speedCost;
+    if (cost < bc) { bc = cost; best = c; }
+  }
+  const name = best.name, meta = m.tpl.meta[name], end = meta.dur;
+  const k = level >= 3 ? R.travel[level] * Math.min(1, 0.4 + s / 7) : R.travel[level], ks = level === 4 ? k * 0.3 : k;
+  o.down = level >= 3;
   if (m.ctrl === o) m.buffer = null;
-  const D = DOWN, meta = m.tpl.meta[D.clip];
-  const rest = meta.ev.rest, end = meta.dur;
-  const scaleA = D.fallTravel * Math.min(1, 0.4 + s / 7), scaleS = D.fallTravel * 0.3;
-  o.avatar.playOnce(D.clip, 0, Infinity);
-  o.action = rootAction(m, o, D.clip, 0, rest, 1, {
-    scaleA, scaleS,
+  m.note('reazione', { p: o, livello: level, clip: name, da: src, spinta: want });
+  const done = () => { o.down = false; bakeYaw(m, o, name, end); };
+  // pausa a terra solo se li' la clip e' ferma: 107/108 scorrono ancora a
+  // 0,8 m/s e, ferme, traslavano (posa ferma che trasla); vanno fino al rialzo
+  let rest = level >= 3 && meta.ev ? meta.ev.rest : undefined;
+  if (rest !== undefined) {
+    const u = rootAt(m.tpl, name, Math.max(0, rest - 0.05)), v = rootAt(m.tpl, name, rest + 0.05);
+    if (Math.hypot(v.a - u.a, v.s - u.s) / 0.1 * k > ANIM.stillRoot) rest = undefined;
+  }
+  if (rest === undefined) {
+    o.avatar.playOnce(name, 0, end);
+    o.action = rootAction(m, o, name, 0, end, 1, { react: level, scaleA: k, scaleS: ks, onEnd: done });
+    return true;
+  }
+  // caduta fino all'ultimo istante a terra, fermi, poi il rialzo dallo stesso fotogramma
+  o.avatar.playOnce(name, 0, Infinity);
+  o.action = rootAction(m, o, name, 0, rest, 1, {
+    react: level, scaleA: k, scaleS: ks,
     onEnd: () => {
-      o.avatar.resume(D.clip, 0, Infinity);
-      o.action = { clip: D.clip, t: 0, rate: 1, end: D.groundTime, onEnd: () => getUp(m, o, D.clip, rest, end, scaleA, scaleS) };
+      o.avatar.resume(name, 0, Infinity);
+      o.action = { clip: name, react: level, t: 0, rate: 1, end: R.ground[level] || 0, onEnd: () => {
+        o.avatar.resume(name, 1, end - rest);
+        o.action = rootAction(m, o, name, rest, end, 1, { react: level, scaleA: k, scaleS: ks, onEnd: done });
+      } };
     }
   });
+  return true;
 }
 
-// Chi subisce un fallo in un contrasto in piedi: caduta e rialzo della
-// libreria, da una parte o dall'altra.
-export function standFall(m, o) {
-  if (o.down) return;
-  const F = FOUL.standFall, clip = F.clip[Math.random() < 0.5 ? 'left' : 'right'];
-  o.down = true;
-  if (m.ctrl === o) m.buffer = null;
-  const end = clipDuration(m.tpl, clip);
-  o.avatar.playOnce(clip, 0, end);
-  o.action = rootAction(m, o, clip, 0, end, 1, { scaleA: F.travel, scaleS: F.travel, onEnd: () => { o.down = false; bakeYaw(m, o, clip, end); } });
-}
-
-function getUp(m, o, clip, from, end, scaleA, scaleS) {
-  o.avatar.resume(clip, 1, end - from);
-  o.action = rootAction(m, o, clip, from, end, 1, { scaleA, scaleS, onEnd: () => { o.down = false; bakeYaw(m, o, clip, end); } });
+// Clip di reazione per livello con la direzione del loro spostamento nei primi
+// REACT.window secondi (radice sotto il bacino: anche l'oscillazione sul posto)
+// e la velocita' d'entrata, in metri del gioco.
+function reactOptions(tpl) {
+  if (tpl.reactOptions && tpl.reactOptions.v === tpl.libVersion) return tpl.reactOptions;
+  const out = { v: tpl.libVersion };
+  for (const level in REACT.clips) {
+    out[level] = [];
+    for (const name of REACT.clips[level]) {
+      const meta = tpl.meta[name];
+      if (!meta) continue;
+      const r0 = rootAt(tpl, name, 0);
+      let a = 0, s = 0, far = -1;
+      for (let t = 0; t <= Math.min(meta.dur, REACT.window) + 1e-6; t += 1 / 30) {
+        const r = rootAt(tpl, name, t), l = Math.hypot(r.a - r0.a, r.s - r0.s);
+        if (l > far) { far = l; a = r.a - r0.a; s = r.s - r0.s; }
+      }
+      out[level].push({ name, dir: Math.atan2(s, a), disp: far, vIn: (meta.vIn || 0) * tpl.scale });
+    }
+  }
+  tpl.reactOptions = out;
+  return out;
 }
 
 // --- palloni alti: colpo di testa o rovesciata, avviati in anticipo perche'

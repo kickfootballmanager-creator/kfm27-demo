@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { BALL, KEEPER } from './config.js';
-import { solveTwoBoneKeep, blendPath, palm } from './rig.js';
+import { solveTwoBoneKeep, solveArm, releaseArm, blendPath, palm } from './rig.js';
 
 // Ritocchi in codice sopra le clip, dopo il mixer (Avatar.update): solo IK
 // delle braccia (arbitro, mani del portiere sulla palla). Nessun movimento
@@ -8,7 +8,7 @@ import { solveTwoBoneKeep, blendPath, palm } from './rig.js';
 
 const _R = new THREE.Vector3();
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _hip = new THREE.Vector3();
-const _pole = new THREE.Vector3(), _tgt = new THREE.Vector3();
+const _pole = new THREE.Vector3(), _tgt = new THREE.Vector3(), _pl = new THREE.Vector3(), _pr = new THREE.Vector3();
 
 // Gesti dell'arbitro, creati in codice (non ci sono clip): IK sulle braccia
 // verso una direzione nel mondo. kind: 'point' (punizione, rimessa, braccio
@@ -105,9 +105,10 @@ export class KeeperReach {
     this.cur = 0;
     this.done = false;
     this.ttl = 0.25;       // il gesto lo rinnova a ogni passo: se il gesto sparisce, l'IK sfuma
-    this.memo = { Left: {}, Right: {} };   // ultima soluzione dell'IK (rig.solveTwoBoneKeep)
+    this.memo = { Left: {}, Right: {} };   // ultima soluzione dell'IK (rig.solveArm)
     this.stick = false;    // dal gioco, dopo il contatto: le mani restano dove sono, col corpo
     this.local = null;     // bersaglio nel riferimento del portiere
+    this.axis = null;      // ultima linea fra i palmi della clip
   }
 
   // Una parata ripianificata ne prende il posto dal peso e dalle braccia a cui era arrivata.
@@ -123,8 +124,13 @@ export class KeeperReach {
     const path = Math.max(blendPath(this.memo.Left), blendPath(this.memo.Right));
     const want = (this.ttl -= dt) > 0 ? this.weight : 0, step = Math.min(KEEPER.ik.rate, KEEPER.ik.turn / Math.max(path, 1e-3)) * dt;
     this.cur += Math.max(-step, Math.min(step, want - this.cur));
-    if (this.ttl <= 0 && this.cur <= 1e-3) return false;
-    if (this.cur <= 1e-3) { this.memo = { Left: {}, Right: {} }; return true; }
+    if (this.cur <= 1e-3) {
+      // IK spenta: le braccia tornano alla clip senza scatti (rig.releaseArm)
+      const r = av.rig, max = KEEPER.ik.arm * dt;
+      if (releaseArm(r.LeftArm, r.LeftForeArm, this.memo.Left, max) | releaseArm(r.RightArm, r.RightForeArm, this.memo.Right, max)) return true;
+      this.memo = { Left: {}, Right: {} };
+      return this.ttl > 0;
+    }
     const r = av.rig, o = av.object;
     o.updateMatrixWorld(true);
     // dopo il contatto le mani restano dove hanno incontrato la palla ma col
@@ -133,13 +139,18 @@ export class KeeperReach {
       if (!this.local) this.local = o.worldToLocal(this.target.clone());
       o.localToWorld(this.target.copy(this.local));
     } else this.local = null;
-    const h = o.rotation.y, g = BALL.radius + this.gap;
-    _R.set(-Math.cos(h), 0, Math.sin(h));
-    _v.copy(this.target).addScaledVector(_R, -g);
-    _w.copy(this.target).addScaledVector(_R, g);
+    // i palmi ai lati della palla lungo la linea fra i palmi della clip: in
+    // tuffo il busto e' girato e con la destra del busto una mano finiva
+    // dietro l'altra, e un gomito si piegava al contrario
+    const g = BALL.radius + this.gap;
+    _R.subVectors(palm(r, 'Right', _pr), palm(r, 'Left', _pl));
+    if (_R.lengthSq() > 0.0025) this.axis = (this.axis || new THREE.Vector3()).copy(_R).normalize();
+    else if (!this.axis) { const h = o.rotation.y; this.axis = new THREE.Vector3(-Math.cos(h), 0, Math.sin(h)); }
+    _v.copy(this.target).addScaledVector(this.axis, -g);
+    _w.copy(this.target).addScaledVector(this.axis, g);
     const max = KEEPER.ik.arm * dt;
-    solveTwoBoneKeep(r.LeftArm, r.LeftForeArm, (out) => palm(r, 'Left', out), _v, this.cur, null, this.memo.Left, max);
-    solveTwoBoneKeep(r.RightArm, r.RightForeArm, (out) => palm(r, 'Right', out), _w, this.cur, null, this.memo.Right, max);
+    solveArm(r.LeftArm, r.LeftForeArm, (out) => palm(r, 'Left', out), _v, this.cur, 'Left', this.memo.Left, max);
+    solveArm(r.RightArm, r.RightForeArm, (out) => palm(r, 'Right', out), _w, this.cur, 'Right', this.memo.Right, max);
     return true;
   }
 }

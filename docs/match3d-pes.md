@@ -264,6 +264,18 @@ controlla posizioni, due giocatori al centro e che il compagno riceva.
   vero sul pallone vale il giallo.
 - Rigore: vedi la sezione Rigori.
 
+## Rimessa laterale
+
+- In PES la direzione della rimessa si sceglie girando il giocatore verso chi
+  deve ricevere: con la levetta sinistra chi batte si orienta, e lancia dove
+  guarda. Tre tipi: corta, filtrante e lunga; dalle versioni con la barra di
+  potenza la distanza dipende da quanto si tiene premuto il tasto.
+- Da noi: durante l'attesa chi batte tiene la palla al petto con le due mani e
+  si gira con i giri sul posto della libreria, verso la levetta (utente) o
+  verso il compagno scelto (IA), al massimo 80 gradi dalla perpendicolare alla
+  linea. Poi la clip della rimessa parte nella direzione in cui guarda.
+  Passaggio e filtrante giocano corto, cross e tiro lungo, come prima.
+
 ## Fonti
 
 - PES Mastery, passaggi: https://pesmastery.com/pes-passing-tutorial/
@@ -277,6 +289,7 @@ controlla posizioni, due giocatori al centro e che il compagno riceva.
 - Comandi PES 2021: https://realsport101.com/article/pes-2021-controls-complete-guide-goalkeeper-defence-attack-on-ps4-and-xbox-one-dribbling-passing-shooting-tactics-gameplay-season-update
 - Comandi PES 2021, schema predefinito: https://www.fifplay.com/pes-2021-controls/
 - PES Mastery, punizioni: https://pesmastery.com/pes-free-kick-tutorial/
+- PES Mastery, rimessa laterale: https://pesmastery.com/throw-in/
 - Discussione Steam sull'arbitro di PES 2020/2021: https://steamcommunity.com/app/996470/discussions/0/2518023667588674849/
 - IFAB, vantaggio: https://www.footballrules.com/offences-sanctions/advantage/
 - IFAB, Regola 8 (calcio d'inizio): https://www.theifab.com/laws/latest/the-start-and-restart-of-play/

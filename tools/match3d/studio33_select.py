@@ -25,7 +25,7 @@ RULES = [
     (r"^Jump_Pass", "passaggi", None, "passaggio in salto: comando non presente"),
     (r"^Tired_", "locomozione", None, "corsa stanca: la stanchezza non cambia l'animazione"),
     (r"^Dribble_NoBall", "conduzione", None, "conduzione mimata senza palla"),
-    (r"^(Hit_Reaction|Hit_Weak|Small_Hit|Stand_Hit)", "cadute", None, "colpito dalla palla o da un avversario: meccanica non presente"),
+    (r"^Stand_Hit_Reaction_00$", "cadute", None, "reazione di 16 secondi, troppo lunga per la partita"),
     # --- extra: calci piazzati, esultanze
     (r"^KickOff_", "calci piazzati", "extra", "calcio d'inizio"),
     (r"^Ball_Avoid_Jump", "calci piazzati", "extra", "salto della barriera"),
@@ -41,6 +41,7 @@ RULES = [
     (r"^Slide_", "scivolate", "core", "scivolata"),
     (r"^(Tackles_Stand|Jogging_Tackles|Run_Tackles|Small_Tackles)", "contrasti", "core", "contrasto in piedi"),
     (r"^(Tackles_Reaction|Tackles01_Reaction|Defense_Fall|Defense_Jump_Fall)", "cadute", "core", "caduta dopo un fallo"),
+    (r"^(Hit_Reaction|Hit_Weak|Small_Hit|Stand_Hit)", "cadute", "core", "reazione a un contatto"),
     (r"^Intercept_", "intercetti", "core", "intercetto di un passaggio"),
     (r"^Trapping_", "ricezioni", "core", "ricezione"),
     (r"^(Heading_|Jump_Head|Diving_Head)", "colpi di testa", "core", "colpo di testa"),
@@ -126,7 +127,14 @@ ROLES = [
     (r"^Intercept_", "intercept", None),
     (r"^(Tackles_Stand|Jogging_Tackles|Run_Tackles|Small_Tackles_Stand)_", "tackle", None),
     (r"^Slide_(Tackles|Intercept)", "slide", None),
-    (r"^(Tackles01_Reaction_03|Defense_Jump_Fall_Reaction_0[12]_[LR])$", "fall", None),
+    # reazioni ai contatti in quattro livelli (skill: "Arbitro, falli e
+    # cartellini"): light = 1 sbilanciamento o inciampo senza caduta, hit = 2
+    # colpo con un passo di recupero, fall = 3 caduta e rialzo, violent = 4
+    # solo per i falli violenti
+    (r"^(Small_Hit_Reaction_\d+|Tackles_Reaction_[LR]_01|Defense_Jump_Fall_Reaction_03)$", "react", "light"),
+    (r"^(Hit_Reaction_\d+|Stand_Hit_Reaction_(90|180|270)|Defense_Fall_Reaction_(L|R|UP))$", "react", "hit"),
+    (r"^Defense_Jump_Fall_Reaction_0[12]_[LR]$", "fall", "fall"),
+    (r"^Tackles01_Reaction_03$", "fall", "violent"),
     (r"^(Heading_Stand_01|Jump_Head_0)$", "header", None),
     (r"^Tricks$", "feint", None),
     (r"^KickOff_\d+$", "kickoff", None),
@@ -179,7 +187,9 @@ LOW_ROLES = {"gkSave", "gkPunch", "gkCatch", "gkThrow", "gkKick",
              # partenze e arresti: senza, al livello basso chi parte da fermo
              # traslava in piedi (idle fuso con la camminata) e l'arresto
              # sceglieva fra due clip sole in avanti
-             "start", "stop"}
+             "start", "stop",
+             # reazioni ai contatti: tempi e spostamenti decidono il gioco
+             "react", "fall"}
 LOW_STYLES = {("loco", "defense"), ("loco", "keeper")}
 
 # specchiate in fase di build: [originale, nome della copia]. La libreria ha una
@@ -196,11 +206,8 @@ MIRROR = {
 NO_ROLE = [
     (r"^Back steps_0$", "corsa all'indietro con giro completo: nessuna situazione di gioco la chiede"),
     (r"^Ceremony$", "esultanza in corsa: il giocatore resta sul posto e la corsa della clip andrebbe persa"),
-    (r"^Defense_Fall_Reaction", "sbilanciamento di chi viene saltato: il gioco lo rende col rallentamento, senza gesto"),
     (r"^Defense_FastJogging_180_[LR]$", "corsa all'indietro col corpo girato: doppione della 180"),
-    (r"^Defense_Jump_Fall_Reaction_03$", "inciampo senza caduta: nessuna situazione di gioco lo chiede"),
     (r"^Diving_Head", "tuffo di testa: comando non presente"),
-    (r"^Tackles_Reaction_[LR]_01$", "inciampo senza caduta: nessuna situazione di gioco lo chiede"),
     (r"^Tackles01_Reaction_02$", "caduta di 7 secondi, troppo lunga per la partita"),
     (r"^Keeper_Ball_(Walk|Run)_", "il portiere con la palla in mano resta fermo fino al rinvio: nessuna situazione la chiede"),
     (r"Arch_Turn_[LR]$", "curva continua in corsa: la rendono il blend tree e l'inclinazione in curva"),
@@ -220,7 +227,7 @@ def no_role_reason(name):
 
 # ruoli in cui la rotazione della radice resta dentro la clip: il corpo gira
 # davvero (roulette, caduta che si avvita, tuffo di lato), il gioco no
-KEEP_YAW = {"feint", "fall", "gkSave", "gkPunch", "gkCatch", "gkThrow", "gkKick", "celebrate", "slide"}
+KEEP_YAW = {"feint", "fall", "react", "gkSave", "gkPunch", "gkCatch", "gkThrow", "gkKick", "celebrate", "slide"}
 
 
 # Clip che deciderebbero il gioco (spostamento, tempi) e quindi restano una

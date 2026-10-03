@@ -37,7 +37,7 @@ La libreria non si ridistribuisce: FBX, GLB e JSON derivati restano fuori dal re
 | intercetti | 1 | 8 | 0 | 0 |
 | contrasti | 5 | 5 | 0 | 0 |
 | scivolate | 1 | 0 | 0 | 3 |
-| cadute | 3 | 0 | 0 | 25 |
+| cadute | 22 | 0 | 0 | 6 |
 | portiere | 87 | 1 | 0 | 20 |
 | finte | 1 | 0 | 0 | 99 |
 | calci piazzati | 4 | 0 | 0 | 0 |
@@ -48,9 +48,9 @@ La libreria non si ridistribuisce: FBX, GLB e JSON derivati restano fuori dal re
 | cerimonie | 0 | 0 | 0 | 4 |
 | riscaldamento | 0 | 0 | 0 | 10 |
 | menu e pose | 0 | 0 | 0 | 55 |
-| **totale** | **275** | **276** | **6** | **350** |
+| **totale** | **294** | **276** | **6** | **331** |
 
-Per livello: basso 275 clip (piu' 3 copie specchiate: Sidestep_Jogging_Stop01_L_M, Tricks_M, Slide_Tackles01_M), medio e alto 557 (piu' 3 copie specchiate: Sidestep_Jogging_Stop01_L_M, Tricks_M, Slide_Tackles01_M).
+Per livello: basso 294 clip (piu' 3 copie specchiate: Sidestep_Jogging_Stop01_L_M, Tricks_M, Slide_Tackles01_M), medio e alto 576 (piu' 3 copie specchiate: Sidestep_Jogging_Stop01_L_M, Tricks_M, Slide_Tackles01_M).
 
 ## Locomozione
 
@@ -619,34 +619,34 @@ Per livello: basso 275 clip (piu' 3 copie specchiate: Sidestep_Jogging_Stop01_L_
 
 | Clip | Durata | Root motion | Rotazione | In place | Stato | Motivo |
 |---|---:|---|---:|---|---|---|
-| 084_Defense_Fall_Reaction_L | 0.80 | 0.91 m (+0.06, +0.90) | +130 | no | scartata | sbilanciamento di chi viene saltato: il gioco lo rende col rallentamento, senza gesto |
-| 085_Defense_Fall_Reaction_R | 0.80 | 0.91 m (+0.06, -0.90) | -130 | no | scartata | sbilanciamento di chi viene saltato: il gioco lo rende col rallentamento, senza gesto |
-| 086_Defense_Fall_Reaction_UP | 0.93 | 0.00 m (+0.00, -0.00) | 0 | si' | scartata | sbilanciamento di chi viene saltato: il gioco lo rende col rallentamento, senza gesto |
-| 105_Defense_Jump_Fall_Reaction_01_L | 2.30 | 0.00 m (+0.00, -0.00) | 0 | no | core | caduta dopo un fallo, a terra, rialzo - tutti i livelli, all'avvio |
-| 106_Defense_Jump_Fall_Reaction_01_R | 2.30 | 0.00 m (+0.00, +0.00) | 0 | no | core | caduta dopo un fallo, a terra, rialzo - tutti i livelli, all'avvio |
-| 107_Defense_Jump_Fall_Reaction_02_L | 2.20 | 2.09 m (+1.94, -0.78) | 0 | no | scartata | altra caduta: tempi a terra e spostamento decidono il gioco, restano quelle del pacchetto essenziale |
-| 108_Defense_Jump_Fall_Reaction_02_R | 2.20 | 2.09 m (+1.94, +0.78) | 0 | no | scartata | altra caduta: tempi a terra e spostamento decidono il gioco, restano quelle del pacchetto essenziale |
-| 109_Defense_Jump_Fall_Reaction_03 | 1.67 | 2.06 m (-2.06, -0.02) | 0 | no | scartata | inciampo senza caduta: nessuna situazione di gioco lo chiede |
-| 264_Hit_Reaction_00 | 1.37 | 1.06 m (-1.06, -0.10) | 0 | no | scartata | colpito dalla palla o da un avversario: meccanica non presente |
-| 265_Hit_Reaction_90 | 1.43 | 2.29 m (+0.49, +2.24) | 0 | no | scartata | colpito dalla palla o da un avversario: meccanica non presente |
-| 266_Hit_Reaction_180 | 2.00 | 2.37 m (+2.37, -0.07) | 0 | no | scartata | colpito dalla palla o da un avversario: meccanica non presente |
-| 267_Hit_Reaction_270 | 1.43 | 2.29 m (+0.49, -2.24) | 0 | no | scartata | colpito dalla palla o da un avversario: meccanica non presente |
+| 084_Defense_Fall_Reaction_L | 0.80 | 0.91 m (+0.06, +0.90) | +130 | no | core | reazione a un contatto, livello 2: colpo con un passo di recupero - tutti i livelli, all'avvio |
+| 085_Defense_Fall_Reaction_R | 0.80 | 0.91 m (+0.06, -0.90) | -130 | no | core | reazione a un contatto, livello 2: colpo con un passo di recupero - tutti i livelli, all'avvio |
+| 086_Defense_Fall_Reaction_UP | 0.93 | 0.00 m (+0.00, -0.00) | 0 | si' | core | reazione a un contatto, livello 2: colpo con un passo di recupero - tutti i livelli, all'avvio |
+| 105_Defense_Jump_Fall_Reaction_01_L | 2.30 | 0.00 m (+0.00, -0.00) | 0 | no | core | reazione a un fallo, livello 3: caduta, a terra, rialzo - tutti i livelli, all'avvio |
+| 106_Defense_Jump_Fall_Reaction_01_R | 2.30 | 0.00 m (+0.00, +0.00) | 0 | no | core | reazione a un fallo, livello 3: caduta, a terra, rialzo - tutti i livelli, all'avvio |
+| 107_Defense_Jump_Fall_Reaction_02_L | 2.20 | 2.09 m (+1.94, -0.78) | 0 | no | core | reazione a un fallo, livello 3: caduta, a terra, rialzo - tutti i livelli, all'avvio |
+| 108_Defense_Jump_Fall_Reaction_02_R | 2.20 | 2.09 m (+1.94, +0.78) | 0 | no | core | reazione a un fallo, livello 3: caduta, a terra, rialzo - tutti i livelli, all'avvio |
+| 109_Defense_Jump_Fall_Reaction_03 | 1.67 | 2.06 m (-2.06, -0.02) | 0 | no | core | reazione a un contatto, livello 1: sbilanciamento sul posto o inciampo, senza caduta - tutti i livelli, all'avvio |
+| 264_Hit_Reaction_00 | 1.37 | 1.06 m (-1.06, -0.10) | 0 | no | core | reazione a un contatto, livello 2: colpo con un passo di recupero - tutti i livelli, all'avvio |
+| 265_Hit_Reaction_90 | 1.43 | 2.29 m (+0.49, +2.24) | 0 | no | core | reazione a un contatto, livello 2: colpo con un passo di recupero - tutti i livelli, all'avvio |
+| 266_Hit_Reaction_180 | 2.00 | 2.37 m (+2.37, -0.07) | 0 | no | core | reazione a un contatto, livello 2: colpo con un passo di recupero - tutti i livelli, all'avvio |
+| 267_Hit_Reaction_270 | 1.43 | 2.29 m (+0.49, -2.24) | 0 | no | core | reazione a un contatto, livello 2: colpo con un passo di recupero - tutti i livelli, all'avvio |
 | 268_Hit_Weak_Reaction_00 | 1.37 | 1.06 m (-1.06, -0.10) | 0 | no | scartata | stesso movimento di 264_Hit_Reaction_00 |
 | 269_Hit_Weak_Reaction_90 | 1.43 | 2.29 m (+0.49, +2.24) | 0 | no | scartata | stesso movimento di 265_Hit_Reaction_90 |
 | 270_Hit_Weak_Reaction_180 | 2.00 | 2.37 m (+2.37, -0.07) | 0 | no | scartata | stesso movimento di 266_Hit_Reaction_180 |
 | 271_Hit_Weak_Reaction_270 | 1.43 | 2.29 m (+0.49, -2.24) | 0 | no | scartata | stesso movimento di 267_Hit_Reaction_270 |
-| 640_Small_Hit_Reaction_00 | 0.73 | 0.00 m (+0.00, -0.00) | 0 | si' | scartata | colpito dalla palla o da un avversario: meccanica non presente |
-| 641_Small_Hit_Reaction_90 | 0.73 | 0.00 m (+0.00, -0.00) | 0 | si' | scartata | colpito dalla palla o da un avversario: meccanica non presente |
-| 642_Small_Hit_Reaction_180 | 0.87 | 0.00 m (+0.00, -0.00) | 0 | si' | scartata | colpito dalla palla o da un avversario: meccanica non presente |
-| 643_Small_Hit_Reaction_270 | 0.73 | 0.00 m (+0.00, -0.00) | 0 | si' | scartata | colpito dalla palla o da un avversario: meccanica non presente |
-| 697_Stand_Hit_Reaction_00 | 16.00 | 0.77 m (-0.75, +0.18) | 0 | no | scartata | colpito dalla palla o da un avversario: meccanica non presente |
-| 698_Stand_Hit_Reaction_90 | 1.00 | 1.00 m (+0.06, +1.00) | 0 | no | scartata | colpito dalla palla o da un avversario: meccanica non presente |
-| 699_Stand_Hit_Reaction_180 | 1.00 | 0.97 m (+0.97, +0.07) | 0 | no | scartata | colpito dalla palla o da un avversario: meccanica non presente |
-| 700_Stand_Hit_Reaction_270 | 1.00 | 1.00 m (+0.06, -1.00) | 0 | no | scartata | colpito dalla palla o da un avversario: meccanica non presente |
-| 734_Tackles_Reaction_L_01 | 1.17 | 3.85 m (+3.79, +0.69) | 0 | no | scartata | inciampo senza caduta: nessuna situazione di gioco lo chiede |
-| 735_Tackles_Reaction_R_01 | 1.17 | 3.85 m (+3.79, -0.69) | 0 | no | scartata | inciampo senza caduta: nessuna situazione di gioco lo chiede |
+| 640_Small_Hit_Reaction_00 | 0.73 | 0.00 m (+0.00, -0.00) | 0 | si' | core | reazione a un contatto, livello 1: sbilanciamento sul posto o inciampo, senza caduta - tutti i livelli, all'avvio |
+| 641_Small_Hit_Reaction_90 | 0.73 | 0.00 m (+0.00, -0.00) | 0 | si' | core | reazione a un contatto, livello 1: sbilanciamento sul posto o inciampo, senza caduta - tutti i livelli, all'avvio |
+| 642_Small_Hit_Reaction_180 | 0.87 | 0.00 m (+0.00, -0.00) | 0 | si' | core | reazione a un contatto, livello 1: sbilanciamento sul posto o inciampo, senza caduta - tutti i livelli, all'avvio |
+| 643_Small_Hit_Reaction_270 | 0.73 | 0.00 m (+0.00, -0.00) | 0 | si' | core | reazione a un contatto, livello 1: sbilanciamento sul posto o inciampo, senza caduta - tutti i livelli, all'avvio |
+| 697_Stand_Hit_Reaction_00 | 16.00 | 0.77 m (-0.75, +0.18) | 0 | no | scartata | reazione di 16 secondi, troppo lunga per la partita |
+| 698_Stand_Hit_Reaction_90 | 1.00 | 1.00 m (+0.06, +1.00) | 0 | no | core | reazione a un contatto, livello 2: colpo con un passo di recupero - tutti i livelli, all'avvio |
+| 699_Stand_Hit_Reaction_180 | 1.00 | 0.97 m (+0.97, +0.07) | 0 | no | core | reazione a un contatto, livello 2: colpo con un passo di recupero - tutti i livelli, all'avvio |
+| 700_Stand_Hit_Reaction_270 | 1.00 | 1.00 m (+0.06, -1.00) | 0 | no | core | reazione a un contatto, livello 2: colpo con un passo di recupero - tutti i livelli, all'avvio |
+| 734_Tackles_Reaction_L_01 | 1.17 | 3.85 m (+3.79, +0.69) | 0 | no | core | reazione a un contatto, livello 1: sbilanciamento sul posto o inciampo, senza caduta - tutti i livelli, all'avvio |
+| 735_Tackles_Reaction_R_01 | 1.17 | 3.85 m (+3.79, -0.69) | 0 | no | core | reazione a un contatto, livello 1: sbilanciamento sul posto o inciampo, senza caduta - tutti i livelli, all'avvio |
 | 741_Tackles01_Reaction_02 | 7.13 | 6.27 m (+6.25, +0.59) | 0 | no | scartata | caduta di 7 secondi, troppo lunga per la partita |
-| 742_Tackles01_Reaction_03 | 2.77 | 4.19 m (+3.93, +1.46) | -248 | no | core | caduta dopo un fallo, a terra, rialzo - tutti i livelli, all'avvio |
+| 742_Tackles01_Reaction_03 | 2.77 | 4.19 m (+3.93, +1.46) | -248 | no | core | reazione a un fallo, livello 4 (solo falli violenti): caduta spettacolare, a terra, rialzo - tutti i livelli, all'avvio |
 
 ## Portiere
 

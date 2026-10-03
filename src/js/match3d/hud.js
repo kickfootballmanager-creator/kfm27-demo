@@ -161,6 +161,11 @@ export class Hud {
     panel.appendChild(resume);
     this.resumeBtn = resume;
     panel.appendChild(this._quality());
+    // replay di debug (main.saveTape): video e dati degli ultimi 10 secondi
+    const tape = el('button', 'm3d-resume', 'Salva gli ultimi 10 secondi');
+    tape.type = 'button';
+    tape.addEventListener('click', () => { if (this.on.saveTape) this.on.saveTape(); });
+    panel.appendChild(tape);
     wrap.appendChild(panel);
     return wrap;
   }
@@ -240,6 +245,13 @@ export class Hud {
     this.toastEl.hidden = false;
     clearTimeout(this.toastT);
     this.toastT = setTimeout(() => { this.toastEl.hidden = true; }, 1800);
+  }
+
+  // Avviso che resta finche' non lo si toglie (null): salvataggio del replay di debug.
+  status(text) {
+    clearTimeout(this.toastT);
+    this.toastEl.textContent = text || '';
+    this.toastEl.hidden = !text;
   }
 
   // mm:ss di gioco e tempo (1T, 2T)

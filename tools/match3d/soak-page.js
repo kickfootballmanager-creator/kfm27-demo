@@ -78,6 +78,7 @@
     const C = await import(new URL('src/js/match3d/config.js', location.href).href);
     S.C = C;
     S.A = await import(new URL('src/js/match3d/avatar.js', location.href).href);
+    S.R = await import(new URL('src/js/match3d/rig.js', location.href).href);
     cancelAnimationFrame(m.raf);
     // Bug trovato: il primo requestAnimationFrame arriva con un tempo precedente
     // all'avvio (macchina carica) e il passo negativo alzava tutti i giocatori
@@ -118,11 +119,14 @@
       noReach: 0, gestures: {}, runGestures: {}, kicks: {}, skateSum: 0, skateN: 0,
       duels: {}, foulKinds: {}, slideFrom: {}, through: 0, throughDone: 0, throughLost: 0, goalShots: [], replays: 0, kickoffs: 0, kickoffReceived: 0, kickoffWhistled: 0,
       kickFoot: { n: 0, sum: 0, max: 0, over: 0 },
+      reacts: {},                // reazioni ai contatti per livello (REACT), con o senza fallo
       boneMax: 0,                // rad: la rotazione piu' grande di un osso in un passo
-      bodyOff: 0, bodyStep: 0    // m: scarto bacino-anello piu' grande e sua variazione piu' grande in un passo
+      bodyOff: 0, bodyStep: 0,   // m: scarto bacino-anello piu' grande e sua variazione piu' grande in un passo
+      armHinge: 0, armTwist: 0   // gradi: gomito piu' fuori dalla cerniera (piegato) e avambraccio piu' girato
     };
     S.byAvatar = new Map();
     for (const p of [...m.everyone, m.referee.p]) S.byAvatar.set(p.avatar, p);
+    S.tapes = []; S.tapeWant = []; S.tapeMax = 0;
     S.calibrate();
     S.hook();
     for (const f of S.startFlags) S.flag(f.kind, null, f);
@@ -273,6 +277,14 @@
       }
       return kickNow(p, a);
     };
+    // reazioni ai contatti: livello e clip (skill: la maggior parte nei livelli 1 e 2)
+    if (m.note) {
+      const note = m.note.bind(m);
+      m.note = (kind, data) => {
+        if (kind === 'reazione') { const k = 'livello ' + data.livello; S.stats.reacts[k] = (S.stats.reacts[k] || 0) + 1; }
+        return note(kind, data);
+      };
+    }
     poss.loose = (cause, from) => {
       if (cause === 'nessuno la raggiunge') S.stats.noReach++;
       return loose(cause, from);
@@ -325,10 +337,23 @@
     };
   };
 
+  // Replay di debug delle violazioni (soak.mjs --tapes N): il nastro degli
+  // ultimi secondi (tape.js), preso TAPE_AFTER fotogrammi dopo la prima
+  // violazione di ogni tipo, perche' si veda anche come va a finire.
+  const TAPE_AFTER = 90;
+  S.tapeOn = (max) => { S.tapeMax = max; };
+  S.saveTape = (note) => {
+    S.tapes.push({ note, frame: S.frames, clock: S.clock(), json: JSON.stringify(S.m.tape.toJSON({ note, frame: S.frames })) });
+  };
+  S.takeTapes = () => { const t = S.tapes; S.tapes = []; return t; };
+
   S.flag = (kind, p, extra) => {
     let v = S.v[kind];
     if (!v) v = S.v[kind] = { count: 0, examples: [] };
     v.count++;
+    if (v.count === 1 && S.tapeMax > S.tapeWant.length + (S.tapeDone || 0)) {
+      S.tapeWant.push({ at: S.frames + TAPE_AFTER, note: kind + (p ? ' - ' + S.tag(p) : '') + ' (fotogramma ' + S.frames + ')' });
+    }
     if (v.examples.length < EXAMPLES) {
       const ex = Object.assign({ t: S.clock(), frame: S.frames }, S.describe(p), extra || {});
       const st = p && S.st.get(p);
@@ -511,6 +536,23 @@
     S.persist(st, 'still', moved > T.stillSpeed && steps < T.stepShare, T.stillFrames + 1, 'corpo: posa ferma che trasla (niente passi)', p,
       { spostamento_ms: +moved.toFixed(2), quota_passi: +steps.toFixed(2), clip: S.poseClips(p) });
 
+    // 9. braccia nei limiti naturali (rig.armAngles, ANIM.armLimits): il
+    // gomito piega sulla sua cerniera e l'avambraccio non gira oltre quanto
+    // fa nelle clip (bug trovato: l'IK del portiere piegava il gomito al
+    // contrario, fino a 179 gradi fuori cerniera, con l'avambraccio a mezzo giro)
+    const AL = S.C.ANIM.armLimits;
+    let armBad = null;
+    for (const side of ['Left', 'Right']) {
+      const g = S.R.armAngles(r, side, st.armA || (st.armA = {}));
+      const hinge = g.flex > 25 ? g.hinge : 0;
+      if (hinge > S.stats.armHinge) S.stats.armHinge = hinge;
+      if (Math.abs(g.twist) > S.stats.armTwist) S.stats.armTwist = Math.abs(g.twist);
+      const ex = Math.max(hinge - AL.hinge, Math.abs(g.twist) - AL.twist);
+      if (ex > 0 && (!armBad || ex > armBad.ex)) armBad = { ex, lato: side, gomito_fuori_cerniera: +hinge.toFixed(1), avambraccio: +g.twist.toFixed(1), flessione: +g.flex.toFixed(1) };
+    }
+    S.persist(st, 'arm', !!armBad, 3, 'braccio: gomito fuori dalla cerniera o avambraccio girato oltre il limite naturale', p,
+      armBad ? { ...armBad, ex: undefined, clip: S.poseClips(p) } : {});
+
     // 6. continuita' di tutte le ossa: nessuna rotazione improvvisa. Riparte
     // dopo un riposizionamento o un salto di passi (replay).
     const bones = st.bones || (st.bones = Object.entries(r));
@@ -668,6 +710,12 @@
       S.checkDefense();
       S.checkGoal();
       S.checkKickoff();
+      for (let k = S.tapeWant.length - 1; k >= 0; k--) {
+        if (S.frames < S.tapeWant[k].at) continue;
+        S.saveTape(S.tapeWant[k].note);
+        S.tapeWant.splice(k, 1);
+        S.tapeDone = (S.tapeDone || 0) + 1;
+      }
       if (maxClock && m.poss.clock >= maxClock) break;
     }
     return { done: m.phase === 'end' || (maxClock && m.poss.clock >= maxClock), frames: S.frames, clock: S.clock(), phase: m.phase, goals: { ...m.goals }, violations: Object.values(S.v).reduce((s, v) => s + v.count, 0) };
@@ -708,9 +756,12 @@
         kickFootMax: +S.stats.kickFoot.max.toFixed(3),
         boneMaxDeg: +(S.stats.boneMax * 180 / Math.PI).toFixed(1),
         bodyOffMaxCm: +(S.stats.bodyOff * 100).toFixed(1),
-        bodyStepMaxCm: +(S.stats.bodyStep * 100).toFixed(1)
+        bodyStepMaxCm: +(S.stats.bodyStep * 100).toFixed(1),
+        armHingeMaxDeg: +S.stats.armHinge.toFixed(1),
+        armTwistMaxDeg: +S.stats.armTwist.toFixed(1)
       },
       foulKinds: S.stats.foulKinds,
+      reacts: S.stats.reacts,
       slideFrom: S.stats.slideFrom,
       goalShots: S.stats.goalShots,
       gestures: S.stats.gestures,
