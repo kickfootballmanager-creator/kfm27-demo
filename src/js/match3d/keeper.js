@@ -94,7 +94,7 @@ const _q = new THREE.Vector3(), _s = new THREE.Vector3(), _n = new THREE.Vector3
 // sfera vanno insieme da t = 0 a 1: con le mani spinte dall'IK la palla
 // passava fra due pose senza toccarle (mani a 19 cm dal centro, nessun contatto).
 const _dc = new THREE.Vector3(), _r0 = new THREE.Vector3(), _rv = new THREE.Vector3();
-function bodyHit(k, b, hands, clock) {
+export function bodyHit(k, b, hands, clock) {
   const r = k.avatar.rig, B = KEEPER.body;
   k.avatar.object.updateMatrixWorld(true);
   _off.set(k.pos.x - k.anchor.x, 0, k.pos.z - k.anchor.z);
@@ -310,7 +310,9 @@ export class KeeperAI {
   // della palla con le sue mani e il suo corpo (touch).
   save() {
     const m = this.m, k = this.p, poss = m.poss;
-    if (!poss.flying || poss.team === this.side) { this.watch = null; return false; }
+    // tiro deviato da un giocatore (palla libera che va forte verso la porta): si para lo stesso
+    const deflected = poss.free && m.lastDeflect && m.lastDeflect.seq === poss.seq;
+    if (!deflected && (!poss.flying || poss.team === this.side)) { this.watch = null; return false; }
     if (this.watch === poss.seq) return false;
     // rigore contro l'utente che non ha ancora scelto: aspetta la sua levetta
     // per poco; un tuffo deciso in ritardo parte da dove e' la palla adesso
@@ -326,7 +328,7 @@ export class KeeperAI {
     this.watch = poss.seq;
     // lettura del tiro: parabile o no per gli attributi, e perche'
     const a = this.assess();
-    this.shot = { seq: poss.seq, ...a };
+    this.shot = { seq: poss.seq, deflected, ...a };
     m.note('lettura', { k, parabile: a.saveable, motivo: a.reason, margine: a.margin, t: a.t });
     // tiro fuori dallo specchio: lo si lascia andare
     if (Math.abs(s.z) > GOAL_HW + KEEPER.plan.wide || s.y > GOAL.height + KEEPER.plan.wide) return false;
@@ -663,7 +665,8 @@ export class KeeperAI {
   // test di durata lo segnala. Toccata dal portiere: respinta in porta.
   goalReason() {
     const m = this.m, s = this.shot;
-    if (s && s.seq === m.poss.seq) return s.saveable ? 'parabile' : s.reason;
+    if (s && s.seq === m.poss.seq) return s.saveable ? 'parabile' : s.deflected ? 'deviazione (' + s.reason + ')' : s.reason;
+    if (m.lastDeflect && m.lastDeflect.seq === m.poss.seq) return 'deviazione';
     if (this.lastTouch && this.lastTouch.seq === m.poss.seq) return 'toccata dal portiere';
     return m.poss.flying ? 'nessun tiro in porta letto (' + (m.poss.kind || '') + ')' : 'palla libera';
   }

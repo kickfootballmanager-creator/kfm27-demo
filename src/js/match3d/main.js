@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { PHYSICS, RENDER, REPLAY, RULES, PLAYER, CONTROL, DRIBBLE, SHOT, PASS, KIT, RECEIVE, FIRST_TOUCH, ANIM, ANIMLIB, POWER, FEINT, AI, AERIAL, SHAPE, PITCH, SLIDE, BALL, DUEL, OFFSIDE, DEBUG, PRESS, THROUGH, TAPE } from './config.js';
+import { PHYSICS, RENDER, REPLAY, RULES, PLAYER, CONTROL, DRIBBLE, SHOT, PASS, KIT, RECEIVE, FIRST_TOUCH, ANIM, ANIMLIB, POWER, FEINT, AI, AERIAL, SHAPE, PITCH, SLIDE, BALL, DUEL, OFFSIDE, DEBUG, PRESS, THROUGH, TAPE, BALL_LOOK } from './config.js';
 import { buildPitch } from './pitch.js';
-import { Ball, shadowTexture } from './ball.js';
+import { Ball, shadowTexture, aimWithSpin, rollSpeedIn } from './ball.js';
 import { BroadcastCamera } from './camera.js';
 import { Hud } from './hud.js';
 import { Controls, glyph } from './controls.js';
@@ -11,7 +11,7 @@ import { pickKick, pickTrap, pickIntercept, kickStill } from './anim-pick.js';
 import { Possession } from './possession.js';
 import { Debug } from './debug.js';
 import { TeamAI } from './team-ai.js';
-import { KeeperAI, HELD_Y } from './keeper.js';
+import { KeeperAI, HELD_Y, bodyHit } from './keeper.js';
 import { startTackle, startSlide, tryAerial, startKeeperGesture, startFoulGesture } from './gestures.js';
 import { Rules } from './rules.js';
 import { userPress, stagger, beat, bodyContact } from './defense.js';
@@ -22,6 +22,7 @@ import { Graphics, savedQuality, detectQuality } from './render.js';
 import { Stadium } from './stadium.js';
 import { Recorder, Replay } from './replay.js';
 import { Tape, replayFolder, saveReplayFiles } from './tape.js';
+import { loadBallLook } from './ball-look.js';
 
 const KICKS = ['pass', 'through', 'cross', 'shot'];
 // Legenda: una riga per l'attacco e una per la difesa, un elemento per comando.
@@ -32,6 +33,7 @@ const KEY_HINT = hintRow('Attacco', ['WASD muovi', 'J passaggio', 'U tiro', 'K c
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const wrap01 = (x) => x - Math.floor(x);
+const _kb = { x: 0, z: 0 }, _kw = new THREE.Vector3(), _dn = new THREE.Vector3(), _dw = new THREE.Vector3();
 const smoothstep = (a, b, x) => { const u = clamp((x - a) / (b - a), 0, 1); return u * u * (3 - 2 * u); };
 
 function wrapAngle(a) {
@@ -181,7 +183,10 @@ class Match {
     // nelle opzioni), o quello chiesto dalla prova. Cambia solo la varieta'.
     const level = ANIMLIB.levels[this.opts.animLevel] ? this.opts.animLevel : (savedQuality() || detectQuality(r));
     const mem0 = heapBytes();
-    const [tpl] = await Promise.all([loadPlayerModel(level), loadCss(), fontsReady()]);
+    // palla del modello dell'utente col disegno della competizione (ball-look.js)
+    const look = loadBallLook({ comp: this.opts.competition || null, winter: this.opts.ball === 'inverno', size: BALL_LOOK.size[level] || 1024 })
+      .catch((e) => { console.warn('match3d palla: aspetto non caricato', e); return null; });
+    const [tpl, ballLook] = await Promise.all([loadPlayerModel(level), look, loadCss(), fontsReady()]);
     this.animLevel = level;
     this.loadStats = { level, loadMs: Math.round(performance.now() - t0), heapBefore: mem0, heapAfter: heapBytes(), anim: tpl.lib.stats };
     // livello medio: il resto della libreria arriva durante la partita
@@ -205,6 +210,8 @@ class Match {
     this.scene = scene;
 
     this.ball = new Ball();
+    if (ballLook) this.ball.setLook(ballLook);
+    this.ballLook = ballLook ? { design: ballLook.design, fromModel: ballLook.fromModel, ms: ballLook.ms } : null;
     scene.add(this.ball.mesh, this.ball.shadow);
 
     this.tpl = tpl;
@@ -1029,6 +1036,7 @@ class Match {
     if (!this.owner && b.live && live) {
       // parate: solo se la palla tocca mani o corpo veri del portiere
       if (!this.teams.home.keeperAI.touch()) this.teams.away.keeperAI.touch();
+      if (!this.owner) this.deflect();
       if (!this.owner) this.contacts(inp);
     }
     this.noteOffside();
@@ -1256,10 +1264,23 @@ class Match {
       if (a.target && a.target.run) this.teams[a.target.team].ai.goRun(a.target);
     } else if (a.kind === 'cross') {
       b.lobTo(aim.tx, aim.tz, a.apex);
+      // effetto all'indietro e a rientrare, con la mira che lo tiene sul punto
+      if (this.kickSpin(p, a, b.vel, _kw)) { aimWithSpin(b.pos, b.vel, _kw, 0, true); b.w.copy(_kw); }
       this.poss.fly(a.cross, p, a.target);
     } else {
       b.kick(aim.v.vx, aim.v.vy, aim.v.vz);
+      if (this.kickSpin(p, a, b.vel, _kw)) {
+        // stesso punto sulla linea di porta di prima: l'effetto curva, la mira resta
+        const toLine = Math.abs((this.dirOf(p.team) * PITCH.length / 2 - b.pos.x) / (b.vel.x || 1e-3)) * Math.hypot(b.vel.x, b.vel.z);
+        aimWithSpin(b.pos, b.vel, _kw, Math.min(60, toLine));
+        b.w.copy(_kw);
+      }
       this.poss.fly('tiro', p, null);
+    }
+    // passaggi rasoterra: rotolano (Ball.kick), col piatto un filo di effetto
+    if ((a.kind === 'pass' || a.kind === 'through') && a.clip) {
+      const meta = this.tpl.meta[a.clip], c = meta && meta.ev && meta.ev.contact;
+      b.w.y += (c && c.foot === 'L' ? -1 : 1) * BALL.kickSpin.pass;
     }
     this.lastKick = { kind: a.kind, power: a.power, speed: b.vel.length(), dist: d };
     this.note(a.kind === 'shot' ? 'tiro' : 'calcio', { p, tipo: a.kind, potenza: a.power, velocita: this.lastKick.speed, a: a.target || null, clip: a.clip || '' });
@@ -1342,6 +1363,15 @@ class Match {
     const swing = (D.swing[0] + (D.swing[1] - D.swing[0]) * run) * (p.close ? D.closeSwing : 1);
     // durante un calcio la palla aspetta il piede, niente allungo
     const kicking = p.action && p.action.kick;
+    // durante un calcio la palla va dove il piede della clip la incontra
+    // (Ball_Bone al fotogramma del contatto) e ci arriva esattamente allora:
+    // al contatto parte dal piede, non da un punto davanti al giocatore
+    if (kicking && !p.action.done && this.kickBallTarget(p, p.action, _kb)) {
+      const left = Math.max(dt, p.action.contact - p.action.t), k = Math.min(1, dt / left);
+      const nx = b.pos.x + (_kb.x - b.pos.x) * k, nz = b.pos.z + (_kb.z - b.pos.z) * k;
+      b.carry(nx, nz, (nx - b.pos.x) / dt, (nz - b.pos.z) / dt, dt);
+      return;
+    }
     const dist = kicking ? D.kick : D.rest + (touch - D.rest) * moving + swing * moving * Math.sin(Math.PI * Math.pow(u, D.push));
     // sul piede che tocca (destro), o sul lato lontano dal difensore se la protegge
     const side = p.shield ? p.shield * AI.carrier.protect.shieldSide : 1;
@@ -1354,11 +1384,113 @@ class Match {
     const r = Math.max(p.ballDist, D.rest * (1 + 0.4 * Math.min(1, Math.abs(turn))));
     const ang = p.ballAngle;
     let nx = p.pos.x + Math.sin(ang) * r, nz = p.pos.z + Math.cos(ang) * r;
+    if (this.dribbleRoll(dt, p, b, u, touch, side, turn, kicking, nx, nz)) return;
     // Rispetto al giocatore la palla non va piu' veloce di D.maxRel: niente scatti.
     const rx = nx - b.pos.x - (p.pos.x - p.prev.x), rz = nz - b.pos.z - (p.pos.z - p.prev.z);
     const rl = Math.hypot(rx, rz), lim = D.maxRel * dt;
     if (rl > lim) { nx -= rx * (1 - lim / rl); nz -= rz * (1 - lim / rl); }
-    b.carry(nx, nz, (nx - b.pos.x) / dt, (nz - b.pos.z) / dt);
+    b.carry(nx, nz, (nx - b.pos.x) / dt, (nz - b.pos.z) / dt, dt);
+  }
+
+  // Conduzione a tocchi (skill: "tocchi di palla sincronizzati con i passi",
+  // "mai attaccata rigidamente al piede"): quando il piede tocca (fase del
+  // passo del Ball_Bone delle clip di conduzione) la palla riceve la velocita'
+  // che la porta dove sara' il piede al tocco dopo, e in mezzo rotola libera
+  // con la fisica. Da fermi o piano, in protezione, in controllo stretto,
+  // durante un calcio e in una svolta stretta resta il tocco continuo; se la
+  // palla si allontana troppo da dove dovrebbe stare (il giocatore cambia
+  // direzione) torna al tocco continuo, che la riprende senza scatti.
+  dribbleRoll(dt, p, b, u, touch, side, turn, kicking, cx, cz) {
+    const R = DRIBBLE.roll, st = p.roll || (p.roll = { u, rate: 1.4, on: false });
+    const du = wrap01(u - st.u);
+    if (du < 0.5 && dt > 0) st.rate += (Math.max(0.6, du / dt) - st.rate) * Math.min(1, dt * 8);
+    const touched = u < st.u && st.u - u > 0.5;
+    st.u = u;
+    // possesso nuovo (ricezione, contrasto vinto): si riparte dal tocco continuo
+    if (st.seq !== this.poss.seq) { st.seq = this.poss.seq; st.on = false; }
+    // mai durante un gesto (finta, calcio, stop): la palla la porta il gesto
+    const can = !kicking && !p.action && !p.shield && !p.close && p.speed > R.minSpeed && Math.abs(turn) < R.maxTurn;
+    if (!can) { st.on = false; return false; }
+    // lontana da dove la vorrebbe il tocco continuo: si torna a quello
+    if (st.on && Math.hypot(b.pos.x - cx, b.pos.z - cz) > R.maxErr) { st.on = false; return false; }
+    if (touched || !st.on) {
+      // tocco solo con la palla al piede (non mentre corre avanti libera)
+      if (!st.on && Math.hypot(b.pos.x - cx, b.pos.z - cz) > R.startErr) return false;
+      const T = clamp(1 / st.rate, R.minT, R.maxT);
+      const h = p.heading - Math.atan2(DRIBBLE.side * side, touch);
+      const tx = p.pos.x + p.vel.x * T + Math.sin(h) * touch, tz = p.pos.z + p.vel.z * T + Math.cos(h) * touch;
+      const dx = tx - b.pos.x, dz = tz - b.pos.z, d = Math.hypot(dx, dz);
+      if (d < 0.05) { st.on = false; return false; }
+      const v0 = Math.min(R.maxSpeed, rollSpeedIn(d, T));
+      b.pos.y = BALL.radius;
+      b.kick(dx / d * v0, 0, dz / d * v0);
+      st.on = true;
+      this.note('tocco', { p, velocita: v0, tempo: T });
+    }
+    b.step(dt);
+    p.ballAngle = Math.atan2(b.pos.x - p.pos.x, b.pos.z - p.pos.z);
+    p.ballDist = Math.hypot(b.pos.x - p.pos.x, b.pos.z - p.pos.z);
+    return true;
+  }
+
+  // Dove sara' la palla al contatto del calcio in corso: il Ball_Bone della
+  // clip in quel fotogramma, nel riferimento del giocatore (che intanto corre).
+  kickBallTarget(p, a, out) {
+    const meta = a.clip && this.tpl.meta[a.clip], c = meta && meta.ev && meta.ev.contact;
+    if (!c || !c.ball) return null;
+    const s = this.tpl.scale, left = Math.max(0, a.contact - a.t);
+    const bx = c.ball[0] * s, bz = c.ball[2] * s;
+    out.x = p.pos.x + p.vel.x * left + p.dirX * bz - p.rightX * bx;
+    out.z = p.pos.z + p.vel.z * left + p.dirZ * bz - p.rightZ * bx;
+    return out;
+  }
+
+  // Rotazione dal punto d'impatto (skill): il piede che calcia dalla clip.
+  // Col piatto il tiro e il passaggio girano attorno alla verticale verso il
+  // lato del piede che non calcia (a giro); col collo pieno poca rotazione,
+  // un po' in avanti (scende); il cross e il lancio dal sotto della palla,
+  // all'indietro e a rientrare. Restituisce w (rad/s) per la velocita' v.
+  kickSpin(p, a, v, out) {
+    const S = BALL.kickSpin, meta = a.clip && this.tpl.meta[a.clip], c = meta && meta.ev && meta.ev.contact;
+    const foot = c && c.foot === 'L' ? -1 : 1;
+    const hs = Math.hypot(v.x, v.z) || 1, fx = v.x / hs, fz = v.z / hs;
+    if (a.kind === 'shot') {
+      if (a.power < S.placedBelow) return out.set(fz * S.placedTop, foot * S.curl, -fx * S.placedTop);
+      return out.set(fz * S.instepTop, foot * S.knuckle * (Math.random() * 2 - 1), -fx * S.instepTop);
+    }
+    if (a.kind === 'cross') return out.set(-fz * S.back, foot * S.cross, fx * S.back);
+    return null;
+  }
+
+  // Rimbalzo sul corpo (skill: "collisioni palla-corpo"): tiri e palloni alti
+  // toccano gambe, busto e testa dei giocatori di movimento (sfere sulle ossa
+  // vere, come il portiere ma senza le mani) e deviano: restituzione lungo la
+  // normale, parte della velocita' di lato, un po' di rotazione. Chi ha appena
+  // calciato e chi la deve ricevere no: quello lo fa lo stop.
+  deflect() {
+    const b = this.ball, poss = this.poss, D = BALL.deflect;
+    if (!b.live || poss.owned) return false;
+    const shot = poss.flying && poss.kind === 'tiro';
+    if (!shot && b.pos.y < D.minY && b.vel.length() < D.fastLoose) return false;
+    for (const p of this.everyone) {
+      if (p.keeper || p.sentOff || p === poss.to || (this.kickLock && this.kickLock.p === p)) continue;
+      if (Math.abs(b.pos.x - p.pos.x) > D.check || Math.abs(b.pos.z - p.pos.z) > D.check) continue;
+      const hit = bodyHit(p, b, false, poss.clock);
+      if (!hit) continue;
+      const n = _dn.subVectors(hit.q, hit.c);
+      if (n.lengthSq() < 1e-8) n.copy(b.vel).multiplyScalar(-1);
+      n.normalize();
+      b.pos.copy(hit.c).addScaledVector(n, hit.rad + BALL.radius + 0.005);
+      const v = b.vel, vn = v.dot(n), speed = v.length();
+      if (vn < 0) v.addScaledVector(n, -vn).multiplyScalar(D.keep).addScaledVector(n, -vn * D.rest);
+      b.w.multiplyScalar(0.4).add(_dw.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(D.spin));
+      poss.loose('deviazione', p);
+      this.lastDeflect = { seq: poss.seq, p };
+      this.kickLock = { p, t: D.lock };
+      this.note('deviazione', { p, velocita: speed, parte: hit.name || '' });
+      return true;
+    }
+    return false;
   }
 
   // Il destinatario la controlla sempre entro receiveRadius, a ogni velocita';

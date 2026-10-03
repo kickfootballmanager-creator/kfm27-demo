@@ -27,6 +27,14 @@ function fakeTeam(id, name, colors, formation) {
   };
 }
 
+// Competizioni della prova (&comp=serie-a|champions|premier): logo dallo
+// stesso servizio che usa il gioco (002-db-utility.js, apiCompLogo).
+const COMPETITIONS = {
+  'serie-a': { id: 'serie-a', name: 'Serie A', logo: 'https://media.api-sports.io/football/leagues/135.png' },
+  champions: { id: 'champions', name: 'Champions League', logo: 'https://media.api-sports.io/football/leagues/2.png' },
+  premier: { id: 'premier', name: 'Premier League', logo: 'https://media.api-sports.io/football/leagues/39.png' }
+};
+
 export function startTestMatch() {
   // ?match3d=auto: IA contro IA, per il test di durata (tools/match3d/soak.mjs)
   const q = new URLSearchParams(location.search);
@@ -41,6 +49,9 @@ export function startTestMatch() {
     userSide: 'home',
     durationMinutes: 6,
     difficulty: 0.5,
+    // &comp=serie-a|champions|premier: palla della competizione; &palla=inverno: la gialla
+    competition: COMPETITIONS[q.get('comp')] || null,
+    ball: q.get('palla') || null,
     exitMode: 'test'
   }).then(() => {
     // Chiusa la prova si riapre il gioco normale, senza ?match3d.

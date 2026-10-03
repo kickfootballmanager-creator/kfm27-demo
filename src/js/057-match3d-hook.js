@@ -86,6 +86,24 @@ function vesti(home, away){
   } catch (e) {}
 }
 
+/* Palla della partita 3D: disegno e logo della competizione (lo stesso logo
+   che il gioco mostra altrove); da dicembre a febbraio la palla gialla. */
+function competizione(st, match){
+  var t = String(match.type || ''), logo = null, id = 'generica', name = st.leagueName || '';
+  try { logo = (typeof compLogoUrl === 'function') ? compLogoUrl(t) : null; } catch (e) { logo = null; }
+  if (t.indexOf('CL') === 0) {
+    id = (!st.euroComp || st.euroComp === 'CL') ? 'champions' : 'generica';
+    try { name = (typeof euroCompName === 'function') ? euroCompName(st.euroComp) : 'Champions League'; } catch (e) {}
+  } else if (t === 'SA') {
+    id = st.leagueName === 'Serie A' ? 'serie-a' : st.leagueName === 'Premier League' ? 'premier' : 'generica';
+  }
+  return { id: id, name: name, logo: logo || null };
+}
+function invernale(match){
+  var m = match.date ? new Date(match.date).getMonth() : -1;
+  return m === 11 || m === 0 || m === 1;
+}
+
 function ridisegna(){ try { if (typeof window.render === 'function') window.render(); } catch (e) {} }
 
 window.playMatch3D = function(){
@@ -106,6 +124,8 @@ window.playMatch3D = function(){
         userSide: match.home ? 'home' : 'away',
         durationMinutes: 6,
         difficulty: 0.5,
+        competition: competizione(st, match),
+        ball: invernale(match) ? 'inverno' : null,
         exitMode: 'career'
       });
     })

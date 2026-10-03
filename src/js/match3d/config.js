@@ -39,10 +39,25 @@ export const BALL = {
   rollFriction: 1.6,      // m/s^2 costanti quando rotola
   rollDrag: 0.05,         // 1/s: a 26 m/s la palla perde 2,9 m/s^2, a 8 m/s 2
   restitution: 0.6,       // rimbalzo verticale
-  bounceKeep: 0.82,       // velocita' orizzontale conservata al rimbalzo
   minBounce: 0.6,         // sotto questa velocita' verticale smette di rimbalzare
-  spinForce: 0.9,         // spinta laterale per unita' di spin
-  spinDecay: 0.7,         // 1/s
+  // Rotazione (ball.js): magnus k in a = k (w x v); a 25 m/s con 50 rad/s
+  // di effetto (8 giri al secondo) la palla curva di 6 m/s^2. spinToW: rad/s
+  // per unita' dell'effetto dei calci piazzati (7 = 50 rad/s).
+  magnus: 0.005,
+  spinToW: 7.2,
+  airSpinDecay: 0.12,     // 1/s in volo
+  groundSpinDecay: 3,     // 1/s a terra, l'effetto attorno alla verticale
+  rollGrip: 12,           // 1/s: a terra la rotazione raggiunge il rotolamento puro
+  bounceFriction: 0.5,    // attrito del rimbalzo (scambio fra velocita' e rotazione)
+  bounceSpinKeep: 0.7,    // effetto attorno alla verticale che resta dopo un rimbalzo
+  // Rotazione data dal piede (main.kickSpin), rad/s: tiro di piatto (potenza
+  // sotto placedBelow) a giro, tiro di collo con poca rotazione in avanti e un
+  // filo di effetto a caso, cross all'indietro e a rientrare, passaggio di piatto.
+  kickSpin: { placedBelow: 0.55, curl: 38, placedTop: 6, instepTop: 14, knuckle: 6, back: 22, cross: 26, pass: 8 },
+  // Rimbalzo sul corpo dei giocatori (main.deflect): tiri sempre, gli altri
+  // palloni sopra minY m o oltre fastLoose m/s; rest lungo la normale, keep di
+  // lato, rotazione a caso fino a spin rad/s; chi devia non la riprende per lock s.
+  deflect: { minY: 0.45, fastLoose: 12, check: 1.6, rest: 0.3, keep: 0.6, spin: 25, lock: 0.25 },
   boardRestitution: 0.35,
   stopSpeed: 0.05
 };
@@ -110,7 +125,12 @@ export const DRIBBLE = {
   side: 0.1,              // spostata verso il piede destro, quello che tocca
   turnRate: 14,           // rad/s: la palla gira attorno al giocatore, mai attraverso le gambe
   follow: 22,             // 1/s: quanto in fretta la distanza si adegua
-  maxRel: 9               // m/s: velocita' massima della palla rispetto al giocatore
+  maxRel: 9,              // m/s: velocita' massima della palla rispetto al giocatore
+  // Conduzione a tocchi (main.dribbleRoll): sopra minSpeed m/s e con la svolta
+  // sotto maxTurn rad la palla rotola libera fra un tocco e l'altro; il tocco
+  // dopo fra minT e maxT s; si torna al tocco continuo con la palla oltre
+  // maxErr m da dove la vorrebbe, si riparte entro startErr m.
+  roll: { minSpeed: 2.2, maxTurn: 0.6, minT: 0.35, maxT: 0.9, maxErr: 0.8, startErr: 0.25, maxSpeed: 14 }
 };
 
 export const CONTROL = {
@@ -475,6 +495,87 @@ export const REACT = {
   travel: { 1: 1, 2: 1, 3: 0.8, 4: 0.6 },   // frazione dello spostamento della clip; 3 e 4 crescono con la corsa
   ground: { 3: 0.3, 4: 0.5 },              // secondi a terra prima del rialzo
   wonChance: 0.5          // contrasto pulito: probabilita' che il portatore sbilanciato reagisca (livello 1)
+};
+
+// Aspetto della palla (ball-look.js). Disegni originali generati in codice,
+// mai copie dei palloni ufficiali: una base e dei livelli (fasce ondulate
+// attorno a cerchi massimi, triangoli sulle facce dell'icosaedro, falci
+// attorno ai suoi vertici). ink: colore dei loghi monocromi e del filo attorno
+// al logo della competizione; badge: il disco stampato sotto quel logo.
+// logos: false toglie tutti i loghi (competizione e sponsor).
+export const BALL_LOOK = {
+  logos: true,
+  size: { low: 1024, medium: 2048, high: 2048 },   // larghezza della mappa dei colori
+  roughness: 0.4,
+  bump: 0.004,
+  seamDark: 0.42,         // luminosita' in fondo alla cucitura
+  // sponsor (src/assets/match3d/ball/sponsor): tint 'ink' = colore del disegno
+  sponsors: [
+    { file: 'sponsor 1.png', name: 'Veltora', fromDark: true, tint: 'ink' },
+    { file: 'sponsor 2.png', name: 'Astra', tint: 'ink' },
+    { file: 'sponsor 3.png', name: 'Zenith', tint: 'ink' },
+    { file: 'sponsor 4.png', name: 'emblema blu', tint: null }
+  ],
+  // Disposizione (longitudine e latitudine in gradi, larghezza in cm): la
+  // competizione due volte sull'equatore, ai due lati; fra le due il marchio
+  // principale (Zenith) due volte; Veltora e Astra in alto e in basso,
+  // l'emblema piccolo sopra e sotto i loghi della competizione. Da ogni lato
+  // se ne vedono due o tre, mai sovrapposti.
+  layout: {
+    competition: [{ at: [0, 0], cm: 5.2 }, { at: [180, 0], cm: 5.2 }],
+    sponsors: [
+      { sponsor: 2, at: [90, 0], cm: 7.5 }, { sponsor: 2, at: [-90, 0], cm: 7.5 },
+      { sponsor: 0, at: [45, 58], cm: 4.6 }, { sponsor: 1, at: [-135, -58], cm: 4.2 },
+      { sponsor: 3, at: [0, 36], cm: 2.6 }, { sponsor: 3, at: [180, -36], cm: 2.6 }
+    ]
+  },
+  designs: {
+    generica: {
+      base: '#f3f4f1', ink: '#1d2740', badge: '#f3f4f1',
+      layers: [
+        { type: 'band', axis: [1, 0, 0], w: 0.034, k: 3, amp: 0.16, color: '#1d2740' },
+        { type: 'band', axis: [0, 1, 0], w: 0.034, k: 3, amp: 0.16, color: '#1d2740', phase: 0.5 },
+        { type: 'band', axis: [0, 0, 1], w: 0.034, k: 3, amp: 0.16, color: '#1d2740', phase: 1 },
+        { type: 'band', axis: [1, 0, 0], w: 0.01, k: 3, amp: 0.16, shift: 0.05, color: '#d23b3b' },
+        { type: 'band', axis: [0, 0, 1], w: 0.01, k: 3, amp: 0.16, shift: 0.05, color: '#d23b3b', phase: 1 }
+      ]
+    },
+    'serie-a': {
+      base: '#f6f6f2', ink: '#14307a', badge: '#ffffff',
+      layers: [
+        { type: 'band', axis: [1, 1, 1], w: 0.085, k: 2, amp: 0.26, color: '#14307a' },
+        { type: 'band', axis: [1, -1, -1], w: 0.085, k: 2, amp: 0.26, color: '#14307a', phase: 1.3 },
+        { type: 'band', axis: [1, 1, 1], w: 0.009, k: 2, amp: 0.26, shift: 0.105, color: '#d4ad55' },
+        { type: 'band', axis: [1, -1, -1], w: 0.009, k: 2, amp: 0.26, shift: -0.105, color: '#d4ad55', phase: 1.3 },
+        { type: 'band', axis: [-1, 1, -1], w: 0.02, k: 3, amp: 0.2, color: '#2fa36b' }
+      ]
+    },
+    champions: {
+      base: '#0d1a3a', ink: '#ffffff', badge: '#ffffff', light: '#ffffff',
+      layers: [
+        { type: 'crescent', r0: 0.3, r1: 0.27, shiftAngle: 0.1, color: '#e8edf5' },
+        { type: 'band', axis: [0, 1, 0], w: 0.004, k: 0, amp: 0, color: '#8fa3c7' },
+        { type: 'band', axis: [1, 0, 0], w: 0.004, k: 0, amp: 0, color: '#8fa3c7' },
+        { type: 'band', axis: [0, 0, 1], w: 0.004, k: 0, amp: 0, color: '#8fa3c7' }
+      ]
+    },
+    premier: {
+      base: '#f6f5f8', ink: '#38003c', badge: '#ffffff',
+      layers: [
+        { type: 'tri', gap: 0.05, pick: { mod: 2, keep: [0] }, color: '#38003c' },
+        { type: 'tri', gap: 0.12, pick: { mod: 2, keep: [1] }, color: '#e90052', alpha: 0.9 },
+        { type: 'band', axis: [1, 0.3, 0], w: 0.008, k: 4, amp: 0.1, color: '#04f5ff' }
+      ]
+    },
+    inverno: {
+      base: '#e4ee2c', ink: '#14213d', badge: '#ffffff',
+      layers: [
+        { type: 'band', axis: [1, 0, 0], w: 0.06, k: 3, amp: 0.18, color: '#14213d' },
+        { type: 'band', axis: [0, 0, 1], w: 0.06, k: 3, amp: 0.18, color: '#14213d', phase: 1 },
+        { type: 'band', axis: [0, 1, 0], w: 0.012, k: 4, amp: 0.12, color: '#e5452f' }
+      ]
+    }
+  }
 };
 
 // Gesti di chi commette un fallo (skill: "Ogni fallo ha una causa visibile"):

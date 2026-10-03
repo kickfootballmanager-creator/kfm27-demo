@@ -26,6 +26,7 @@ export function rootAction(m, p, clip, from, end, rate, extra) {
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 const smooth = (u) => u * u * (3 - 2 * u);
 const _kh = new THREE.Vector3();
+const BALL_Y = 0.13;   // piede sulla palla a terra: poco sopra il centro
 
 // Clip che tengono dentro di se' la rotazione (portiere, cadute, finte): alla
 // fine del gesto la rotazione passa al busto del giocatore, e l'anca viene
@@ -94,9 +95,11 @@ export function startTackle(m, p, manual = false) {
       p.moveTo(nx, nz, dt);
       if (a.t <= T.hit) p.heading = h0 + wrap(headingOf(ax, az) - h0) * smooth(Math.min(1, a.t / T.hit));
       p.moveHeading = p.heading;
-      // fallo deciso: il piede va sulla caviglia piu' vicina del portatore
+      // fallo deciso: il piede va sulla caviglia piu' vicina del portatore;
+      // contrasto vinto: sulla palla, che il piede tocca davvero
       if (a.footOn) {
-        ankle(a.victim, p, a.footOn.target);
+        if (a.footBall) a.footOn.target.set(b.pos.x + (p.pos.x - b.pos.x) * 0.1, BALL_Y, b.pos.z + (p.pos.z - b.pos.z) * 0.1);
+        else ankle(a.victim, p, a.footOn.target);
         a.footOn.weight = a.t < T.hit + FOULACT.pushTime ? 1 : 0;
         a.footOn.ttl = 0.25;
       }
@@ -131,9 +134,11 @@ function aimTackle(m, p, manual, a) {
   else a.verdict = man && Math.random() < missFoulChance(m, p, owner) ? 'foul' : 'miss';
   a.late = !reach;
   a.victim = owner;
-  if (a.verdict !== 'foul') return;
+  if (a.verdict !== 'foul' && a.verdict !== 'won') return;
   a.footOn = new FootOn(a.foot);
-  ankle(owner, p, a.footOn.target);
+  a.footBall = a.verdict === 'won';
+  if (a.footBall) a.footOn.target.set(b.pos.x, BALL_Y, b.pos.z);
+  else ankle(owner, p, a.footOn.target);
   p.avatar.playProc(a.footOn);
 }
 

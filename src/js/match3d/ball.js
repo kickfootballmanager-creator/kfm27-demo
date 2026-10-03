@@ -57,8 +57,13 @@ function hitSegment(pos, vel, a, b, radius) {
   return true;
 }
 
-// Attrito a terra o gravita' e aria in volo: usato dalla fisica e dalla previsione.
-function forces(p, v, dt) {
+// Rotazione (skill: "rotazione visibile sempre coerente col moto", effetto
+// Magnus). w: velocita' angolare in rad/s, vettore. A terra l'attrito
+// dell'erba porta w al rotolamento puro (w = y x v / r: v / r attorno
+// all'asse giusto) e spegne l'effetto attorno alla verticale; in volo w si
+// conserva e decade piano, e la forza di Magnus k (w x v) curva la
+// traiettoria: effetto laterale a giro, in avanti scende, all'indietro galleggia.
+function forces(p, v, w, dt) {
   const onGround = p.y <= BALL.radius + 1e-3 && Math.abs(v.y) < 1e-3;
   if (onGround) {
     const hs = Math.hypot(v.x, v.z);
@@ -67,41 +72,87 @@ function forces(p, v, dt) {
       const f = ns < BALL.stopSpeed ? 0 : ns / hs;
       v.x *= f; v.z *= f;
     }
+    const g = 1 - Math.exp(-BALL.rollGrip * dt);
+    w.x += (v.z / BALL.radius - w.x) * g;
+    w.z += (-v.x / BALL.radius - w.z) * g;
+    w.y *= Math.exp(-BALL.groundSpinDecay * dt);
   } else {
     v.y -= BALL.gravity * dt;
     const sp = v.length();
     v.multiplyScalar(Math.max(0, 1 - BALL.airDrag * sp * dt));
+    // Magnus: a = k (w x v)
+    const k = BALL.magnus * dt;
+    const ax = w.y * v.z - w.z * v.y, ay = w.z * v.x - w.x * v.z, az = w.x * v.y - w.y * v.x;
+    v.x += ax * k; v.y += ay * k; v.z += az * k;
+    w.multiplyScalar(Math.exp(-BALL.airSpinDecay * dt));
   }
 }
 
-// Effetto: spinta laterale perpendicolare alla corsa orizzontale, che si
-// spegne nel tempo. Restituisce lo spin rimasto.
-function curl(v, spin, dt) {
-  if (spin === 0) return 0;
-  const hs = Math.hypot(v.x, v.z);
-  if (hs > 0.5) {
-    const a = BALL.spinForce * spin * dt;
-    const px = -v.z / hs, pz = v.x / hs;
-    v.x += px * a;
-    v.z += pz * a;
-  }
-  const s = spin * Math.exp(-BALL.spinDecay * dt);
-  return Math.abs(s) < 0.01 ? 0 : s;
-}
-
-function move(p, v, dt) {
+// Rimbalzo a terra: restituzione verticale e attrito al punto di contatto,
+// che scambia velocita' e rotazione (palla cava, I = 2/3 m r^2): lo
+// scivolamento si annulla con un impulso -2/5 della velocita' del punto di
+// contatto, mai oltre mu (1 + e) |vy|. Con l'effetto in avanti la palla
+// riparte veloce, all'indietro frena.
+function move(p, v, w, dt) {
   p.addScaledVector(v, dt);
   if (p.y < BALL.radius) {
     p.y = BALL.radius;
     if (v.y < -BALL.minBounce) {
-      v.y = -v.y * BALL.restitution;
-      v.x *= BALL.bounceKeep;
-      v.z *= BALL.bounceKeep;
+      const vy = -v.y;
+      v.y = vy * BALL.restitution;
+      const r = BALL.radius, cx = v.x + r * w.z, cz = v.z - r * w.x;
+      const c = Math.hypot(cx, cz), cap = BALL.bounceFriction * (1 + BALL.restitution) * vy;
+      if (c > 1e-6) {
+        const j = Math.min(0.4 * c, cap) / c, jx = -cx * j, jz = -cz * j;
+        v.x += jx; v.z += jz;
+        w.x += -jz * 1.5 / r; w.z += jx * 1.5 / r;
+      }
+      w.y *= BALL.bounceSpinKeep;
     } else {
       v.y = 0;
     }
   }
 }
+
+// Volo con rotazione fino a `dist` metri in orizzontale da p0 (o al primo
+// rimbalzo se land): punto e tempo.
+const _sp = new THREE.Vector3(), _sv = new THREE.Vector3(), _sw = new THREE.Vector3();
+function simulate(p0, v0, w0, dist, land) {
+  const p = _sp.copy(p0), v = _sv.copy(v0), w = _sw.copy(w0), dt = 1 / 120;
+  let t = 0;
+  for (let i = 0; i < 480; i++) {
+    const vy0 = v.y;
+    forces(p, v, w, dt);
+    move(p, v, w, dt);
+    t += dt;
+    if (land ? (vy0 < 0 && p.y <= BALL.radius + 1e-3) : Math.hypot(p.x - p0.x, p.z - p0.z) >= dist) break;
+  }
+  return { x: p.x, y: p.y, z: p.z, t };
+}
+
+// Mira con la rotazione: corregge `v` perche' con w la palla passi dallo
+// stesso punto (a `dist` m in orizzontale, o dove atterra se land) da cui
+// passerebbe senza. La mira resta quella voluta, l'effetto si vede nella curva.
+const _z0 = new THREE.Vector3();
+export function aimWithSpin(p0, v, w, dist, land = false) {
+  const want = simulate(p0, v, _z0.set(0, 0, 0), dist, land);
+  const wa = Math.atan2(want.z - p0.z, want.x - p0.x), wd = Math.hypot(want.x - p0.x, want.z - p0.z);
+  for (let it = 0; it < 4; it++) {
+    const got = simulate(p0, v, w, land ? Infinity : wd, land);
+    const ga = Math.atan2(got.z - p0.z, got.x - p0.x), gd = Math.hypot(got.x - p0.x, got.z - p0.z);
+    const da = Math.atan2(Math.sin(wa - ga), Math.cos(wa - ga)), c = Math.cos(da), s = Math.sin(da);
+    const vx = v.x * c - v.z * s, vz = v.x * s + v.z * c;
+    const k = land && gd > 0.5 ? Math.max(0.7, Math.min(1.4, wd / gd)) : 1;
+    v.x = vx * k; v.z = vz * k;
+    if (!land) v.y += (want.y - got.y) / Math.max(0.15, got.t);
+  }
+  return v;
+}
+
+// Effetto dei calci piazzati (setpieces: spin -> rad/s attorno alla
+// verticale): con spin positivo la palla curva come faceva il vecchio effetto,
+// a sinistra della corsa vista dall'alto.
+export function sideSpin(spin) { return -spin * BALL.spinToW; }
 
 const _pp = new THREE.Vector3(), _pv = new THREE.Vector3();
 
@@ -117,6 +168,13 @@ export function rollSpeedFor(d, arrive = 0) {
     if (stop(mid) < need) lo = mid; else hi = mid;
   }
   return hi;
+}
+
+// Velocita' con cui un rasoterra percorre d metri in T secondi (stessa
+// equazione: x(T) = a (1 - e^-cT) / c - f T / c, a = v0 + f / c).
+export function rollSpeedIn(d, T) {
+  const f = BALL.rollFriction, c = BALL.rollDrag;
+  return Math.max(0, (d + f * T / c) * c / (1 - Math.exp(-c * T)) - f / c);
 }
 
 // Secondi che un rasoterra partito a v0 impiega a percorrere d metri
@@ -164,14 +222,12 @@ export function loftFor(y0, speed, dist, h) {
 
 // Volo di un calcio con l'effetto, senza pali ne' reti (guida della
 // traiettoria nei calci piazzati): `out` riceve n punti {x, y, z} ogni dt.
-const _fp = new THREE.Vector3(), _fv = new THREE.Vector3();
+const _fp = new THREE.Vector3(), _fv = new THREE.Vector3(), _fw = new THREE.Vector3();
 export function flight(p0, v0, spin, dt, n, out) {
-  const p = _fp.copy(p0), v = _fv.copy(v0);
-  let s = spin;
+  const p = _fp.copy(p0), v = _fv.copy(v0), w = _fw.set(0, sideSpin(spin), 0);
   for (let i = 0; i < n; i++) {
-    forces(p, v, dt);
-    s = curl(v, s, dt);
-    move(p, v, dt);
+    forces(p, v, w, dt);
+    move(p, v, w, dt);
     const o = out[i] || (out[i] = { x: 0, y: 0, z: 0 });
     o.x = p.x; o.y = p.y; o.z = p.z;
   }
@@ -180,7 +236,7 @@ export function flight(p0, v0, spin, dt, n, out) {
 }
 
 // Distanza orizzontale del primo rimbalzo, partendo da terra all'altezza y.
-const _lp = new THREE.Vector3(), _lv = new THREE.Vector3();
+const _lp = new THREE.Vector3(), _lv = new THREE.Vector3(), _pw = new THREE.Vector3(), _ew = new THREE.Vector3(), _eq = new THREE.Quaternion();
 function landDistance(y, vh, vy) {
   const p = _lp.set(0, y, 0), v = _lv.set(vh, vy, 0), dt = 1 / 60;
   for (let i = 0; i < 600; i++) {
@@ -197,7 +253,10 @@ export class Ball {
     this.pos = new THREE.Vector3(0, BALL.radius, 0);
     this.prev = this.pos.clone();
     this.vel = new THREE.Vector3();
-    this.spin = 0;
+    this.spin = 0;        // effetto dei calci piazzati, come al calcio (sideSpin)
+    this.w = new THREE.Vector3();        // velocita' angolare, rad/s
+    this.q = new THREE.Quaternion();     // orientamento, integrato da w
+    this.qPrev = new THREE.Quaternion();
     this.scored = 0;      // +1 porta a destra (x>0), -1 porta a sinistra
     this.out = false;
     this.frame = this._frame();
@@ -213,6 +272,17 @@ export class Ball {
     this.shadow.rotation.x = -Math.PI / 2;
     this.shadow.renderOrder = 3;
     this._axis = new THREE.Vector3();
+  }
+
+  // Forma e materiale della palla (ball-look.js): sfera bassa del modello
+  // con le UV, colori e loghi della competizione, rilievo delle cuciture.
+  setLook(look) {
+    const m = this.mesh;
+    m.geometry.dispose();
+    if (m.material.map) m.material.map.dispose();
+    m.material.dispose();
+    m.geometry = look.geometry;
+    m.material = look.material;
   }
 
   _frame() {
@@ -232,6 +302,8 @@ export class Ball {
     this.prev.copy(this.pos);
     this.vel.set(0, 0, 0);
     this.spin = 0;
+    this.w.set(0, 0, 0);
+    this.qPrev.copy(this.q);
     this.scored = 0;
     this.out = false;
   }
@@ -278,18 +350,33 @@ export class Ball {
     this.kick(ux * vh * f, vy * f, uz * vh * f);
   }
 
-  kick(vx, vy, vz, spin = 0) {
+  // w: rotazione data dal piede (rad/s); senza, l'effetto `spin` attorno alla
+  // verticale e, rasoterra, il rotolamento.
+  kick(vx, vy, vz, spin = 0, w = null) {
     this.vel.set(vx, vy, vz);
     this.spin = spin;
+    if (w) this.w.copy(w);
+    else if (this.pos.y <= BALL.radius + 1e-3 && Math.abs(vy) < 1e-3) this.w.set(vz / BALL.radius, sideSpin(spin), -vx / BALL.radius);
+    else this.w.set(0, sideSpin(spin), 0);
+  }
+
+  // Orientamento: un passo di fisica di rotazione con w.
+  spinStep(dt) {
+    this.qPrev.copy(this.q);
+    const a = this.w.length() * dt;
+    if (a > 1e-7) this.q.premultiply(_eq.setFromAxisAngle(_ew.copy(this.w).normalize(), a)).normalize();
   }
 
   // Palla al piede: la posizione la decide il giocatore, la fisica si
   // limita a gol, fuori e cartelloni.
-  carry(x, z, vx, vz) {
+  carry(x, z, vx, vz, dt = 0) {
     this.prev.copy(this.pos);
     this.pos.set(x, BALL.radius, z);
     this.vel.set(vx, 0, vz);
     this.spin = 0;
+    // al piede rotola: v / r attorno all'asse orizzontale perpendicolare alla corsa
+    this.w.set(vz / BALL.radius, this.w.y * 0.8, -vx / BALL.radius);
+    if (dt > 0) this.spinStep(dt);
     this._boards();
     this._rules();
   }
@@ -301,14 +388,16 @@ export class Ball {
     this.pos.set(x, y, z);
     this.vel.set(0, 0, 0);
     this.spin = 0;
+    this.w.set(0, 0, 0);
+    this.qPrev.copy(this.q);
   }
 
   step(dt) {
     const p = this.pos, v = this.vel;
     this.prev.copy(p);
-    forces(p, v, dt);
-    this.spin = curl(v, this.spin, dt);
-    move(p, v, dt);
+    forces(p, v, this.w, dt);
+    move(p, v, this.w, dt);
+    this.spinStep(dt);
 
     for (const [a, b] of this.frame) hitSegment(p, v, a, b, GOAL.postRadius);
     this._nets(dt);
@@ -321,13 +410,11 @@ export class Ball {
   // presenti. Senza l'effetto il portiere non leggeva i tiri a giro che
   // partivano fuori dallo specchio (5 gol in 10 partite senza reazione).
   predict(out, dt, horizon) {
-    const p = _pp.copy(this.pos), v = _pv.copy(this.vel);
+    const p = _pp.copy(this.pos), v = _pv.copy(this.vel), w = _pw.copy(this.w);
     const n = Math.ceil(horizon / dt);
-    let sp = this.spin;
     for (let i = 0; i < n; i++) {
-      forces(p, v, dt);
-      sp = curl(v, sp, dt);
-      move(p, v, dt);
+      forces(p, v, w, dt);
+      move(p, v, w, dt);
       const s = out[i] || (out[i] = { x: 0, y: 0, z: 0, t: 0 });
       s.x = p.x; s.y = p.y; s.z = p.z; s.t = (i + 1) * dt;
     }
@@ -385,11 +472,8 @@ export class Ball {
   sync(alpha, dt) {
     const m = this.mesh;
     m.position.lerpVectors(this.prev, this.pos, alpha);
-    const hs = Math.hypot(this.vel.x, this.vel.z);
-    if (hs > 0.01) {
-      this._axis.set(this.vel.z, 0, -this.vel.x).normalize();
-      m.rotateOnWorldAxis(this._axis, hs * dt / BALL.radius);
-    }
+    // orientamento della fisica (spinStep), interpolato come la posizione
+    m.quaternion.slerpQuaternions(this.qPrev, this.q, Math.max(0, Math.min(1, alpha)));
     const h = Math.max(0, this.pos.y - BALL.radius);
     const s = 0.5 + h * 0.06;
     this.shadow.position.set(m.position.x, 0.012, m.position.z);
