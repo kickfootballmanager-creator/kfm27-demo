@@ -12,7 +12,7 @@ import { Possession } from './possession.js';
 import { Debug } from './debug.js';
 import { TeamAI } from './team-ai.js';
 import { KeeperAI, HELD_Y } from './keeper.js';
-import { startTackle, startSlide, tryAerial, startKeeperGesture } from './gestures.js';
+import { startTackle, startSlide, tryAerial, startKeeperGesture, startFoulGesture } from './gestures.js';
 import { Rules } from './rules.js';
 import { userPress, stagger, beat, bodyContact } from './defense.js';
 import { Referee } from './referee.js';
@@ -831,10 +831,13 @@ class Match {
 
   startTackle(p, manual) { return startTackle(this, p, manual); }
 
+  // Gesto di chi entra irregolare sul portatore (gestures.startFoulGesture).
+  startFoulGesture(p, victim, from) { return startFoulGesture(this, p, victim, from); }
+
   // Fallo di `off` su `victim`: lo giudica l'arbitro (rules.foul). Con i
   // falli spenti, o a gioco fermo, il contrasto finisce come un dribbling riuscito.
   foul(off, victim, info = {}) {
-    if (this.rules.foul(off, victim, { kind: info.kind || 'contrasto', ballFirst: !!info.ballFirst, from: info.from })) return;
+    if (this.rules.foul(off, victim, { kind: info.kind || 'contrasto', ballFirst: !!info.ballFirst, from: info.from, dir: info.dir, gesture: info.gesture })) return;
     stagger(off, DUEL.stagger.beaten, true);
     if (this.owner === victim) beat(this, victim, off);
   }
@@ -1483,7 +1486,9 @@ class Match {
     const scorer = last && last.team === team ? last : null;
     this.scorers.push({ team, playerId: scorer ? scorer.id : null, minute: this.rules.minute() });
     this.hud.setScore(this.goals.home, this.goals.away);
-    this.note('gol', { squadra: team, p: scorer });
+    const kAI = this.teams[this.otherSide(team)].keeperAI;
+    this.lastGoalReason = kAI.goalReason();
+    this.note('gol', { squadra: team, p: scorer, motivo: this.lastGoalReason });
     this.hud.showGoal((home ? this.home : this.away).name, scorer ? scorer.name : '');
     this.rules.goal(team, scorer);
     this.teams[this.otherSide(team)].keeperAI.concede();

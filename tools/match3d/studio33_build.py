@@ -878,6 +878,20 @@ def build_meta(e, frames):
         ev["contact"] = {"t": round(i / FPS, 4), "dist": round(d, 3),
                          "ballW": rnd(world_point(fr, fr["ball"])), "hands": rnd(world_point(fr, near))}
         ev["dive"] = m["hipsMin"] < 0.55
+    if role == "foul":
+        # gesto di chi commette il fallo: palmi per fotogramma (l'IK della mano
+        # sulla maglia parte da qui) e contatto quando una mano e' piu' lontana
+        # dal bacino in orizzontale, nei primi quattro quinti (spinta, braccio
+        # che si allarga nella spallata)
+        m["palms"] = [x for fr in frames for x in (fr["lh"] + fr["rh"])]
+        best = None
+        for i, fr in enumerate(frames[:max(2, int(n * 0.8))]):
+            h = fr["hips"]
+            for side, key in (("Left", "lh"), ("Right", "rh")):
+                d = math.hypot(fr[key][0] - h[0], fr[key][2] - h[2])
+                if best is None or d > best[0]:
+                    best = (d, i, side)
+        ev["contact"] = {"t": round(best[1] / FPS, 4), "hand": best[2], "reach": round(best[0], 3)}
     if role in ("fall",):
         # a terra: il bacino piu' basso; rialzato: di nuovo sopra 0,75 m dopo
         lo = min(range(n), key=lambda i: frames[i]["hips"][1])

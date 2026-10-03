@@ -142,6 +142,7 @@ replay di debug: ${file} (${t.clock}, ${t.note})`);
   if (tally('foulKinds')) console.log('\nfalli (tipo, provenienza, cartellino), totale: ' + tally('foulKinds'));
   if (tally('slideFrom')) console.log('scivolate rispetto al portatore, totale: ' + tally('slideFrom'));
   if (tally('reacts')) console.log('reazioni ai contatti per livello, totale: ' + tally('reacts'));
+  if (tally('goalWhy')) console.log('gol per motivo (lettura del portiere), totale: ' + tally('goalWhy') + '; tiri parabili ' + results.reduce((a, r) => a + (r.saveable || 0), 0));
   const gs = results.flatMap((r) => r.goalShots || []);
   if (gs.length) {
     const by = {};

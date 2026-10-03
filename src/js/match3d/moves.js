@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { BALL, KEEPER } from './config.js';
-import { solveTwoBoneKeep, solveArm, releaseArm, blendPath, palm } from './rig.js';
+import { BALL, KEEPER, FOULACT } from './config.js';
+import { solveTwoBoneKeep, solveTwoBone, solveArm, releaseArm, blendPath, palm } from './rig.js';
 
 // Ritocchi in codice sopra le clip, dopo il mixer (Avatar.update): solo IK
 // delle braccia (arbitro, mani del portiere sulla palla). Nessun movimento
@@ -97,6 +97,68 @@ const smooth01 = (u) => { const c = Math.max(0, Math.min(1, u)); return c * c * 
 // Il peso applicato (cur) insegue quello chiesto al massimo a KEEPER.ik.rate
 // al secondo e sfuma anche quando il gesto sparisce: prima, alla presa, il
 // peso passava da 1 a 0 e le braccia tornavano alla clip in un fotogramma.
+// Mano di chi commette il fallo sulla maglia o sulla schiena dell'avversario
+// (spinta, trattenuta): IK anatomica del braccio `side` (rig.solveArm) verso
+// `target`, che il gesto rinnova a ogni passo (ttl). Il peso sale e scende al
+// massimo di FOULACT.ik.rate al secondo e di ik.turn rad/s di braccio.
+export class HandOn {
+  constructor(side) {
+    this.side = side;
+    this.target = new THREE.Vector3();
+    this.weight = 0;
+    this.cur = 0;
+    this.ttl = 0.25;
+    this.memo = {};
+  }
+
+  update(av, dt) {
+    const I = FOULACT.ik, r = av.rig, A = r[this.side + 'Arm'], B = r[this.side + 'ForeArm'];
+    const want = (this.ttl -= dt) > 0 ? this.weight : 0;
+    const step = Math.min(I.rate, I.turn / Math.max(blendPath(this.memo), 1e-3)) * dt;
+    this.cur += Math.max(-step, Math.min(step, want - this.cur));
+    if (this.cur <= 1e-3) {
+      if (releaseArm(A, B, this.memo, I.arm * dt)) return true;
+      this.memo = {};
+      return this.ttl > 0;
+    }
+    av.object.updateMatrixWorld(true);
+    solveArm(A, B, (out) => palm(r, this.side, out), this.target, this.cur, this.side, this.memo, I.arm * dt);
+    return true;
+  }
+}
+
+// Piede di chi entra sulla caviglia dell'avversario (contrasto in ritardo,
+// sgambetto): IK della gamba `side` verso `target`, ginocchio sul piano della
+// clip (polo come FootLock), gamba mai tesa del tutto. Il peso sale e scende
+// al massimo di FOULACT.ik.rate al secondo.
+const _hp = new THREE.Vector3(), _kp = new THREE.Vector3(), _ax = new THREE.Vector3(), _ft = new THREE.Vector3();
+export class FootOn {
+  constructor(side) {
+    this.side = side;
+    this.target = new THREE.Vector3();
+    this.weight = 0;
+    this.cur = 0;
+    this.ttl = 0.25;
+  }
+
+  update(av, dt) {
+    const I = FOULACT.ik, want = (this.ttl -= dt) > 0 ? this.weight : 0, step = I.rate * dt;
+    this.cur += Math.max(-step, Math.min(step, want - this.cur));
+    if (this.cur <= 1e-3) return this.ttl > 0;
+    const r = av.rig, A = r[this.side + 'UpLeg'], B = r[this.side + 'Leg'], foot = r[this.side + 'Foot'];
+    av.object.updateMatrixWorld(true);
+    const hip = A.getWorldPosition(_hp), len = hip.distanceTo(B.getWorldPosition(_kp)) + _kp.distanceTo(foot.getWorldPosition(_ft));
+    _ft.copy(this.target);
+    const far = _ft.distanceTo(hip);
+    if (far > 0.97 * len) _ft.sub(hip).multiplyScalar(0.97 * len / far).add(hip);
+    const e = B.matrixWorld.elements;
+    _ax.set(e[0], e[1], e[2]).cross(_tgt.subVectors(_ft, hip)).normalize();
+    B.getWorldPosition(_kp).addScaledVector(_ax, 0.3);
+    solveTwoBone(A, B, (out) => foot.getWorldPosition(out), _ft, this.cur, _kp);
+    return true;
+  }
+}
+
 export class KeeperReach {
   constructor(gap) {
     this.gap = gap;
@@ -122,7 +184,8 @@ export class KeeperReach {
     // braccio: con clip e IK lontane (anche oltre mezzo giro) a KEEPER.ik.rate
     // il braccio correva fino a 1,4 rad in un fotogramma
     const path = Math.max(blendPath(this.memo.Left), blendPath(this.memo.Right));
-    const want = (this.ttl -= dt) > 0 ? this.weight : 0, step = Math.min(KEEPER.ik.rate, KEEPER.ik.turn / Math.max(path, 1e-3)) * dt;
+    const I = KEEPER.ik, rate = this.urgent ? I.urgentRate : I.rate, turn = this.urgent ? I.urgentTurn : I.turn;
+    const want = (this.ttl -= dt) > 0 ? this.weight : 0, step = Math.min(rate, turn / Math.max(path, 1e-3)) * dt;
     this.cur += Math.max(-step, Math.min(step, want - this.cur));
     if (this.cur <= 1e-3) {
       // IK spenta: le braccia tornano alla clip senza scatti (rig.releaseArm)

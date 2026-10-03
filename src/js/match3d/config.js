@@ -477,6 +477,47 @@ export const REACT = {
   wonChance: 0.5          // contrasto pulito: probabilita' che il portatore sbilanciato reagisca (livello 1)
 };
 
+// Gesti di chi commette un fallo (skill: "Ogni fallo ha una causa visibile"):
+// il fallo nasce da un contatto vero. Di corsa sul portatore (defense.bodyContact)
+// chi decide di fare fallo entra a `start` m centro-centro con un gesto della
+// libreria: spinta (mano sulla schiena), trattenuta (mano sulla maglia),
+// spallata (spalla contro spalla); quasi fermo, la spinta a due mani. La mano
+// va sulla maglia con l'IK del braccio (moves.HandOn) e il fallo c'e' solo se
+// al fotogramma del contatto il palmo e' entro `reach` m dal punto della
+// maglia (la spalla entro `shoulderReach` dal busto). Nei contrasti e nelle
+// scivolate il piede (moves.FootOn) va sulla caviglia: fallo solo entro
+// `legReach` (contrasto) o `slideReach` (scivolata, piedi contro gambe).
+export const FOULACT = {
+  start: 1.7,
+  contactDist: 0.7,       // m centro-centro al contatto della mano o della spalla
+  minLead: 0.12,          // s minimi fra l'inizio del gesto e il contatto
+  after: 0.35,            // s di clip dopo il contatto
+  holdShare: 0.4,         // quota di trattenute (da dietro o di lato); il resto spinte o spallate
+  holdAt: 0.25,           // s della clip della trattenuta a cui la mano arriva sulla maglia
+  holdTime: 0.4,          // s di mano sulla maglia dopo il contatto (spinta: pushTime)
+  pushTime: 0.12,
+  standBelow: 0.35,       // m/s: sotto, la spinta a due mani da fermo (sul posto)
+  runMin: 3.5,            // m/s: fra le due nessun gesto (la clip da fermo traslerebbe, quella di corsa scivolerebbe)
+  rate: [0.6, 1.6],       // playback del gesto: dal passo della corsa, entro questi limiti
+  reach: 0.3,
+  shoulderReach: 0.45,    // spalla di chi entra dalla spalla piu' vicina di chi subisce
+  window: 0.15,           // s dopo il contatto previsto in cui la mano o la spalla puo' ancora toccare
+  legReach: 0.24,
+  slideReach: 0.26,
+  legLead: 0.14,          // s prima del contatto del contrasto in cui si decide l'esito e parte l'IK del piede
+  shirt: 0.13,            // m: punto della maglia, dalla schiena verso chi entra
+  ik: { lead: 0.22, rate: 9, turn: 22, arm: 26, leg: 30 },
+  clips: {
+    // R/L: vittima alla destra o alla sinistra di chi entra
+    spinta: { R: '079_Defender_Left_Push_Win_01', L: '083_Defender_Right_Push_Win_01' },
+    trattenuta: { R: '076_Defender_Left_Push_01', L: '080_Defender_Right_Push_01' },
+    carica: { R: '069_Defender_Collision_Shoulder_Inside_R', L: '068_Defender_Collision_Shoulder_Inside_L' },
+    ferma: '692_Stand_Hand_Push_up'
+  },
+  // mano del gesto quando la clip non la dice (trattenuta: il braccio alzato)
+  hand: { '076_Defender_Left_Push_01': 'Right', '080_Defender_Right_Push_01': 'Left' }
+};
+
 // Palloni alti: colpo di testa, rovesciata, al volo.
 export const AERIAL = {
   headMin: 1.25, headMax: 2.7,
@@ -496,19 +537,34 @@ export const AERIAL = {
 
 // Portieri.
 export const KEEPER = {
-  depth: [1.2, 6],        // distanza dalla linea: palla lontana, palla vicina
+  depth: [1.0, 3.0],      // distanza dalla linea: palla lontana, palla vicina (a 6 m un pallonetto lo scavalcava)
   depthRange: [45, 12],   // distanza della palla a cui si passa da un valore all'altro
   maxZ: 3.2,              // non si sposta oltre questa distanza dal centro della porta
   alertDist: 32,          // palla entro tanti metri dalla porta: in guardia (animazione)
   react: [0.28, 0.12],    // secondi di reazione a un tiro [difficulty 0, 1]
   penaltyReact: 0.04,     // sul rigore il lato e' gia' scelto: parte subito
-  aim: [0.3, 0.06],       // errore (m) sul punto d'intercetto previsto [attributo basso, alto]
+  // errore (m) sul punto d'intercetto previsto [attributo basso, alto]. Piccolo:
+  // gli attributi contano nella portata e nella reazione (reach, react), e un
+  // tiro parabile si para; fino a 0,5 m mandava il tuffo nel punto sbagliato
+  aim: [0.05, 0.02],
   claimDist: 7,           // cross che cade entro questa distanza dalla porta: esce
   rushDist: 16,           // palla libera entro questa distanza: esce a prenderla
   chargeDist: 40,         // uscita chiesta dall'utente: solo con la palla entro tanti metri dalla porta
   holdTime: 1.4,          // secondi con la palla in mano prima del rinvio
   throwMax: 28,           // compagno libero entro questa distanza: rimessa con le mani
   stepSpeed: 2.6,         // m/s massimi in guardia senza scatto (passi del portiere che non scivolano)
+  // Tiro parabile per gli attributi (KeeperAI.assess): dopo la reazione le
+  // mani arrivano a body + arm metri dall'asse del corpo (armLow sotto lowY m
+  // di altezza) in armTime secondi; il tuffo aggiunge fino a `dive` metri
+  // [attributo basso, alto] in diveTime secondi; niente sopra `up` metri.
+  // offPlace: metri dal suo posto oltre cui un gol e' "portiere fuori posizione".
+  // Solo i punti fra `behind` m dietro e `ahead` m davanti a lui (KEEPER.plan):
+  // il portiere non arretra durante il tiro, un pallonetto alle spalle non e' parabile.
+  // up: le mani delle clip di parata arrivano al massimo a 2,2-2,3 m (336, presa alta).
+  reach: { body: 0.3, arm: 0.6, armLow: 0.45, lowY: 0.35, armTime: 0.15, dive: [1.6, 2.3], diveTime: 0.55, up: 2.15, behind: 0.3, offPlace: 1.5 },
+  // Attesa della parata con tempo: passi laterali verso il punto (oltre minWait
+  // s alla partenza), ripianificata ogni `every` s, mai a meno di `line` m dalla linea.
+  shuffle: { minWait: 0.3, every: 0.12, line: 0.4 },
   // Parate. Per ogni tiro il portiere cerca, lungo la traiettoria, il punto,
   // la clip e il fotogramma (dentro `window`) in cui i suoi palmi arrivano
   // sulla palla, deformando la clip nel tempo e nello spostamento della
@@ -532,20 +588,26 @@ export const KEEPER = {
     maxY: 3.2,            // punti piu' alti di cosi' non si provano
     rateMax: 1.8,         // la clip si accelera al massimo di tanto
     rateCost: 0.08,       // costo di una clip accelerata o rallentata
+    skipCost: 1.5,        // per secondo di clip saltato all'inizio (clip fatta partire piu' avanti)
+    standLat: 0.45,       // palla entro tanti metri di lato: solo parate in piedi
     maxResidual: 0.6,     // oltre questo scarto le mani non arrivano: non si prova
     wide: 0.5             // tiro fuori dallo specchio di tanto: si lascia andare
   },
   // Uscite sui palloni alti: prese e pugni della libreria (keeper.js, claimOptions).
   claimPlan: { step: 2, horizon: 3, ahead: 5, behind: 1.5, maxY: 2.5, rateMax: 1.6, rateCost: 0.08, every: 0.12, accept: 0.5 },
-  ik: { lead: 0.3, hold: 0.12, fade: 0.25, gap: 0.02, track: 1.6, rate: 8, turn: 12, arm: 20 },   // secondi attorno al contatto; track: m entro cui le mani seguono la palla vera; rate: 1/s, velocita' massima del peso dell'IK; turn: rad/s massimi del braccio per effetto del peso; arm: rad/s massimi della soluzione IK
+  ik: { lead: 0.3, hold: 0.12, fade: 0.25, gap: 0.02, track: 1.6, rate: 8, turn: 12, arm: 20, urgentRate: 20, urgentTurn: 28 },   // secondi attorno al contatto; track: m entro cui le mani seguono la palla vera; rate: 1/s, velocita' massima del peso dell'IK; turn: rad/s massimi del braccio per effetto del peso; arm: rad/s massimi della soluzione IK
   catchSpeed: 24,         // presa: sotto questa velocita' la palla resta in mano
   diveCatchSpeed: 15,     // in tuffo si blocca solo sotto questa velocita'
   diveCatch: [0.5, 0.9],  // e con questa probabilita' [attributo basso, alto]
   parryRest: 0.42,        // respinta di mano: velocita' restituita lungo la normale
+  parryOut: 3,            // m/s minimi in avanti di una respinta che finiva in porta
   bodyRest: 0.25,         // palla sul corpo
   parryLift: [1.5, 3.5],  // m/s verso l'alto dopo una respinta di mano
   lock: 0.35,             // dopo una respinta il portiere non la riprende subito
   palmsCatch: [0.42, 0.65], // per trattenerla i due palmi entro tanti metri dal centro della palla [tuffo, presa]
+  upright: 0.7,           // bacino sopra tanti metri: in piedi, la parata finita si puo' chiudere
+  smother: 0.6,           // in una presa la palla sul corpo si raccoglie con i palmi entro tanti metri
+  gather: { maxY: 0.4, side: 0.25, reach: 0.45 },   // palla bassa che passa sotto le mani di una presa (keeper.gathered)
   // Collisione palla-portiere: sfere sulle ossa vere. [osso, osso verso cui
   // spostarsi, frazione, raggio, mano?]
   body: [
@@ -554,9 +616,11 @@ export const KEEPER = {
     ['Head', null, 0, 0.12, false], ['Spine2', null, 0, 0.17, false], ['Spine', null, 0, 0.15, false], ['Hips', null, 0, 0.16, false],
     ['LeftUpLeg', 'LeftLeg', 0.5, 0.09, false], ['RightUpLeg', 'RightLeg', 0.5, 0.09, false],
     ['LeftLeg', 'LeftFoot', 0.5, 0.07, false], ['RightLeg', 'RightFoot', 0.5, 0.07, false],
+    ['LeftLeg', 'LeftFoot', 0.85, 0.07, false], ['RightLeg', 'RightFoot', 0.85, 0.07, false],
     ['LeftFoot', 'LeftToeBase', 0.5, 0.07, false], ['RightFoot', 'RightToeBase', 0.5, 0.07, false]
   ],
   bodyCheck: 3.5,         // si controllano le sfere solo con la palla entro tanti metri
+  hitLead: 0.4,           // m: al massimo tanto prosegue una sfera nel passo (keeper.bodyHit)
   // Rinvii della libreria: rilascio, mano e contatto dai metadati (Ball_Bone).
   // Palla in mano fra una presa e il rinvio: la guardia con la palla
   // (stile keeperBall della corsa), niente gesto fermo.
@@ -859,7 +923,7 @@ export const RULES = {
 // sbagliato di fronte non si ammonisce; da dietro, in scivolata o per
 // fermare un'azione promettente (promising) si'.
 export const FOUL = {
-  base: { carica: -0.1, pressing: 0.2, contrasto: 0.28, scivolata: 0.38 },
+  base: { carica: -0.1, spinta: -0.08, trattenuta: -0.12, pressing: 0.2, contrasto: 0.28, scivolata: 0.38 },
   back: 0.32,             // intervento da dietro
   side: 0.08,
   speed: 0.03,            // per m/s di chi entra

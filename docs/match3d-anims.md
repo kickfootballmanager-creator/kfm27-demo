@@ -37,20 +37,21 @@ La libreria non si ridistribuisce: FBX, GLB e JSON derivati restano fuori dal re
 | intercetti | 1 | 8 | 0 | 0 |
 | contrasti | 5 | 5 | 0 | 0 |
 | scivolate | 1 | 0 | 0 | 3 |
+| falli | 9 | 0 | 0 | 0 |
 | cadute | 22 | 0 | 0 | 6 |
 | portiere | 87 | 1 | 0 | 20 |
 | finte | 1 | 0 | 0 | 99 |
 | calci piazzati | 4 | 0 | 0 | 0 |
 | esultanze | 0 | 0 | 6 | 20 |
-| duelli di corpo | 0 | 0 | 0 | 60 |
+| duelli di corpo | 0 | 0 | 0 | 51 |
 | schivate | 0 | 0 | 0 | 8 |
 | gesti | 0 | 0 | 0 | 6 |
 | cerimonie | 0 | 0 | 0 | 4 |
 | riscaldamento | 0 | 0 | 0 | 10 |
 | menu e pose | 0 | 0 | 0 | 55 |
-| **totale** | **294** | **276** | **6** | **331** |
+| **totale** | **303** | **276** | **6** | **322** |
 
-Per livello: basso 294 clip (piu' 3 copie specchiate: Sidestep_Jogging_Stop01_L_M, Tricks_M, Slide_Tackles01_M), medio e alto 576 (piu' 3 copie specchiate: Sidestep_Jogging_Stop01_L_M, Tricks_M, Slide_Tackles01_M).
+Per livello: basso 303 clip (piu' 3 copie specchiate: Sidestep_Jogging_Stop01_L_M, Tricks_M, Slide_Tackles01_M), medio e alto 585 (piu' 3 copie specchiate: Sidestep_Jogging_Stop01_L_M, Tricks_M, Slide_Tackles01_M).
 
 ## Locomozione
 
@@ -615,6 +616,20 @@ Per livello: basso 294 clip (piu' 3 copie specchiate: Sidestep_Jogging_Stop01_L_
 | 635_Slide_Tackles_270 | 3.00 | 3.85 m (+3.82, -0.52) | -90 | no | scartata | altra scivolata: lo spostamento decide il gioco, resta quella del pacchetto essenziale |
 | 636_Slide_Tackles01 | 1.13 | 2.40 m (+2.40, +0.13) | 0 | no | core | scivolata - tutti i livelli, all'avvio |
 
+## Falli
+
+| Clip | Durata | Root motion | Rotazione | In place | Stato | Motivo |
+|---|---:|---|---:|---|---|---|
+| 062_charging_L_Hit | 1.10 | 2.96 m (+2.49, -1.61) | 0 | no | core | fallo: spallata irregolare, spalla contro spalla (FOULACT) - tutti i livelli, all'avvio |
+| 063_charging_R_Hit | 1.27 | 3.33 m (+2.78, +1.83) | 0 | no | core | fallo: spallata irregolare, spalla contro spalla (FOULACT) - tutti i livelli, all'avvio |
+| 068_Defender_Collision_Shoulder_Inside_L | 0.57 | 2.27 m (+2.19, +0.60) | 0 | no | core | fallo: spallata irregolare, spalla contro spalla (FOULACT) - tutti i livelli, all'avvio |
+| 069_Defender_Collision_Shoulder_Inside_R | 0.57 | 2.27 m (+2.19, -0.60) | 0 | no | core | fallo: spallata irregolare, spalla contro spalla (FOULACT) - tutti i livelli, all'avvio |
+| 076_Defender_Left_Push_01 | 0.97 | 4.84 m (+4.84, -0.02) | 0 | no | core | fallo: trattenuta della maglia in corsa, la mano sulla maglia con l'IK (FOULACT) - tutti i livelli, all'avvio |
+| 079_Defender_Left_Push_Win_01 | 0.73 | 3.57 m (+3.55, -0.38) | 0 | no | core | fallo: spinta in corsa, la mano sulla schiena con l'IK (FOULACT) - tutti i livelli, all'avvio |
+| 080_Defender_Right_Push_01 | 0.97 | 4.84 m (+4.84, +0.02) | 0 | no | core | fallo: trattenuta della maglia in corsa, la mano sulla maglia con l'IK (FOULACT) - tutti i livelli, all'avvio |
+| 083_Defender_Right_Push_Win_01 | 0.73 | 3.57 m (+3.55, +0.38) | 0 | no | core | fallo: spinta in corsa, la mano sulla schiena con l'IK (FOULACT) - tutti i livelli, all'avvio |
+| 692_Stand_Hand_Push_up | 0.40 | 0.00 m (+0.00, -0.00) | 0 | si' | core | fallo: spinta a due mani da fermo (FOULACT) - tutti i livelli, all'avvio |
+
 ## Cadute
 
 | Clip | Durata | Root motion | Rotazione | In place | Stato | Motivo |
@@ -910,31 +925,22 @@ Per livello: basso 294 clip (piu' 3 copie specchiate: Sidestep_Jogging_Stop01_L_
 
 | Clip | Durata | Root motion | Rotazione | In place | Stato | Motivo |
 |---|---:|---|---:|---|---|---|
-| 062_charging_L_Hit | 1.10 | 2.96 m (+2.49, -1.61) | 0 | no | scartata | spinte e spallate: meccanica non presente |
-| 063_charging_R_Hit | 1.27 | 3.33 m (+2.78, +1.83) | 0 | no | scartata | spinte e spallate: meccanica non presente |
 | 064_charging01_L | 1.53 | 3.23 m (+3.18, -0.58) | -44 | no | scartata | spinte e spallate: meccanica non presente |
 | 065_charging01_R | 1.53 | 3.23 m (+3.18, +0.58) | +44 | no | scartata | spinte e spallate: meccanica non presente |
 | 066_charging02_L | 1.13 | 3.05 m (+3.02, -0.39) | -43 | no | scartata | spinte e spallate: meccanica non presente |
 | 067_charging02_R | 1.13 | 3.05 m (+3.02, +0.39) | +43 | no | scartata | spinte e spallate: meccanica non presente |
-| 068_Defender_Collision_Shoulder_Inside_L | 0.57 | 2.27 m (+2.19, +0.60) | 0 | no | scartata | spinte e spallate: meccanica non presente |
-| 069_Defender_Collision_Shoulder_Inside_R | 0.57 | 2.27 m (+2.19, -0.60) | 0 | no | scartata | spinte e spallate: meccanica non presente |
 | 070_Defender_jump_Push_lose_Back | 1.40 | 1.58 m (+1.57, -0.12) | 0 | no | scartata | spinte e spallate: meccanica non presente |
 | 071_Defender_jump_Push_lose_Front | 1.40 | 1.32 m (-1.32, +0.00) | 0 | no | scartata | spinte e spallate: meccanica non presente |
 | 072_Defender_jump_Push_lose_Left01 | 1.43 | 1.05 m (+0.14, +1.04) | 0 | no | scartata | spinte e spallate: meccanica non presente |
 | 073_Defender_jump_Push_lose_Left02 | 1.40 | 1.18 m (+0.25, +1.16) | 0 | no | scartata | spinte e spallate: meccanica non presente |
 | 074_Defender_jump_Push_lose_Right01 | 1.43 | 1.05 m (+0.14, -1.04) | 0 | no | scartata | spinte e spallate: meccanica non presente |
 | 075_Defender_jump_Push_lose_Right02 | 1.40 | 1.18 m (+0.25, -1.16) | 0 | no | scartata | spinte e spallate: meccanica non presente |
-| 076_Defender_Left_Push_01 | 0.97 | 4.84 m (+4.84, -0.02) | 0 | no | scartata | spinte e spallate: meccanica non presente |
 | 077_Defender_Left_Push_lose_01 | 2.73 | 12.28 m (+12.28, +0.06) | 0 | no | scartata | spinte e spallate: meccanica non presente |
 | 078_Defender_Left_Push_lose_03 | 1.00 | 3.17 m (+2.99, +1.04) | +11 | no | scartata | spinte e spallate: meccanica non presente |
-| 079_Defender_Left_Push_Win_01 | 0.73 | 3.57 m (+3.55, -0.38) | 0 | no | scartata | spinte e spallate: meccanica non presente |
-| 080_Defender_Right_Push_01 | 0.97 | 4.84 m (+4.84, +0.02) | 0 | no | scartata | spinte e spallate: meccanica non presente |
 | 081_Defender_Right_Push_lose_01 | 2.73 | 12.28 m (+12.28, -0.06) | 0 | no | scartata | spinte e spallate: meccanica non presente |
 | 082_Defender_Right_Push_lose_03 | 1.00 | 3.17 m (+2.99, -1.04) | -11 | no | scartata | spinte e spallate: meccanica non presente |
-| 083_Defender_Right_Push_Win_01 | 0.73 | 3.57 m (+3.55, +0.38) | 0 | no | scartata | spinte e spallate: meccanica non presente |
 | 690_Stand_Defender_Left_Push_01 | 2.00 | 0.00 m (+0.00, -0.00) | 0 | si' | scartata | spinte e spallate: meccanica non presente |
 | 691_Stand_Defender_Right_Push_01 | 2.00 | 0.00 m (+0.00, -0.00) | 0 | si' | scartata | spinte e spallate: meccanica non presente |
-| 692_Stand_Hand_Push_up | 0.40 | 0.00 m (+0.00, -0.00) | 0 | si' | scartata | spinte e spallate: meccanica non presente |
 | 693_Stand_Hand_Push_up_L | 0.80 | 0.00 m (+0.00, -0.00) | 0 | si' | scartata | spinte e spallate: meccanica non presente |
 | 694_Stand_Hand_Push_up_R | 0.80 | 0.00 m (+0.00, -0.00) | 0 | si' | scartata | spinte e spallate: meccanica non presente |
 | 701_Stand_Shoulder_Push_up_L | 0.87 | 0.00 m (+0.00, -0.00) | 0 | si' | scartata | spinte e spallate: meccanica non presente |

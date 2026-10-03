@@ -179,6 +179,16 @@ const page = `(() => {
     label.textContent = text(k, i);
     return label.textContent;
   };
+  // Posizioni nel mondo di alcune ossa di un corpo e distanza dalla palla, fotogramma per fotogramma.
+  R.bones = (from, to, i, names) => {
+    const out = [], r = R.bodies[i].avatar.rig, v = R.bodies[i].avatar.object.position.clone();
+    for (let k = from; k <= to; k++) {
+      const ball = R.tape.apply(k, null).clone(), row = { k, ball: ball.toArray().map((x) => +x.toFixed(3)) };
+      for (const n of names) { if (!r[n]) continue; r[n].getWorldPosition(v); row[n] = [...v.toArray().map((x) => +x.toFixed(3)), +v.distanceTo(ball).toFixed(3)]; }
+      out.push(row);
+    }
+    return out;
+  };
   // Grafico delle misure di un corpo (o del primo con un picco): pannelli impilati.
   R.chart = (i, from, to) => {
     const J = R.json, M = R.m[i], b = J.bodies[i], S = R.S;
@@ -287,6 +297,13 @@ async function main() {
     console.log(`  ${String(p.i).padStart(2)} ${p.who.padEnd(10)} osso ${p.bone.toFixed(3)} f${p.boneAt} ${p.boneName.padEnd(14)} bacino ${p.hipsOff.toFixed(1).padStart(5)} f${p.hipsAt}  salto ${p.hipsStep.toFixed(2)} f${p.stepAt}  scivola ${p.skate.toFixed(2)} f${p.skateAt}  braccia ${p.arm.toFixed(1)} f${p.armAt}`);
   }
   if (flag('list')) { cdp.closeBrowser(); srv.close(); return; }
+  // --bones home:1:LeftHand,RightHand: ossa nel mondo e distanza dalla palla (con --from/--to)
+  if (opt('bones', '')) {
+    const [t, n, list] = opt('bones').split(':');
+    const i = await evaluate(cdp, `window.__rd.find(${JSON.stringify(t + ':' + n)})`);
+    for (const row of await evaluate(cdp, `window.__rd.bones(${from}, ${to}, ${i}, ${JSON.stringify(list.split(','))})`)) console.log(JSON.stringify(row));
+    cdp.closeBrowser(); srv.close(); return;
+  }
 
   const who = FOLLOW ? await evaluate(cdp, `window.__rd.find(${JSON.stringify(FOLLOW)})`) : -1;
   if (FOLLOW && who < 0) throw new Error('corpo non trovato: ' + FOLLOW);

@@ -316,13 +316,17 @@ export class Ball {
     this._rules();
   }
 
-  // Traiettoria futura senza pali, reti ne' effetto: `out` riceve un punto
-  // ogni `dt` secondi ({x, y, z, t}), riusando gli oggetti gia' presenti.
+  // Traiettoria futura con l'effetto, senza pali ne' reti: `out` riceve un
+  // punto ogni `dt` secondi ({x, y, z, t}), riusando gli oggetti gia'
+  // presenti. Senza l'effetto il portiere non leggeva i tiri a giro che
+  // partivano fuori dallo specchio (5 gol in 10 partite senza reazione).
   predict(out, dt, horizon) {
     const p = _pp.copy(this.pos), v = _pv.copy(this.vel);
     const n = Math.ceil(horizon / dt);
+    let sp = this.spin;
     for (let i = 0; i < n; i++) {
       forces(p, v, dt);
+      sp = curl(v, sp, dt);
       move(p, v, dt);
       const s = out[i] || (out[i] = { x: 0, y: 0, z: 0, t: 0 });
       s.x = p.x; s.y = p.y; s.z = p.z; s.t = (i + 1) * dt;

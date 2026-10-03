@@ -1,8 +1,10 @@
-import { TACKLE, SLIDE, AERIAL, KEEPER, PITCH, GOAL, CONTROL, ATTR, DUEL, REACT, ANIM } from './config.js';
+import * as THREE from 'three';
+import { TACKLE, SLIDE, AERIAL, KEEPER, PITCH, GOAL, CONTROL, ATTR, DUEL, REACT, ANIM, FOULACT } from './config.js';
 import { rootAt, clipDuration } from './avatar.js';
 import { pickTackle } from './anim-pick.js';
 import { headingOf } from './player.js';
-import { KeeperReach } from './moves.js';
+import { KeeperReach, HandOn, FootOn } from './moves.js';
+import { palm } from './rig.js';
 import { duel, stagger, beat, passFirstChance, defUnit, missFoulChance, approach } from './defense.js';
 
 // Contrasto, scivolata, caduta, colpo di testa, rovesciata, portiere: azioni (p.action)
@@ -23,6 +25,7 @@ export function rootAction(m, p, clip, from, end, rate, extra) {
 
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 const smooth = (u) => u * u * (3 - 2 * u);
+const _kh = new THREE.Vector3();
 
 // Clip che tengono dentro di se' la rotazione (portiere, cadute, finte): alla
 // fine del gesto la rotazione passa al busto del giocatore, e l'anca viene
@@ -75,8 +78,9 @@ export function startTackle(m, p, manual = false) {
   const still = pk && Math.hypot(r1.a - r0.a, r1.s - r0.s) < T.standLunge;
   const range = still ? 0 : T.lunge + p.speed * T.hit;
   const pace = p.speed + T.lungeSpeed;
-  p.action = {
-    tackle: true, moves: true, clip: pk ? pk.clip : null, t: 0, rate: 1, end: T.duration,
+  const foot = pk && m.tpl.meta[pk.clip] && m.tpl.meta[pk.clip].ev && m.tpl.meta[pk.clip].ev.contact && m.tpl.meta[pk.clip].ev.contact.foot === 'L' ? 'Left' : 'Right';
+  const act = p.action = {
+    tackle: true, moves: true, clip: pk ? pk.clip : null, t: 0, rate: 1, end: T.duration, foot,
     tick: (a, dt) => {
       const left = Math.max(0, T.hit - a.t);
       const ax = b.pos.x + b.vel.x * left - p.pos.x, az = b.pos.z + b.vel.z * left - p.pos.z, al = Math.hypot(ax, az) || 1;
@@ -90,33 +94,97 @@ export function startTackle(m, p, manual = false) {
       p.moveTo(nx, nz, dt);
       if (a.t <= T.hit) p.heading = h0 + wrap(headingOf(ax, az) - h0) * smooth(Math.min(1, a.t / T.hit));
       p.moveHeading = p.heading;
+      // fallo deciso: il piede va sulla caviglia piu' vicina del portatore
+      if (a.footOn) {
+        ankle(a.victim, p, a.footOn.target);
+        a.footOn.weight = a.t < T.hit + FOULACT.pushTime ? 1 : 0;
+        a.footOn.ttl = 0.25;
+      }
     },
-    events: [{ at: T.hit, fn: () => resolveTackle(m, p, manual) }]
+    events: [{ at: Math.max(0, T.hit - FOULACT.legLead), fn: () => aimTackle(m, p, manual, act) }, { at: T.hit, fn: () => resolveTackle(m, p, manual, act) }]
   };
   return true;
 }
 
+// Caviglia di `o` piu' vicina a chi entra `p`, staccata verso di lui: dove va
+// il piede del contrasto che prende l'uomo.
+const _an = new THREE.Vector3(), _bn = new THREE.Vector3();
+function ankle(o, p, out) {
+  const r = o.avatar.rig;
+  r.LeftFoot.getWorldPosition(_an);
+  r.RightFoot.getWorldPosition(_bn);
+  const a = Math.hypot(_an.x - p.pos.x, _an.z - p.pos.z) < Math.hypot(_bn.x - p.pos.x, _bn.z - p.pos.z) ? _an : _bn;
+  const dx = p.pos.x - a.x, dz = p.pos.z - a.z, l = Math.hypot(dx, dz) || 1;
+  return out.set(a.x + dx / l * 0.06, Math.max(0.1, a.y), a.z + dz / l * 0.06);
+}
+
+// Poco prima del contatto (FOULACT.legLead): esito del contrasto con le
+// posizioni previste al contatto. Se e' fallo parte l'IK del piede sulla
+// caviglia: il fallo ci sara' solo se il piede ci arriva (resolveTackle).
+function aimTackle(m, p, manual, a) {
+  const T = TACKLE, b = m.ball, owner = m.owner, L = FOULACT.legLead;
+  if (!owner || owner.team === p.team || owner.holding || owner.keeper) return;
+  const bx = b.pos.x + b.vel.x * L - p.pos.x - p.vel.x * L, bz = b.pos.z + b.vel.z * L - p.pos.z - p.vel.z * L;
+  const reach = b.live && b.pos.y <= 0.8 && Math.hypot(bx, bz) <= T.legReach;
+  const man = Math.hypot(owner.pos.x + owner.vel.x * L - p.pos.x - p.vel.x * L, owner.pos.z + owner.vel.z * L - p.pos.z - p.vel.z * L) <= T.manReach;
+  if (reach) a.verdict = duel(m, p, owner, manual);
+  else a.verdict = man && Math.random() < missFoulChance(m, p, owner) ? 'foul' : 'miss';
+  a.late = !reach;
+  a.victim = owner;
+  if (a.verdict !== 'foul') return;
+  a.footOn = new FootOn(a.foot);
+  ankle(owner, p, a.footOn.target);
+  p.avatar.playProc(a.footOn);
+}
+
+// Il piede di chi entra tocca davvero la gamba del portatore?
+const _ft2 = new THREE.Vector3();
+function legContact(p, o, foot) {
+  const r = p.avatar.rig;
+  r[foot + 'Foot'].getWorldPosition(_ft2).lerp(r[foot + 'ToeBase'].getWorldPosition(_an), 0.4);
+  const v = o.avatar.rig;
+  let best = Infinity;
+  for (const n of ['LeftFoot', 'RightFoot', 'LeftLeg', 'RightLeg']) {
+    v[n].getWorldPosition(_bn);
+    if (n.endsWith('Leg')) _bn.lerp(v[n.replace('Leg', 'Foot')].getWorldPosition(_an), 0.5);
+    best = Math.min(best, _bn.distanceTo(_ft2));
+  }
+  return best;
+}
+
 // Al contatto del piede: palla recuperata, portatore che salta l'uomo o
 // fallo (duel). Se la gamba non ci arriva il difensore resta sbilanciato.
-function resolveTackle(m, p, manual) {
+function resolveTackle(m, p, manual, a) {
   const T = TACKLE, b = m.ball, owner = m.owner;
   if (owner && owner.team === p.team) return;
-  const reach = b.live && b.pos.y <= 0.8 && Math.hypot(b.pos.x - p.pos.x, b.pos.z - p.pos.z) <= T.legReach;
-  if (!reach) {
-    // la gamba non arriva al pallone ma prende l'uomo: fallo, di solito da dietro o di lato
-    if (owner && owner.team !== p.team && !owner.holding && Math.hypot(owner.pos.x - p.pos.x, owner.pos.z - p.pos.z) <= T.manReach &&
-      Math.random() < missFoulChance(m, p, owner)) {
+  // fallo deciso prima del contatto: c'e' solo se il piede tocca davvero la
+  // gamba del portatore (contrasto in ritardo, sgambetto di lato)
+  if (a.verdict === 'foul' && owner === a.victim) {
+    const d = legContact(p, owner, a.foot);
+    m.note('contatto', { p, su: owner, tipo: 'piede', distanza: d, preso: d <= FOULACT.legReach });
+    if (d <= FOULACT.legReach) {
+      const dx = owner.pos.x - p.pos.x, dz = owner.pos.z - p.pos.z, l = Math.hypot(dx, dz) || 1;
+      const from = approach(p, owner);
       m.lastDuel = { def: p, car: owner, result: 'foul' };
-      m.foul(p, owner, { kind: manual ? 'contrasto' : 'pressing', ballFirst: false });
+      m.foul(p, owner, { kind: manual ? 'contrasto' : 'pressing', ballFirst: false, from, dir: { x: dx / l, z: dz / l }, gesture: from === 'side' ? 'sgambetto' : 'contrasto in ritardo' });
       return;
     }
+    stagger(p, DUEL.stagger.miss, manual);
+    m.lastDuel = { def: p, car: owner, result: 'vuoto' };
+    return;
+  }
+  const reach = b.live && b.pos.y <= 0.8 && Math.hypot(b.pos.x - p.pos.x, b.pos.z - p.pos.z) <= T.legReach;
+  if (!reach) {
     if (owner || m.poss.flying) stagger(p, DUEL.stagger.miss, manual);
     m.lastDuel = { def: p, result: 'vuoto', dist: Math.hypot(b.pos.x - p.pos.x, b.pos.z - p.pos.z) };
     return;
   }
   if (owner) {
     if (owner.holding) return;
-    const result = duel(m, p, owner, manual);
+    // esito gia' deciso poco prima (aimTackle); se il portatore e' cambiato, ora
+    let result = owner === a.victim && a.verdict && a.verdict !== 'miss' ? a.verdict : duel(m, p, owner, manual);
+    // un fallo qui senza contatto della gamba non c'e': il portatore lo salta
+    if (result === 'foul') result = 'beaten';
     m.lastDuel = { def: p, car: owner, result };
     if (result === 'won') {
       m.kickLock = { p: owner, t: T.lock };
@@ -125,8 +193,6 @@ function resolveTackle(m, p, manual) {
       if (Math.random() < T.keep) { m.gain(p, 'contrasto'); return; }
       b.kick(p.dirX * T.poke + gauss() * 1.2, 0, p.dirZ * T.poke + gauss() * 1.2);
       m.poss.loose('contrasto', p);
-    } else if (result === 'foul') {
-      m.foul(p, owner, { kind: manual ? 'contrasto' : 'pressing', ballFirst: false });
     } else {
       stagger(p, DUEL.stagger.beaten, manual);
       beat(m, owner, p);
@@ -167,11 +233,11 @@ export function startSlide(m, p, dx, dz) {
           m.poss.loose('scivolata', p);
         }
       }
-      // chi sta sulla traiettoria della scivolata cade
+      // cade chi viene toccato davvero: piedi di chi scivola contro le sue gambe
       for (const o of m.allPlayers()) {
         if (o.team === p.team || o.down || o.keeper || tripped.has(o)) continue;
         const bx = (p.pos.x + fx) / 2, bz = (p.pos.z + fz) / 2;
-        if (Math.hypot(o.pos.x - bx, o.pos.z - bz) < S.body) {
+        if (Math.hypot(o.pos.x - bx, o.pos.z - bz) < S.body * 1.8 && Math.min(legContact(p, o, 'Left'), legContact(p, o, 'Right')) <= FOULACT.slideReach) {
           tripped.add(o);
           const from = o === car0 ? from0 : approach(p, o);
           if (m.owner === o) {
@@ -181,8 +247,10 @@ export function startSlide(m, p, dx, dz) {
           // fallo se l'uomo e' preso senza la palla, o da dietro anche dopo
           // averla toccata: l'arbitro decide anche la reazione (rules.foul).
           // Senza fallo cade lo stesso (livello 3)
-          const foul = (!a.hit || from === 'back') && m.rules.foul(p, o, { kind: 'scivolata', ballFirst: !!a.hit, from });
-          if (!foul) react(m, o, 3, p);
+          const dir = { x: p.dirX, z: p.dirZ };
+          m.note('contatto', { p, su: o, tipo: 'scivolata', preso: true });
+          const foul = (!a.hit || from === 'back') && m.rules.foul(p, o, { kind: 'scivolata', ballFirst: !!a.hit, from, dir });
+          if (!foul) react(m, o, 3, p, dir);
         }
       }
     }
@@ -197,14 +265,16 @@ export function startSlide(m, p, dx, dz) {
 // corse, nel riferimento di chi la subisce) e la velocita' d'entrata piu'
 // vicina alla sua corsa. 3 e 4 restano a terra REACT.ground secondi, poi il
 // rialzo della clip. `src`: chi ha causato il contatto.
-export function react(m, o, level, src) {
+// `dir`: direzione della forza nel contatto (spinta, trattenuta all'indietro,
+// gamba portata via); senza, dall'avversario verso chi subisce.
+export function react(m, o, level, src, dir = null) {
   if (o.down || o.sentOff || o.keeper || (o.action && o.action.react)) return false;
   const R = REACT, opts = reactOptions(m.tpl)[level];
   if (!opts || !opts.length) return false;
   const s = Math.hypot(o.vel.x, o.vel.z);
   // chi corre cade in avanti, lungo la corsa
   if (level >= 3 && s > 0.5) o.face(headingOf(o.vel.x, o.vel.z));
-  let px = o.pos.x - src.pos.x, pz = o.pos.z - src.pos.z;
+  let px = dir ? dir.x : o.pos.x - src.pos.x, pz = dir ? dir.z : o.pos.z - src.pos.z;
   const pl = Math.hypot(px, pz) || 1;
   const mo = R.momentum[level];
   px = px / pl * R.push + src.vel.x * R.carry + o.vel.x * mo;
@@ -246,6 +316,104 @@ export function react(m, o, level, src) {
     }
   });
   return true;
+}
+
+// --- fallo di corsa con un gesto della libreria (FOULACT): spinta,
+// trattenuta, spallata. Chi entra corre addosso al portatore, la mano va
+// sulla maglia con l'IK; al fotogramma del contatto il fallo c'e' solo se la
+// mano (o la spalla) tocca davvero, e la reazione parte in quell'istante e
+// nella direzione della forza. `from`: da dove arriva (approach).
+const _sh = new THREE.Vector3(), _pm2 = new THREE.Vector3();
+export function startFoulGesture(m, p, victim, from) {
+  if (p.action || p.down || p.stagger > 0 || p.sentOff) return false;
+  const F = FOULACT;
+  const vx = victim.pos.x - p.pos.x, vz = victim.pos.z - p.pos.z, d = Math.hypot(vx, vz) || 1;
+  const right = (vx * p.rightX + vz * p.rightZ) / d > 0;
+  let kind, clip;
+  if (p.speed >= F.standBelow && p.speed < F.runMin) return false;
+  if (p.speed < F.standBelow) { kind = 'spinta'; clip = F.clips.ferma; }
+  else {
+    kind = from === 'front' ? 'carica' : Math.random() < F.holdShare ? 'trattenuta' : from === 'back' ? 'spinta' : 'carica';
+    clip = F.clips[kind][right ? 'R' : 'L'];
+  }
+  const meta = m.tpl.meta[clip];
+  if (!meta || !meta.ev || !meta.ev.contact || !m.tpl.clips[clip]) return false;
+  const side = kind === 'carica' ? (right ? 'Right' : 'Left') : F.hand[clip] || meta.ev.contact.hand || (right ? 'Right' : 'Left');
+  const tc = kind === 'trattenuta' ? F.holdAt : meta.ev.contact.t;
+  // passo della clip come quello della corsa (piedi che non scivolano)
+  const vClip = Math.max(0.5, (meta.vIn || 0) * m.tpl.scale);
+  const rate = p.speed < F.standBelow ? 1 : clamp(p.speed / vClip, F.rate[0], F.rate[1]);
+  const closing = Math.max(1, ((p.vel.x - victim.vel.x) * vx + (p.vel.z - victim.vel.z) * vz) / d);
+  // con la mano: l'IK ha il tempo di arrivare sulla maglia prima del contatto
+  const lead = clamp((d - F.contactDist) / closing, kind === 'carica' ? F.minLead : F.ik.lead + F.minLead * 0.5, Math.max(F.minLead, tc / rate));
+  const from0 = Math.max(0, tc - lead * rate), end = Math.min(meta.dur, tc + F.after * rate);
+  p.avatar.playOnce(clip, from0, (end - from0) / rate, rate);
+  const hand = kind === 'carica' ? null : new HandOn(side);
+  if (hand) { shirt(victim, p, hand.target); p.avatar.playProc(hand); }
+  const keep = kind === 'trattenuta' ? F.holdTime : F.pushTime;
+  m.note('gesto fallo', { p, su: victim, tipo: kind, da: from, clip });
+  // quasi fermo (spinta a due mani): sul posto, la clip non fa passi
+  const pace = p.speed < F.standBelow ? 0 : Math.max(p.speed, 1.5);
+  p.action = {
+    foulGesture: kind, moves: true, clip, t: 0, rate: 1, end: (end - from0) / rate,
+    tick: (a, dt) => {
+      // addosso al portatore a FOULACT.contactDist: dalla parte da cui arriva;
+      // la spallata spalla contro spalla, al suo fianco
+      let lx = p.pos.x - victim.pos.x, lz = p.pos.z - victim.pos.z;
+      if (kind === 'carica') {
+        const s = Math.sign(lx * victim.rightX + lz * victim.rightZ) || 1;
+        lx = victim.rightX * s - victim.dirX * 0.15; lz = victim.rightZ * s - victim.dirZ * 0.15;
+      }
+      const ll = Math.hypot(lx, lz) || 1;
+      const tx = victim.pos.x + victim.vel.x * dt + lx / ll * F.contactDist, tz = victim.pos.z + victim.vel.z * dt + lz / ll * F.contactDist;
+      const sx = tx - p.pos.x, sz = tz - p.pos.z, sl = Math.hypot(sx, sz);
+      const stepLen = Math.min(sl, pace * dt);
+      if (pace === 0) p.drive(dt, 0, 0, 0, {});
+      else if (sl > 1e-4) p.moveTo(p.pos.x + sx / sl * stepLen, p.pos.z + sz / sl * stepLen, dt);
+      if (a.t < lead + keep) p.face(headingOf(victim.pos.x - p.pos.x, victim.pos.z - p.pos.z));
+      p.moveHeading = p.heading;
+      if (hand) {
+        shirt(victim, p, hand.target);
+        const u = a.t - (lead - F.ik.lead);
+        hand.weight = u < 0 ? 0 : !a.done || a.t < a.at + keep && a.hit ? smooth(Math.min(1, u / F.ik.lead)) : 0;
+        hand.ttl = 0.25;
+      }
+      // contatto: dal fotogramma previsto, per FOULACT.window s, la mano sulla
+      // maglia (la spalla sulla spalla) entro la portata; altrimenti niente fallo
+      if (!a.done && a.t >= lead) {
+        let dist;
+        if (hand) dist = palm(p.avatar.rig, side, _pm2).distanceTo(shirt(victim, p, _sh));
+        else {
+          const v = victim.avatar.rig;
+          p.avatar.rig[side + 'Arm'].getWorldPosition(_pm2);
+          dist = Math.min(_pm2.distanceTo(v.LeftArm.getWorldPosition(_sh)), _pm2.distanceTo(v.RightArm.getWorldPosition(_sh)));
+        }
+        const hit = dist <= (hand ? F.reach : F.shoulderReach);
+        a.best = Math.min(a.best ?? Infinity, dist);
+        if (hit || a.t >= lead + F.window) {
+          a.done = true;
+          a.at = a.t;
+          m.note('contatto', { p, su: victim, tipo: kind, distanza: hit ? dist : a.best, preso: hit });
+          if (hit && !victim.down && !victim.sentOff) {
+            a.hit = true;
+            // forza: spinta e spallata da chi entra verso chi subisce, trattenuta all'indietro
+            const fx = victim.pos.x - p.pos.x, fz = victim.pos.z - p.pos.z, fl = Math.hypot(fx, fz) || 1;
+            const k = kind === 'trattenuta' ? -1 : 1;
+            m.foul(p, victim, { kind, ballFirst: false, from, dir: { x: k * fx / fl, z: k * fz / fl } });
+          }
+        }
+      }
+    }
+  };
+  return true;
+}
+
+// Punto della maglia di `o` dalla parte di `p`: Spine2, staccato di FOULACT.shirt.
+function shirt(o, p, out) {
+  o.avatar.rig.Spine2.getWorldPosition(out);
+  const dx = p.pos.x - out.x, dz = p.pos.z - out.z, l = Math.hypot(dx, dz) || 1;
+  out.x += dx / l * FOULACT.shirt; out.z += dz / l * FOULACT.shirt;
+  return out;
 }
 
 // Clip di reazione per livello con la direzione del loro spostamento nei primi
@@ -359,6 +527,7 @@ export function startKeeperGesture(m, k, clip, from, contact, end, rate, o) {
   if (reach) { reach.target.copy(o.point || m.ball.pos); k.avatar.playProc(reach); }
   k.action = rootAction(m, k, clip, from, end, rate, {
     keeper: true, scaleA: o.scaleA, scaleS: o.scaleS, catchable: !!o.catch, dive: !!o.dive,
+    diveClip: !!(m.tpl.meta[clip] && m.tpl.meta[clip].ev && m.tpl.meta[clip].ev.dive),
     tick: (a) => {
       if (o.release) { releaseTick(m, k, a, o, from, tc); return; }
       // peso dell'IK: sale prima del contatto, resta un attimo, poi sfuma
@@ -383,8 +552,21 @@ export function startKeeperGesture(m, k, clip, from, contact, end, rate, o) {
         else reach.target.copy(b.pos);
       }
       reach.stick = tr >= 0;
+      // gesto partito tardi (tiro ravvicinato): l'IK sale in tempo per il contatto
+      if (a.urgent === undefined) a.urgent = tr > -I.lead;
+      reach.urgent = a.urgent;
       reach.weight = m.owner === k ? 0 : w;
       reach.ttl = 0.25;
+      // parata finita in piedi senza palla in mano (respinta, palla sul
+      // corpo): il gesto si chiude e il portiere torna a giocare, va sulla
+      // palla respinta. Restava fermo fino alla fine della clip (1,7 s)
+      // mentre la palla rotolava a due metri. Solo le parate in piedi: un
+      // tuffo finisce la clip, che contiene caduta e rialzo (chiuso a mezz'aria
+      // la posa del tuffo restava sul portiere che correva)
+      if (!a.diveClip && tr > I.hold && m.owner !== k && m.poss.free && k.avatar.rig.Hips.getWorldPosition(_kh).y > KEEPER.upright) {
+        a.end = Math.min(a.end, a.t);
+        k.avatar.fadeGesture();
+      }
     },
     onEnd: () => {
       k.keeperBusy = false;

@@ -357,14 +357,14 @@ export class Rules {
     // reazione di chi lo subisce, graduata (REACT): quasi tutti i falli
     // restano sbilanciamenti e colpi senza caduta
     const level = this.reactLevel(info.kind, from, sev, off);
-    react(m, victim, level, off);
+    react(m, victim, level, off, info.dir || null);
     if (m.owner === victim) {
       m.ball.kick(victim.vel.x * 0.6, 0, victim.vel.z * 0.6);
       m.poss.loose('contrasto', off);
     }
     const f = { off, victim, spot, card, team: victim.team, penalty: inBox && RULES.penalties, t: 0, adv: false };
     m.lastFoul = { kind: info.kind, from, sev, card, penalty: f.penalty, promising, level };
-    m.note('fallo', { off, victim, tipo: info.kind, da: from, gravita: sev, cartellino: card || '', rigore: !!f.penalty, livello: level });
+    m.note('fallo', { off, victim, tipo: info.kind, gesto: info.gesture || info.kind, da: from, gravita: sev, cartellino: card || '', rigore: !!f.penalty, livello: level });
     if (f.penalty) this.callFoul(f);
     else this.pendingFoul = f;
     return true;

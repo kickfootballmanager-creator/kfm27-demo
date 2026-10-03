@@ -18,7 +18,7 @@ OUT = os.path.join(REPO, "docs", "match3d-anims.md")
 
 ORDER = ["locomozione", "partenze e arresti", "svolte", "difesa", "conduzione", "passaggi",
          "lanci e cross", "tiri", "colpi di testa", "ricezioni", "intercetti", "contrasti",
-         "scivolate", "cadute", "portiere", "finte", "calci piazzati", "esultanze",
+         "scivolate", "falli", "cadute", "portiere", "finte", "calci piazzati", "esultanze",
          "duelli di corpo", "schivate", "gesti", "cerimonie", "riscaldamento", "menu e pose", "altro"]
 
 # a cosa serve ogni ruolo nel gioco (src/js/match3d)
@@ -40,6 +40,10 @@ USE = {
     ("react", "hit"): "reazione a un contatto, livello 2: colpo con un passo di recupero",
     ("fall", "fall"): "reazione a un fallo, livello 3: caduta, a terra, rialzo",
     ("fall", "violent"): "reazione a un fallo, livello 4 (solo falli violenti): caduta spettacolare, a terra, rialzo",
+    ("foul", "push"): "fallo: spinta in corsa, la mano sulla schiena con l'IK (FOULACT)",
+    ("foul", "hold"): "fallo: trattenuta della maglia in corsa, la mano sulla maglia con l'IK (FOULACT)",
+    ("foul", "charge"): "fallo: spallata irregolare, spalla contro spalla (FOULACT)",
+    ("foul", "standPush"): "fallo: spinta a due mani da fermo (FOULACT)",
     "feint": "finta (roulette)", "kickoff": "calcio d'inizio", "wallJump": "salto della barriera",
     "celebrate": "esultanza dopo il gol", "gkSave": "parata di respinta (punto dal Ball_Bone)",
     "gkPunch": "uscita di pugno", "gkCatch": "presa (punto dal Ball_Bone)", "gkThrow": "rinvio con le mani",

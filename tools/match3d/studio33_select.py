@@ -18,6 +18,10 @@ RULES = [
     (r"^TricksReaction", "finte", None, "reazione di prova, non una finta"),
     (r"^(Avoid_|Ball_Avoid_(Jogging|Stand))", "schivate", None, "schivare un intervento: meccanica non presente"),
     (r"^(Block_|BlockShoot|BlockKick)", "difesa", None, "respinta del tiro col corpo: meccanica non presente"),
+    # gesti di chi commette un fallo (skill: "ogni fallo ha una causa visibile"):
+    # spallata, trattenuta, spinta in corsa e a due mani da fermo
+    (r"^(charging_[LR]_Hit|Defender_Collision_Shoulder_Inside_[LR]|Defender_(Left|Right)_Push_(01|Win_01)|Stand_Hand_Push_up)$",
+     "falli", "core", "gesto di chi commette il fallo: spallata, trattenuta, spinta"),
     (r"^(charging|Defender_|Striker_|Stand_Defender|Stand_Striker|Stand_Shoulder|Stand_Hand_Push|Upper_body)",
      "duelli di corpo", None, "spinte e spallate: meccanica non presente"),
     (r"^(Stand_Hand_up|Jogging_Hand_up|Jogging_avoid)", "gesti", None, "chiamata della palla e schivate in corsa: meccanica non presente"),
@@ -135,6 +139,10 @@ ROLES = [
     (r"^(Hit_Reaction_\d+|Stand_Hit_Reaction_(90|180|270)|Defense_Fall_Reaction_(L|R|UP))$", "react", "hit"),
     (r"^Defense_Jump_Fall_Reaction_0[12]_[LR]$", "fall", "fall"),
     (r"^Tackles01_Reaction_03$", "fall", "violent"),
+    (r"^(charging_[LR]_Hit|Defender_Collision_Shoulder_Inside_[LR])$", "foul", "charge"),
+    (r"^Defender_(Left|Right)_Push_01$", "foul", "hold"),
+    (r"^Defender_(Left|Right)_Push_Win_01$", "foul", "push"),
+    (r"^Stand_Hand_Push_up$", "foul", "standPush"),
     (r"^(Heading_Stand_01|Jump_Head_0)$", "header", None),
     (r"^Tricks$", "feint", None),
     (r"^KickOff_\d+$", "kickoff", None),
@@ -189,7 +197,9 @@ LOW_ROLES = {"gkSave", "gkPunch", "gkCatch", "gkThrow", "gkKick",
              # sceglieva fra due clip sole in avanti
              "start", "stop",
              # reazioni ai contatti: tempi e spostamenti decidono il gioco
-             "react", "fall"}
+             "react", "fall",
+             # gesti dei falli: il contatto della mano o della spalla decide il fallo
+             "foul"}
 LOW_STYLES = {("loco", "defense"), ("loco", "keeper")}
 
 # specchiate in fase di build: [originale, nome della copia]. La libreria ha una

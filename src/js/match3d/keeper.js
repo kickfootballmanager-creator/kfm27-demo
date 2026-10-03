@@ -41,7 +41,7 @@ function libOptions(tpl, claim) {
       const held = catchIt && /Keeper_Ball_/.test(e.name);
       const window = held ? [W.held, dive ? landing(tpl, e.name) : c.t + W.after] : [Math.max(0.05, c.t - W.before), c.t + W.after];
       out.push({
-        name: e.name, clip: e.name, from: held ? 0 : Math.max(0, c.t - W.lead),
+        name: e.name, clip: e.name, from: held ? 0 : Math.max(0, c.t - W.lead), dive,
         window, end: m.dur,
         scaleA: sc.a, scaleS: sc.s, catch: catchIt, held,
         bias: (catchIt ? B.catch : role === 'gkPunch' ? B.punch : B.parry) + (dive ? B.dive : 0)
@@ -89,27 +89,66 @@ const _q = new THREE.Vector3(), _s = new THREE.Vector3(), _n = new THREE.Vector3
 // Prima sfera del corpo (KEEPER.body) toccata dalla palla nel suo ultimo
 // passo, fra la posizione precedente e l'attuale. La posa e' quella
 // dell'ultimo disegno, spostata dove la fisica ha messo il portiere.
-function bodyHit(k, b, hands) {
-  const r = k.avatar.rig;
+// La sfera si muove anche lei: dalla posa disegnata prosegue nel passo con la
+// velocita' che aveva fra gli ultimi due disegni (memo, per sfera). Palla e
+// sfera vanno insieme da t = 0 a 1: con le mani spinte dall'IK la palla
+// passava fra due pose senza toccarle (mani a 19 cm dal centro, nessun contatto).
+const _dc = new THREE.Vector3(), _r0 = new THREE.Vector3(), _rv = new THREE.Vector3();
+function bodyHit(k, b, hands, clock) {
+  const r = k.avatar.rig, B = KEEPER.body;
   k.avatar.object.updateMatrixWorld(true);
   _off.set(k.pos.x - k.anchor.x, 0, k.pos.z - k.anchor.z);
-  const p0 = b.prev, seg = _s.subVectors(b.pos, p0), L2 = seg.lengthSq();
+  const p0 = b.prev, seg = _s.subVectors(b.pos, p0);
+  const memo = k.hitMemo || (k.hitMemo = { t: -1, pos: new Float32Array(B.length * 3) });
+  const fresh = clock - memo.t < 1.5 / 60 && clock > memo.t;
   let best = null;
-  for (const [name, to, f, rad, isHand] of KEEPER.body) {
-    if (isHand && !hands) continue;
+  for (let i = 0; i < B.length; i++) {
+    const [name, to, f, rad, isHand] = B[i];
     const bone = r[name];
     if (!bone) continue;
     bone.getWorldPosition(_c);
     if (to && r[to]) _c.lerp(r[to].getWorldPosition(_e), f);
     _c.add(_off);
-    const t = L2 > 1e-9 ? clamp(_q.subVectors(_c, p0).dot(seg) / L2, 0, 1) : 0;
-    _q.copy(p0).addScaledVector(seg, t);
-    if (_q.distanceTo(_c) < rad + BALL.radius && (!best || t < best.t)) best = { t, hand: isHand, rad, c: _c.clone(), q: _q.clone() };
+    const o = i * 3;
+    _dc.set(0, 0, 0);
+    if (fresh) {
+      _dc.set(_c.x - memo.pos[o], _c.y - memo.pos[o + 1], _c.z - memo.pos[o + 2]);
+      if (_dc.length() > KEEPER.hitLead) _dc.setLength(KEEPER.hitLead);
+    }
+    memo.pos[o] = _c.x; memo.pos[o + 1] = _c.y; memo.pos[o + 2] = _c.z;
+    if (isHand && !hands) continue;
+    // distanza minima fra palla e sfera che si muovono insieme nel passo
+    _r0.subVectors(p0, _c);
+    _rv.subVectors(seg, _dc);
+    const v2 = _rv.lengthSq(), t = v2 > 1e-9 ? clamp(-_r0.dot(_rv) / v2, 0, 1) : 0;
+    const d = _r0.addScaledVector(_rv, t).length();
+    if (d < rad + BALL.radius && (!best || t < best.t)) {
+      _q.copy(p0).addScaledVector(seg, t);
+      best = { t, hand: isHand, rad, c: _c.clone().addScaledVector(_dc, t), q: _q.clone() };
+    }
   }
+  memo.t = clock;
   return best;
 }
 
 // Palla fra i palmi: tutti e due entro `reach` metri, abbastanza per trattenerla.
+// Palla bassa che passa sotto le mani di una presa: il punto del suo passo
+// piu' vicino ai palmi e' entro G.side in orizzontale dal loro centro e sotto
+// di loro, e i due palmi entro G.reach da lei. Un rasoterra lento passava fra
+// i piedi (3 cm per parte) con le mani 20 cm sopra: la presa lo raccoglie.
+const _pm = new THREE.Vector3();
+function gathered(k, b) {
+  const G = KEEPER.gather, r = k.avatar.rig;
+  if (b.pos.y > G.maxY) return false;
+  _off.set(k.pos.x - k.anchor.x, 0, k.pos.z - k.anchor.z);
+  const L = palm(r, 'Left', _c).add(_off), R = palm(r, 'Right', _e).add(_off);
+  _pm.addVectors(L, R).multiplyScalar(0.5);
+  const p0 = b.prev, seg = _s.subVectors(b.pos, p0), L2 = seg.x * seg.x + seg.z * seg.z;
+  const t = L2 > 1e-9 ? clamp(((_pm.x - p0.x) * seg.x + (_pm.z - p0.z) * seg.z) / L2, 0, 1) : 0;
+  _q.copy(p0).addScaledVector(seg, t);
+  return Math.hypot(_q.x - _pm.x, _q.z - _pm.z) < G.side && _pm.y > _q.y && L.distanceTo(_q) < G.reach && R.distanceTo(_q) < G.reach;
+}
+
 function palmsOn(k, b, reach) {
   const r = k.avatar.rig;
   _off.set(k.pos.x - k.anchor.x, 0, k.pos.z - k.anchor.z);
@@ -140,7 +179,7 @@ export class KeeperAI {
     const m = this.m, k = this.p;
     // in guardia (animazione) quando la palla e' vicina alla sua porta
     k.alert = m.owner !== k && Math.hypot(m.ball.pos.x - this.goalX, m.ball.pos.z) < KEEPER.alertDist;
-    if (k.action || k.down) return;
+    if (k.action || k.down) { this.readBusy(); return; }
     if (m.owner === k) { this.distribute(dt); return; }
     this.hold = 0;
     k.holding = false;
@@ -151,6 +190,19 @@ export class KeeperAI {
     if (this.claim(dt)) return;
     if (this.rush(dt)) return;
     this.position(dt);
+  }
+
+  // Tiro mentre il portiere e' ancora nel gesto di prima (a terra dopo un
+  // tuffo, in piedi dopo una respinta): la lettura conta il tempo che gli resta.
+  readBusy() {
+    const m = this.m, k = this.p, poss = m.poss, a = k.action;
+    if (!poss.flying || poss.team === this.side || this.watch === poss.seq || !a || !a.keeper) return;
+    if (!this.crossing()) return;
+    this.watch = poss.seq;
+    const busy = Math.max(0, (a.end - a.t) / (a.rate || 1));
+    const r = this.assess(undefined, busy);
+    this.shot = { seq: poss.seq, ...r };
+    m.note('lettura', { k, parabile: r.saveable, motivo: r.reason, margine: r.margin, t: r.t, occupato: busy });
   }
 
   // Sulla linea fra palla e centro della porta, piu' fuori quando la palla si avvicina.
@@ -173,12 +225,54 @@ export class KeeperAI {
       this.moveTo(dt, this.goalX + this.dir * 0.6, -(Math.sign(set.spot.z) || 1) * FK.keeperFar, false);
       return;
     }
+    const s = this.spot(b);
+    this.moveTo(dt, s.x, s.z, false);
+  }
+
+  // Posto in gioco aperto: sulla linea fra la palla `b` e il centro della
+  // porta, piu' fuori quando la palla si avvicina.
+  spot(b) {
     const gx = this.goalX;
     const vx = b.x - gx, vz = b.z, vl = Math.hypot(vx, vz) || 1;
     const t = clamp((KEEPER.depthRange[0] - vl) / (KEEPER.depthRange[0] - KEEPER.depthRange[1]), 0, 1);
     const depth = lerp(KEEPER.depth[0], KEEPER.depth[1], t);
-    const tx = gx + vx / vl * depth, tz = clamp(vz / vl * depth, -KEEPER.maxZ, KEEPER.maxZ);
-    this.moveTo(dt, tx, tz, false);
+    return { x: gx + vx / vl * depth, z: clamp(vz / vl * depth, -KEEPER.maxZ, KEEPER.maxZ) };
+  }
+
+  // Tiro parabile per gli attributi? Lungo la traiettoria, fino alla linea di
+  // porta, il punto in cui le mani arrivano con piu' margine: dopo la
+  // reazione il braccio si allunga in KEEPER.reach.armTime e il tuffo porta il
+  // corpo fino a `dive` metri in diveTime (accelerazione costante). Se non
+  // arriva, il motivo: tiro troppo veloce (con piu' tempo ci arrivava), troppo
+  // angolato (nemmeno con tutto il tempo), portiere fuori posizione (lontano
+  // dal suo posto quando e' partito il tiro).
+  // busy: secondi che il portiere passa ancora nel gesto in corso (a terra dopo un tuffo).
+  assess(path = this.m.ball.predict(this.assessPath || (this.assessPath = []), 1 / 60, 2), busy = 0) {
+    const k = this.p, R = KEEPER.reach, P = KEEPER.plan, toward = -this.dir;
+    const react = lerp(KEEPER.react[0], KEEPER.react[1], this.skill) + busy;
+    const dive = lerp(R.dive[0], R.dive[1], this.attr), full = R.body + R.arm + dive;
+    let best = null, roomy = -Infinity, over = false, high = false;
+    for (const s of path) {
+      if (s.x * toward > HL + 0.3) break;
+      const a = (s.x - k.pos.x) * k.dirX + (s.z - k.pos.z) * k.dirZ;
+      // dietro di lui solo quanto arrivano le braccia: le clip non lo fanno arretrare
+      if (a > P.ahead || a < -R.behind) { if (a < -R.behind) over = true; continue; }
+      if (s.y > R.up) { high = true; continue; }
+      const h = Math.hypot(s.x - k.pos.x, s.z - k.pos.z), tau = s.t - react;
+      const arm = s.y < R.lowY ? R.armLow : R.arm;
+      const reach = tau <= 0 ? R.body : R.body + arm * Math.min(1, tau / R.armTime) + dive * Math.min(1, tau / R.diveTime) ** 2;
+      const margin = reach - h;
+      if (!best || margin > best.margin) best = { margin, t: s.t, x: s.x, y: s.y, z: s.z };
+      roomy = Math.max(roomy, full - (s.y < R.lowY ? R.arm - R.armLow : 0) - h);
+    }
+    if (!best) return { saveable: false, margin: -9, t: 0, reason: high ? 'tiro sotto la traversa, sopra le mani' : over ? 'pallonetto sopra il portiere' : 'lontano dal portiere' };
+    const out = { saveable: best.margin >= 0, margin: best.margin, t: best.t, x: best.x, y: best.y, z: best.z, reason: '' };
+    if (out.saveable) return out;
+    if (busy > 0) { out.reason = 'portiere ancora a terra dopo la parata'; return out; }
+    const home = this.spot(this.m.ball.pos);
+    if (Math.hypot(home.x - k.pos.x, home.z - k.pos.z) > R.offPlace) out.reason = 'portiere fuori posizione';
+    else out.reason = roomy >= 0 ? 'tiro troppo veloce' : 'tiro troppo angolato';
+    return out;
   }
 
   moveTo(dt, tx, tz, sprint) {
@@ -230,6 +324,10 @@ export class KeeperAI {
     const s = this.crossing();
     if (!s) return false;
     this.watch = poss.seq;
+    // lettura del tiro: parabile o no per gli attributi, e perche'
+    const a = this.assess();
+    this.shot = { seq: poss.seq, ...a };
+    m.note('lettura', { k, parabile: a.saveable, motivo: a.reason, margine: a.margin, t: a.t });
     // tiro fuori dallo specchio: lo si lascia andare
     if (Math.abs(s.z) > GOAL_HW + KEEPER.plan.wide || s.y > GOAL.height + KEEPER.plan.wide) return false;
     const plan = this.plan();
@@ -273,6 +371,9 @@ export class KeeperAI {
       // i cross arrivano di lato: si scorre tutta la traiettoria
       if (a > P.ahead || a < -P.behind || py > P.maxY) continue;
       for (const opt of options) {
+        // palla sul corpo (entro P.standLat di lato): presa in piedi, mai un
+        // tuffo che porta via testa e mani (tiro dritto in faccia, gol)
+        if (opt.dive && Math.abs(lat) < (P.standLat || 0)) continue;
         const clip = opt.clip.endsWith('_') ? opt.clip + (lat >= 0 ? 'right' : 'left') : opt.clip;
         const tab = tpl.poses[clip];
         if (!tab) continue;
@@ -293,7 +394,10 @@ export class KeeperAI {
           const kA = Math.abs(da) > 0.05 ? clamp((a - ha) / da, opt.scaleA[0], opt.scaleA[1]) : 1;
           const kS = Math.abs(ds) > 0.05 ? clamp((lat - hs) / ds, opt.scaleS[0], opt.scaleS[1]) : 1;
           const e = Math.hypot(a - ha - kA * da, lat - hs - kS * ds, py - hy);
-          const cost = e + P.rateCost * Math.abs(rate - 1) + opt.bias;
+          // una clip fatta partire a meta' (poco tempo) mostra la posa di
+          // meta' tuffo di colpo e porta via il corpo: su un rasoterra a 30 cm
+          // dai piedi il portiere scivolava di lato e la palla passava dove era
+          const cost = e + P.rateCost * Math.abs(rate - 1) + opt.bias + (P.skipCost || 0) * Math.max(0, from - opt.from);
           if (!best || cost < best.cost) best = { cost, e, opt, clip, tau, from, rate, wait, kA, kS, t: s.t, x: px, y: py, z: pz };
         }
       }
@@ -302,12 +406,26 @@ export class KeeperAI {
     return best && best.e < KEEPER.plan.maxResidual * 2.5 ? best : null;
   }
 
-  // Parata decisa: fermo sulle gambe fino al momento di partire.
+  // Parata decisa: si parte al momento giusto. Con tempo (palla lenta, tiro
+  // da lontano) prima ci si sposta a passi laterali verso il punto e si
+  // ripianifica: fermo ad aspettare, su un rasoterra lento verso il palo il
+  // tuffo partiva da 2 m e arrivava 70 cm corto.
   waitSave(dt) {
-    const m = this.m, k = this.p, s = this.pending;
+    const m = this.m, k = this.p, s = this.pending, Sh = KEEPER.shuffle;
     if (s.seq !== m.poss.seq) { this.pending = null; return false; }
     if ((s.wait -= dt) > 0) {
-      k.drive(dt, 0, 0, 0, { face: { x: m.ball.pos.x - k.pos.x, z: m.ball.pos.z - k.pos.z } });
+      const face = { x: m.ball.pos.x - k.pos.x, z: m.ball.pos.z - k.pos.z };
+      if (s.wait > Sh.minWait && !s.claim) {
+        const p = s.plan, gx = this.goalX, back = this.dir;
+        // verso il punto dell'intercetto, mai dietro la linea di porta
+        const tx = back > 0 ? Math.max(p.x, gx + Sh.line) : Math.min(p.x, gx - Sh.line);
+        this.moveTo(dt, tx, clamp(p.z, -GOAL_HW, GOAL_HW), false);
+        if ((s.replan = (s.replan ?? Sh.every) - dt) <= 0) {
+          s.replan = Sh.every;
+          const pl = this.plan();
+          if (pl) { s.plan = pl; s.wait = pl.wait; this.lastPlan = pl; }
+        }
+      } else k.drive(dt, 0, 0, 0, { face });
       return true;
     }
     this.pending = null;
@@ -337,8 +455,12 @@ export class KeeperAI {
     if (m.kickLock && m.kickLock.p === k) return false;
     if (Math.hypot(b.pos.x - k.pos.x, b.pos.z - k.pos.z) > KEEPER.bodyCheck) return false;
     const hands = this.inBox(b.pos.x, b.pos.z);
-    const hit = bodyHit(k, b, hands);
-    if (!hit) return false;
+    const hit = bodyHit(k, b, hands, poss.clock);
+    if (!hit) {
+      const a = k.action;
+      if (hands && a && a.keeper && a.catchable && b.vel.length() < KEEPER.catchSpeed && gathered(k, b)) return this.held(b.vel.length(), 'mani');
+      return false;
+    }
     const n = _n.subVectors(hit.q, hit.c);
     if (n.lengthSq() < 1e-8) n.copy(b.vel).multiplyScalar(-1);
     n.normalize();
@@ -349,14 +471,12 @@ export class KeeperAI {
     if (hit.hand && a && a.keeper && palmsOn(k, b, a.catchable ? KEEPER.palmsCatch[1] : KEEPER.palmsCatch[0])) {
       const holdIt = a.catchable ? speed < KEEPER.catchSpeed * lerp(0.85, 1.1, this.attr)
         : a.dive && speed < KEEPER.diveCatchSpeed && Math.random() < lerp(KEEPER.diveCatch[0], KEEPER.diveCatch[1], this.attr);
-      if (holdIt) {
-        m.gain(k, 'parata');
-        k.holding = true;
-        this.lastTouch = { part: 'mani', result: 'presa', speed };
-        m.note('parata', { k, parte: 'mani', esito: 'presa', velocita: speed, clip: k.avatar.gestureName() || '' });
-        return true;
-      }
+      if (holdIt) return this.held(speed, 'mani');
     }
+    // in una presa la palla che arriva sul corpo (gambe, pancia) con le mani
+    // gia' vicine si raccoglie contro il corpo: un rasoterra a 17 m/s dritto
+    // sui piedi rimbalzava via mentre le mani scendevano
+    if (!hit.hand && a && a.catchable && speed < KEEPER.catchSpeed * lerp(0.85, 1.1, this.attr) && palmsOn(k, b, KEEPER.smother)) return this.held(speed, 'corpo');
     // respinta: rimbalzo sulla parte toccata, mai verso la propria porta
     const vn = v.dot(n);
     if (vn < 0) {
@@ -366,10 +486,27 @@ export class KeeperAI {
     if (hit.hand) v.y += lerp(KEEPER.parryLift[0], KEEPER.parryLift[1], Math.random());
     const toward = -this.dir;
     if (v.x * toward > 0) v.x = -v.x * 0.5;
+    // mai nella propria porta: se la traiettoria della respinta entra fra i
+    // pali, la palla esce in avanti (prima a volte rotolava dentro)
+    for (const s of b.predict(this.path, 1 / 60, 1.2)) {
+      if (s.x * toward < HL) continue;
+      if (Math.abs(s.z) < GOAL_HW + BALL.radius && s.y < GOAL.height + BALL.radius) v.x = -toward * Math.max(KEEPER.parryOut, Math.abs(v.x));
+      break;
+    }
     poss.loose('parata', k);
     m.kickLock = { p: k, t: KEEPER.lock };
-    this.lastTouch = { part: hit.hand ? 'mani' : 'corpo', result: 'respinta', speed };
+    this.lastTouch = { part: hit.hand ? 'mani' : 'corpo', result: 'respinta', speed, seq: poss.seq };
     m.note('parata', { k, parte: this.lastTouch.part, esito: 'respinta', velocita: speed, clip: k.avatar.gestureName() || '' });
+    return true;
+  }
+
+  // Palla trattenuta (con le mani o raccolta contro il corpo).
+  held(speed, part) {
+    const m = this.m, k = this.p;
+    m.gain(k, 'parata');
+    k.holding = true;
+    this.lastTouch = { part, result: 'presa', speed, seq: m.poss.seq };
+    m.note('parata', { k, parte: part, esito: 'presa', velocita: speed, clip: k.avatar.gestureName() || '' });
     return true;
   }
 
@@ -392,7 +529,7 @@ export class KeeperAI {
       this.replan = KEEPER.claimPlan.every;
       const plan = this.plan(libOptions(m.tpl, true), KEEPER.claimPlan);
       if (plan && plan.e < KEEPER.claimPlan.accept) {
-        this.pending = { wait: plan.wait, seq: poss.seq, plan };
+        this.pending = { wait: plan.wait, seq: poss.seq, plan, claim: true };
         this.lastPlan = plan;
         return true;
       }
@@ -519,6 +656,16 @@ export class KeeperAI {
     this.penalty = { guess, real: side };
     this.dive = null;
     this.watch = null;
+  }
+
+  // Perche' e' entrata (evento 'gol' del nastro): il motivo letto al tiro se
+  // la palla e' ancora quella (stesso volo); 'parabile' e' un difetto, il
+  // test di durata lo segnala. Toccata dal portiere: respinta in porta.
+  goalReason() {
+    const m = this.m, s = this.shot;
+    if (s && s.seq === m.poss.seq) return s.saveable ? 'parabile' : s.reason;
+    if (this.lastTouch && this.lastTouch.seq === m.poss.seq) return 'toccata dal portiere';
+    return m.poss.flying ? 'nessun tiro in porta letto (' + (m.poss.kind || '') + ')' : 'palla libera';
   }
 
   // Dopo il gol: si dispera, finito l'eventuale tuffo e quando si e' fermato

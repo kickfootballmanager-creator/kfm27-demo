@@ -50,6 +50,7 @@
     jumpFloor: 0.03,
     frozeBelow: 0.01,
     stepMax: 0.8,
+    saveableMargin: 0.15,        // m: gol su tiro parabile solo oltre questo margine di portata
     // Corpo agganciato alla posizione di gioco: il bacino, in orizzontale,
     // resta entro bodyOff m dall'anello a terra (Player.anchor) e lo scarto
     // cambia al massimo bodyStep m in 1/60 s. Root motion rimasta nelle clip,
@@ -120,6 +121,8 @@
       duels: {}, foulKinds: {}, slideFrom: {}, through: 0, throughDone: 0, throughLost: 0, goalShots: [], replays: 0, kickoffs: 0, kickoffReceived: 0, kickoffWhistled: 0,
       kickFoot: { n: 0, sum: 0, max: 0, over: 0 },
       reacts: {},                // reazioni ai contatti per livello (REACT), con o senza fallo
+      goalWhy: {},               // gol per motivo (KeeperAI.goalReason)
+      saveable: 0, saveableSaved: 0, // tiri in porta parabili per gli attributi (KeeperAI.assess) e quanti non sono entrati
       boneMax: 0,                // rad: la rotazione piu' grande di un osso in un passo
       bodyOff: 0, bodyStep: 0,   // m: scarto bacino-anello piu' grande e sua variazione piu' grande in un passo
       armHinge: 0, armTwist: 0   // gradi: gomito piu' fuori dalla cerniera (piegato) e avambraccio piu' girato
@@ -282,6 +285,14 @@
       const note = m.note.bind(m);
       m.note = (kind, data) => {
         if (kind === 'reazione') { const k = 'livello ' + data.livello; S.stats.reacts[k] = (S.stats.reacts[k] || 0) + 1; }
+        if (kind === 'lettura' && data.parabile) S.stats.saveable++;
+        // un tiro parabile per gli attributi del portiere non deve entrare (skill: Portiere);
+        // al limite (margine sotto saveableMargin) si tollera
+        if (kind === 'gol') {
+          S.stats.goalWhy[data.motivo] = (S.stats.goalWhy[data.motivo] || 0) + 1;
+          const kAI = m.teams[data.squadra === 'home' ? 'away' : 'home'].keeperAI, sh = kAI.shot;
+          if (data.motivo === 'parabile' && sh && sh.margin > T.saveableMargin) S.flag('portiere: gol su un tiro parabile', kAI.p, { margine: +sh.margin.toFixed(2), punto: [+sh.x.toFixed(2), +sh.y.toFixed(2), +sh.z.toFixed(2)], t: +sh.t.toFixed(2) });
+        }
         return note(kind, data);
       };
     }
@@ -762,6 +773,8 @@
       },
       foulKinds: S.stats.foulKinds,
       reacts: S.stats.reacts,
+      goalWhy: S.stats.goalWhy,
+      saveable: S.stats.saveable,
       slideFrom: S.stats.slideFrom,
       goalShots: S.stats.goalShots,
       gestures: S.stats.gestures,

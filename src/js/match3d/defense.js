@@ -1,4 +1,4 @@
-import { PRESS, DUEL, ATTR, PITCH, DRIBBLE, FEINT, RULES, TACKLE, AI, PLAYER } from './config.js';
+import { PRESS, DUEL, ATTR, PITCH, DRIBBLE, FEINT, RULES, TACKLE, AI, PLAYER, FOULACT } from './config.js';
 import { headingOf } from './player.js';
 
 // Difesa stile PES. Pressing tenuto: corsa decisa sul portatore, da vicino
@@ -167,24 +167,28 @@ export function slideWorth(m, p, car) {
   return true;
 }
 
-// Contatto di corsa fra un avversario e il portatore: carica o spinta. Alle
-// spalle e' quasi sempre fallo, di lato a volte, di fronte quasi mai (e'
-// il portatore che va addosso). Si valuta una volta per contatto.
+// Avversario che arriva di corsa sul portatore: alle spalle entra quasi
+// sempre irregolare, di lato a volte, di fronte quasi mai (e' il portatore
+// che va addosso). Si decide una volta per avvicinamento, a FOULACT.start m;
+// chi decide di entrare fa il gesto (gestures.startFoulGesture: spinta,
+// trattenuta, spallata) e il fallo c'e' solo se la mano o la spalla tocca
+// davvero. Il giocatore dell'utente non parte da solo.
 export function bodyContact(m) {
   const car = m.owner;
   if (!RULES.fouls || !car || car.keeper || car.holding || m.phase !== 'play') { m.bodyTouch = null; return; }
-  const C = DUEL.contact, R = 2 * PLAYER.radius + C.gap;
+  const C = DUEL.contact, R = FOULACT.start;
   const seen = m.bodyTouch && m.bodyTouch.car === car ? m.bodyTouch.set : null;
   const now = new Set();
   for (const q of m.teams[m.otherSide(car.team)].players) {
-    if (q.keeper || q.down || q.action) continue;
+    if (q.keeper || q.down || q.action || q.sentOff) continue;
     const dx = car.pos.x - q.pos.x, dz = car.pos.z - q.pos.z, d = Math.hypot(dx, dz);
     if (d > R) continue;
     now.add(q);
     if (seen && seen.has(q)) continue;
     const closing = ((q.vel.x - car.vel.x) * dx + (q.vel.z - car.vel.z) * dz) / (d || 1);
-    if (closing < C.speed) continue;
-    if (Math.random() < C[approach(q, car)] * Math.min(1, closing / C.full) * caution(m, q, car) && m.rules.foul(q, car, { kind: 'carica', ballFirst: false })) break;
+    if (closing < C.speed || (q === m.ctrl && !m.ctrlAuto)) continue;
+    const from = approach(q, car);
+    if (Math.random() < C[from] * Math.min(1, closing / C.full) * caution(m, q, car) && m.startFoulGesture(q, car, from)) break;
   }
   m.bodyTouch = { car, set: now };
 }
