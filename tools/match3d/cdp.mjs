@@ -156,7 +156,12 @@ export function collectErrors(cdp, list) {
       // risorse esterne (font di Google del manager): dipendono dalla rete del
       // PC che fa il test, non dal gioco, che deve funzionare anche offline
       const e = msg.params.entry, url = e.url || (e.text.match(/https?:\/\/\S+/) || [''])[0];
-      if (/Failed to load resource/.test(e.text) && url && !/^https?:\/\/(127\.0\.0\.1|localhost)[:/]/.test(url)) return;
+      const local = (u) => /^https?:\/\/(127\.0\.0\.1|localhost)[:/]/.test(u);
+      if (/Failed to load resource/.test(e.text) && url && !local(url)) return;
+      // foto dei giocatori dal CDN esterno senza CORS: il manager lo gestisce
+      // da solo (052-kfm-sagome, catch), e dipende da come risponde il CDN
+      const target = (e.text.match(/Access to \w+ at '([^']+)'/) || [])[1];
+      if (/blocked by CORS policy/.test(e.text) && target && !local(target)) return;
       list.push('log: ' + e.text.slice(0, 300) + (e.url ? ' ' + e.url : ''));
     }
   });

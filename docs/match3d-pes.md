@@ -72,6 +72,36 @@ la distanza (`PASS.speed*`, 14-26 m/s) e non scende mai sotto quella che serve
 per arrivare. Mentre si carica, l'anello sul compagno si sposta dal vicino al
 lontano.
 
+Il gesto (04/10, replay 4 e 5): in PES un passaggio di lato in corsa si fa
+con l'interno del piede senza girare il corpo, un passaggio all'indietro con
+un giro. Nella libreria Studio33 l'angolo del nome della clip e' la
+direzione del passaggio rispetto a dove guarda il corpo all'inizio
+(Pass_Stand_270 = a destra, 482_Low_Shoot_Stand_180 = all'indietro; lo
+conferma lo slancio del piede al contatto). `anim-pick.kickDir` lo legge e la
+scelta per corrispondenza confronta quella direzione con la direzione voluta
+(prima confrontava la rotazione della radice al contatto, che in quelle clip e'
+zero: per un passaggio in avanti uscivano clip di lato o all'indietro). Durante
+il calcio il corpo gira come la radice della clip, non verso il bersaglio
+(`main.stepAction`): al contatto la palla parte dove la calcia il piede, entro
+2-7 gradi nella prova a quattro direzioni (prima 51-73 gradi).
+
+## Ricezione e primo tocco
+
+- In PES la ricezione e' automatica; R2 + levetta mentre arriva la palla
+  ammortizza e orienta il controllo, R3 la alza. Il giocatore guarda la palla
+  e la controlla col piede, la coscia o il petto secondo l'altezza.
+
+Da noi (`main.startTrap`, numeri in `RECEIVE`): il destinatario la controlla
+quando gli arriva al corpo (`capture` 0,6 m, o nel punto piu' vicino se gli
+passa accanto entro 1,25 m), fino a 1,9 m d'altezza. La clip di stop
+(scelta per altezza, velocita' e rotazione) gira il corpo come la sua radice e
+la palla va, con la fisica, dove la clip la lascia (Ball_Bone alla fine,
+`ballEnd`) o nella direzione della levetta nel primo tocco orientato: rispetto
+al giocatore la velocita' cala come e^(-6 t) (tocco smorzato), e una palla alta
+cade col suo peso e rimbalza. Prima la conduzione la tirava a terra in un
+fotogramma (da 1,56 m) e le girava attorno al giocatore fermo: ora, quasi
+fermo, e' il giocatore a girarsi verso la palla.
+
 ## Filtrante
 
 - Triangolo: palla rasoterra davanti al compagno, non ai suoi piedi. Le guide
@@ -79,15 +109,27 @@ lontano.
   quanto la palla va avanti nello spazio.
 - L1 + Triangolo: filtrante alto sopra la difesa (non lo facciamo).
 
-Da noi: `THROUGH.lead` passa da 4 a 16 metri davanti alla corsa del compagno
-con la potenza; la palla arriva lenta nello spazio (`THROUGH.arrive`).
+- PES Mastery (passaggi): il filtrante va mirato a un punto davanti al
+  compagno, non a lui, e funziona solo se il compagno corre in avanti; le corse
+  le lancia l'IA o il giocatore (L1 + levetta destra).
 
-Chi riceve il filtrante (`main.runOnto`) corre nello spazio, non verso la
-palla: sulla traiettoria prevista sceglie il primo punto davanti a lui dove
-arriva insieme al pallone correndo ad almeno il 60% della sua velocita'
-massima, e ci va a quella velocita'. Non arriva prima per poi fermarsi ad
-aspettare, prende la palla in corsa. Il test di durata segnala il ricevente
-fermo con la palla ancora lontana.
+Da noi: `THROUGH.lead` passa da 4 a 16 metri davanti alla corsa del compagno
+con la potenza. Il punto e la velocita' della palla sono calcolati perche'
+palla e compagno ci arrivino insieme (`player.throughPoint`): il tempo del
+compagno (`player.runTime`) conta la sua accelerazione e solo la velocita' che
+ha in quella direzione (se va dall'altra parte prima si ferma). Con la palla
+che non puo' arrivare con lui (troppo vicino per 26 m/s, o troppo lontano per
+12 m/s) il punto va piu' avanti finche' i tempi coincidono. Come in PES chi
+riceve parte gia' al comando (goRun).
+
+Chi riceve il filtrante (`main.runOnto`) corre nello spazio in corsa piena:
+se la palla gli arriva da dietro continua a correre e lei lo raggiunge nel
+primo punto in cui lui non e' piu' in anticipo; se la palla e' davanti va al
+primo punto che raggiunge. Mai indietro lungo la strada della palla. Prima
+sceglieva il primo punto raggiungibile al 60% della velocita' e frenava
+proprio al passaggio (da 8,4 a 3,3 m/s): la palla gli scappava e la prendeva
+il portiere. Nella prova da centrocampo a un attaccante 20 m avanti: prima 1
+filtrante ricevuto su 3, ora 3 su 3, tutti in corsa.
 
 Inserimenti a tempo (`team-ai.runner`, numeri in `AI.run`): ogni pochi
 secondi uno o due attaccanti si mettono sulla linea del fuorigioco, 1,8 m
@@ -270,10 +312,21 @@ controlla posizioni, due giocatori al centro e che il compagno riceva.
   deve ricevere: con la levetta sinistra chi batte si orienta, e lancia dove
   guarda. Tre tipi: corta, filtrante e lunga; dalle versioni con la barra di
   potenza la distanza dipende da quanto si tiene premuto il tasto.
-- Da noi: durante l'attesa chi batte tiene la palla al petto con le due mani e
-  si gira con i giri sul posto della libreria, verso la levetta (utente) o
-  verso il compagno scelto (IA), al massimo 80 gradi dalla perpendicolare alla
-  linea. Poi la clip della rimessa parte nella direzione in cui guarda.
+- Comandi del portiere e delle rimesse in PES 2021 (FIFPlay): X lancio corto,
+  Triangolo nello spazio, Cerchio lungo.
+- Da noi: durante l'attesa chi batte tiene la palla al petto con le due mani
+  (anche nei giri sul posto: prima la clip del giro gli metteva la palla fra le
+  mani lungo i fianchi, 6 cm dal bacino) e si gira verso la levetta (utente) o
+  verso il compagno scelto (IA), al massimo 69 gradi dalla perpendicolare alla
+  linea. Mentre si gira fa i passi che servono perche' la rincorsa della clip
+  finisca coi piedi sulla linea (`rules.throwStart`); la rincorsa si allunga o
+  si accorcia quanto serve. La palla parte sopra il campo e dove guarda chi
+  batte: verso il compagno in un cono di 26 gradi, altrimenti nello spazio
+  (`RULES.throwIn.spaceShort/spaceLong`). Prima il rilascio cadeva 40 cm fuori
+  e la rimessa tornava subito agli avversari, e senza compagni davanti la palla
+  andava al piu' libero di tutto il campo (replay 2: lancio a sinistra, palla a
+  destra). La levetta conta solo tenuta: mollandola, il ritorno al centro non
+  cambia la mira. Premuto mentre si gira, il lancio parte appena e' girato.
   Passaggio e filtrante giocano corto, cross e tiro lungo, come prima.
 
 ## Fonti
@@ -290,6 +343,10 @@ controlla posizioni, due giocatori al centro e che il compagno riceva.
 - Comandi PES 2021, schema predefinito: https://www.fifplay.com/pes-2021-controls/
 - PES Mastery, punizioni: https://pesmastery.com/pes-free-kick-tutorial/
 - PES Mastery, rimessa laterale: https://pesmastery.com/throw-in/
+- PES Mastery, passaggi, filtrante e ricezione (R2 + levetta): https://pesmastery.com/pes-passing-tutorial/
+- PES Mastery, difesa (Stand Off con X e levetta, R1 + X, contrasto con X due volte): https://pesmastery.com/pes-defending-tutorial/
+- PES Mastery, difesa in eFootball (Match-up, spallata): https://pesmastery.com/efootball-defending-tutorial/
+- Manuale Konami PES 2019 (Pressure, Chase Down, Jockey, Tackle): https://dds.konami.com/games/manual/pes2019/PS4/en/control_player.html
 - Discussione Steam sull'arbitro di PES 2020/2021: https://steamcommunity.com/app/996470/discussions/0/2518023667588674849/
 - IFAB, vantaggio: https://www.footballrules.com/offences-sanctions/advantage/
 - IFAB, Regola 8 (calcio d'inizio): https://www.theifab.com/laws/latest/the-start-and-restart-of-play/

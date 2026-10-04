@@ -259,6 +259,7 @@ export class Ball {
     this.qPrev = new THREE.Quaternion();
     this.scored = 0;      // +1 porta a destra (x>0), -1 porta a sinistra
     this.out = false;
+    this.entering = 0;    // rimessa che entra dal lato +1 o -1 (z): non e' fuori
     this.frame = this._frame();
 
     this.mesh = new THREE.Mesh(
@@ -306,6 +307,7 @@ export class Ball {
     this.qPrev.copy(this.q);
     this.scored = 0;
     this.out = false;
+    this.entering = 0;
   }
 
   get live() { return !this.scored && !this.out; }
@@ -371,8 +373,16 @@ export class Ball {
   // limita a gol, fuori e cartelloni.
   carry(x, z, vx, vz, dt = 0) {
     this.prev.copy(this.pos);
-    this.pos.set(x, BALL.radius, z);
-    this.vel.set(vx, 0, vz);
+    // in altezza la palla resta fisica: appena presa in aria cade col suo peso
+    // e rimbalza, mai a terra in un fotogramma (da 1,56 m a terra, replay 4)
+    let y = this.pos.y, vy = this.vel.y;
+    if (dt > 0 && (y > BALL.radius + 1e-3 || vy > 0)) {
+      vy -= BALL.gravity * dt;
+      y += vy * dt;
+      if (y <= BALL.radius) { y = BALL.radius; vy = -vy > BALL.carryBounce ? -vy * BALL.restitution : 0; }
+    } else { y = BALL.radius; vy = 0; }
+    this.pos.set(x, y, z);
+    this.vel.set(vx, vy, vz);
     this.spin = 0;
     // al piede rotola: v / r attorno all'asse orizzontale perpendicolare alla corsa
     this.w.set(vz / BALL.radius, this.w.y * 0.8, -vx / BALL.radius);
@@ -460,10 +470,13 @@ export class Ball {
     if (!this.live) return;
     const p = this.pos, r = BALL.radius;
     const ax = Math.abs(p.x);
+    // rimessa appena lanciata (rules.throwIn): finche' entra dal suo lato non e'
+    // fuori; dentro del tutto torna la regola normale
+    if (this.entering && (Math.abs(p.z) + r < HW || this.vel.z * this.entering > 0)) this.entering = 0;
     if (ax - r > GOAL_LINE_OUT) {
       if (Math.abs(p.z) < GOAL_HW && p.y < GOAL.height) this.scored = Math.sign(p.x);
       else this.out = true;
-    } else if (Math.abs(p.z) - r > HW + PITCH.lineWidth / 2) {
+    } else if (Math.abs(p.z) - r > HW + PITCH.lineWidth / 2 && !this.entering) {
       this.out = true;
     }
   }

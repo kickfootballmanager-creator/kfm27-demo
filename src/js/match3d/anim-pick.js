@@ -59,6 +59,34 @@ export function roleClips(tpl, role) {
   return tpl.lib ? tpl.lib.role(role) : [];
 }
 
+// Direzione in cui la clip calcia la palla, rispetto a dove guarda il corpo
+// all'inizio della clip (rad, + sinistra). Nella libreria Studio33 l'angolo
+// del nome e' proprio questo (Pass_Stand_270 = passaggio a destra, 482_Low_
+// Shoot_Stand_180 = tiro all'indietro): lo conferma lo slancio del piede al
+// contatto in tutte le clip dove il piede va veloce. Prima si sceglieva la
+// clip con la rotazione della radice al contatto, che in quelle clip e' zero
+// (il corpo si gira dopo): per un passaggio in avanti uscivano clip di
+// passaggio di lato o all'indietro, e per il tiro uno slancio che sembrava un
+// pallonetto (replay 4, 5 e 7 del 04/10). Copie specchiate (_Lfoot): angolo
+// opposto. Senza angolo nel nome: la rotazione della radice al contatto (il
+// corpo si gira e calcia davanti a se').
+const ANGLE = { 0: 0, 45: 45, 90: 90, 135: 135, 180: 180, 225: -135, 270: -90, 315: -45 };
+const KD = new Map();
+export function kickDir(tpl, name) {
+  if (KD.has(name)) return KD.get(name);
+  const toks = name.replace(/^\d+_/, '').split('_');
+  let deg = null;
+  for (let i = toks.length - 1; i >= 0 && deg === null; i--) {
+    const m = /^(0|45|90|135|180|225|270|315)[LR]?$/.exec(toks[i]);
+    if (m) deg = ANGLE[m[1]];
+  }
+  const c = tpl.meta[name] && tpl.meta[name].ev && tpl.meta[name].ev.contact;
+  let d = deg === null ? (c ? rootAt(tpl, name, c.t).yaw : 0) : deg * Math.PI / 180;
+  if (deg !== null && /Lfoot/.test(name)) d = -d;
+  KD.set(name, d);
+  return d;
+}
+
 // Calcio da fermo: la radice della clip non si sposta attorno al contatto.
 export function kickStill(tpl, name) {
   const m = tpl.meta[name], c = m && m.ev && m.ev.contact;
@@ -89,9 +117,7 @@ export function pickKick(tpl, p, K, want) {
     // il gesto deve stare nel tempo del gioco: partenza fra contatto - lead*rate
     const lo = Math.max(0, contact - want.lead * R[1]), hi = Math.max(0, contact - want.lead * R[0]);
     if (hi <= 0 && contact > want.lead * R[1]) return Infinity;
-    const yaw = rootAt(tpl, e.name, contact).yaw;
-    let cost = M.turn * Math.abs(wrapA(yaw - want.turn));
-    cost += M.side * Math.abs(c.ball[0] * tpl.scale - want.ballLeft);
+    let cost = M.side * Math.abs(c.ball[0] * tpl.scale - want.ballLeft);
     cost += M.power * Math.abs(tr.power - want.power);
     if (want.ballY !== undefined) cost += M.height * Math.abs(Math.max(0.1, c.ball[1] * tpl.scale) - Math.max(0.1, want.ballY));
     if (K.role === 'long') cost += M.lob * (tr.lob === !!want.lob ? 0 : 1);
@@ -102,6 +128,9 @@ export function pickKick(tpl, p, K, want) {
       t0 = pm.t;
       cost += M.pose * pm.cost;
     }
+    // la palla parte dove la calcia la clip, rispetto al corpo nel fotogramma
+    // da cui la clip parte: quella direzione deve essere la direzione voluta
+    cost += M.kick * Math.abs(wrapA(kickDir(tpl, e.name) - rootAt(tpl, e.name, t0).yaw - want.turn));
     cost += M.speed * Math.abs(rootSpeed(tpl, e.name, t0) - want.speed);
     // meglio una clip che resta vicina alla sua velocita' naturale
     cost += M.rate * Math.abs(Math.log(clamp((contact - t0) / Math.max(0.01, want.lead), 0.2, 5)));
@@ -118,7 +147,10 @@ export function pickKick(tpl, p, K, want) {
   const e = res.entry, contact = e.meta.ev.contact.t;
   pickFrom = e._t0;
   const rate = clamp((contact - pickFrom) / Math.max(0.01, want.lead), R[0], R[1]);
-  return { clip: e.name, from: pickFrom, rate, contact, foot: e.meta.ev.contact.foot };
+  // dir: dove calcia rispetto al corpo all'inizio (fotogramma from); yaw0: la
+  // rotazione della radice li', per far girare il corpo come la clip (main.stepAction)
+  const yaw0 = rootAt(tpl, e.name, pickFrom).yaw;
+  return { clip: e.name, from: pickFrom, rate, contact, foot: e.meta.ev.contact.foot, dir: wrapA(kickDir(tpl, e.name) - yaw0), yaw0 };
 }
 
 // In corsa solo clip che entrano in corsa, da fermi solo clip da fermi (se
@@ -143,7 +175,11 @@ export function pickTrap(tpl, p, want) {
     if (tr.run !== want.speed > 2.5) cost += M.inPlace;
     return cost;
   });
-  return res ? { clip: res.entry.name, cost: res.cost } : null;
+  if (!res) return null;
+  const ev = res.entry.meta.ev, s = tpl.scale;
+  // ballEnd: dove la clip lascia la palla (x sinistra, y, z avanti, rispetto
+  // alla radice alla fine), yawEnd: quanto gira il corpo
+  return { clip: res.entry.name, cost: res.cost, ballEnd: ev.ballEnd ? ev.ballEnd.map((v) => v * s) : null, yawEnd: ev.yawEnd || 0 };
 }
 
 // Intercetto (palla avversaria presa al volo): la clip con la palla dalla

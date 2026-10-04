@@ -1,9 +1,9 @@
-import { RULES, PITCH, BALL, CONTROL, PASS, FOUL, ADVANTAGE, FK, REPLAY, REACT } from './config.js';
-import { headingOf, choosePass, freeness } from './player.js';
+import { RULES, PITCH, BALL, CONTROL, FOUL, ADVANTAGE, FK, REPLAY, REACT } from './config.js';
+import { headingOf, choosePass } from './player.js';
 import { rollSpeedFor } from './ball.js';
 import { rootAction, react } from './gestures.js';
 import { whistle } from './audio.js';
-import { clipDuration } from './avatar.js';
+import { clipDuration, rootAt } from './avatar.js';
 
 // Fasi della partita: kickoff (calcio d'inizio), play, restart (rimessa,
 // angolo, rinvio, punizione, rigore), out, foul (fischio di un fallo o di un
@@ -138,12 +138,12 @@ export class Rules {
     const fx = -spot.x, fz = -spot.z * (type === 'throw' ? 3 : 1), fl = Math.hypot(fx, fz) || 1;
     const h = type === 'throw' ? headingOf(0, -Math.sign(spot.z)) : headingOf(fx / fl, fz / fl);
     b.reset(spot.x, spot.z);
-    if (type === 'throw') {
-      // fuori dal campo di quanto la rincorsa della clip lo riporta sulla linea
-      taker.place(spot.x, spot.z + Math.sign(spot.z) * RULES.throwIn.outside, h);
-    } else {
-      taker.place(spot.x - Math.sin(h) * 0.55, spot.z - Math.cos(h) * 0.55, h);
-    }
+    // rimessa: fuori dal campo di quanto la rincorsa della clip lo porta fino
+    // al rilascio, coi piedi sulla linea (throwStart): la palla parte sopra il
+    // campo. Con 2,3 m fissi il rilascio cadeva 40 cm fuori e la rimessa
+    // tornava subito fuori (replay 2 del 04/10)
+    if (type === 'throw') { const st = this.throwStart({ spot, aim: h }); taker.place(st.x, st.z, h); }
+    else taker.place(spot.x - Math.sin(h) * 0.55, spot.z - Math.cos(h) * 0.55, h);
     m.gain(taker, { throw: 'rimessa', corner: "calcio d'angolo", goalkick: 'rinvio' }[type]);
     taker.holding = type === 'throw';
     this.set = { type, side, taker, spot, ready: true };
@@ -155,7 +155,8 @@ export class Rules {
       Object.assign(this.set, { h0: h, aim: h });
       if (side !== m.userSide || m.auto) {
         this.set.aimPower = 0.2 + Math.random() * 0.75;
-        this.set.aimTo = this.throwTarget(taker, 'auto', taker.dirX, taker.dirZ, this.set.aimPower);
+        // fra i compagni verso cui puo' girarsi (turnMax dalla perpendicolare)
+        this.set.aimTo = this.throwTarget(taker, 'auto', taker.dirX, taker.dirZ, this.set.aimPower, RULES.throwIn.turnMax);
       }
     }
     if (side === m.userSide && !taker.keeper) m.setControlled(taker);
@@ -232,8 +233,14 @@ export class Rules {
     const aiming = s.fk && (s.fk.mode === 'direct' || s.fk.mode === 'penalty');
     if (user && aiming) m.setpieces.aim(dt, inp);
     if (user && m.charging) return;
-    // rimessa dell'IA: si lancia girati verso il compagno (aimThrow)
-    const facing = s.type !== 'throw' || user || Math.abs(Math.atan2(Math.sin(p.heading - s.aim), Math.cos(p.heading - s.aim))) < RULES.throwIn.aimTol || this.t > RULES.throwIn.aimWait;
+    // rimessa chiesta dall'utente prima di essere girato e al posto: parte ora
+    if (s.type === 'throw' && s.queued) {
+      s.queued.t += dt;
+      if (this.throwReady(p) || s.queued.t > RULES.throwIn.alignWait) { const q = s.queued; s.queued = null; this.throwIn(p, q.kind, q.inp, q.power); }
+      return;
+    }
+    // rimessa dell'IA: si lancia girati verso il compagno e al posto (aimThrow)
+    const facing = s.type !== 'throw' || user || this.throwReady(p) || this.t > RULES.throwIn.aimWait;
     if (facing && this.t > (user ? (aiming ? FK.userWait : RULES.userWait) : RULES.aiTake)) this.take('auto', s.aimPower ?? 0.2 + Math.random() * 0.75, null);
   }
 
@@ -242,7 +249,12 @@ export class Rules {
     const m = this.m, s = this.set, p = s.taker;
     const short = btn === 'pass' || btn === 'through';
     if (s.type === 'kickoff') this.kickoffTap(p);
-    else if (s.type === 'throw') this.throwIn(p, btn === 'auto' ? 'auto' : short ? 'short' : 'long', inp, power);
+    else if (s.type === 'throw') {
+      const kind = btn === 'auto' ? 'auto' : short ? 'short' : 'long';
+      // l'utente ha premuto mentre si girava: il lancio aspetta la fine del giro
+      if (btn !== 'auto' && !this.throwReady(p)) s.queued = { kind, inp, power, t: 0 };
+      else this.throwIn(p, kind, inp, power);
+    }
     else if (s.type === 'goalkick') m.startKick(p, 'cross', 0.8, { mag: 1, x: m.dirOf(p.team), z: 0 });
     else if (s.type === 'penalty') m.setpieces.penaltyShot(p, btn === 'auto' ? 0.55 + Math.random() * 0.33 : power, inp, btn === 'auto');
     else if (s.type === 'freekick') this.freeKickTake(p, btn, power, inp);
@@ -284,39 +296,78 @@ export class Rules {
 
   // Rimessa laterale: rincorsa della clip fino alla linea, palla lasciata al fotogramma misurato.
   // Compagno a cui va la rimessa nella direzione (ax, az), entro la portata del tipo.
-  throwTarget(p, kind, ax, az, power) {
+  // Solo nel cono `cone` attorno alla direzione: senza nessuno li' la rimessa
+  // va nello spazio (null). Prima si ripiegava sul compagno piu' libero di
+  // tutto il campo, e la palla partiva a 76 gradi da dove il giocatore era
+  // girato (replay 2 del 04/10: lancio a sinistra, palla a destra).
+  throwTarget(p, kind, ax, az, power, cone = RULES.throwIn.cone) {
     const m = this.m, T = RULES.throwIn;
     const mates = m.teams[p.team].players, opp = m.teams[m.otherSide(p.team)].players;
-    let to = choosePass(p, ax, az, mates.filter((q) => !q.keeper && Math.hypot(q.pos.x - p.pos.x, q.pos.z - p.pos.z) < (kind === 'long' ? T.longMax : T.shortMax)), opp, PASS.coneNoStick, power);
-    if (!to) {
-      let best = -1;
-      for (const q of mates) { if (q === p || q.keeper) continue; const f = freeness(q.pos.x, q.pos.z, opp) - Math.hypot(q.pos.x - p.pos.x, q.pos.z - p.pos.z) / 40; if (f > best) { best = f; to = q; } }
-    }
-    return to;
+    const near = mates.filter((q) => !q.keeper && !q.sentOff && !q.down && Math.hypot(q.pos.x - p.pos.x, q.pos.z - p.pos.z) < (kind === 'long' ? T.longMax : T.shortMax));
+    return choosePass(p, ax, az, near, opp, cone, power) || null;
   }
 
   // Rimessa, come in PES: prima del lancio chi batte si gira verso dove la
   // mandera' (giri sul posto della libreria, palla al petto). L'utente mira
   // con la levetta, l'IA verso il compagno scelto; mai oltre T.turnMax dalla
   // perpendicolare alla linea.
+  // Mentre si gira fa i passi che servono perche' la rincorsa della clip, che
+  // va dove guarda, finisca coi piedi sulla linea: girato lungo la linea la
+  // rincorsa non entrava in campo e il rilascio cadeva 1,4 m fuori.
   aimThrow(dt, p, inp) {
     const s = this.set, T = RULES.throwIn;
     let h = s.aim;
-    if (inp && inp.mag > 0.3) h = Math.atan2(inp.x, inp.z);
-    else if (s.aimTo && !s.aimTo.sentOff) h = Math.atan2(s.aimTo.pos.x - p.pos.x, s.aimTo.pos.z - p.pos.z);
+    // la levetta conta solo tenuta: mollandola torna al centro passando per
+    // altre direzioni (in tastiera un tasto si scarica prima dell'altro) e la
+    // mira scappava di 24 gradi proprio prima del lancio
+    const mag = inp ? inp.mag : 0, falling = mag < (s.stickMag || 0) - 0.01;
+    s.stickMag = mag;
+    if (inp && mag > T.aimStick && !falling) h = Math.atan2(inp.x, inp.z);
+    else if (!inp && s.aimTo && !s.aimTo.sentOff) h = Math.atan2(s.aimTo.pos.x - p.pos.x, s.aimTo.pos.z - p.pos.z);
     s.aim = s.h0 + clamp(Math.atan2(Math.sin(h - s.h0), Math.cos(h - s.h0)), -T.turnMax, T.turnMax);
-    p.drive(dt, 0, 0, 0, { face: { x: Math.sin(s.aim), z: Math.cos(s.aim) } });
+    const st = this.throwStart(s);
+    const dx = st.x - p.pos.x, dz = st.z - p.pos.z, d = Math.hypot(dx, dz);
+    if (d > T.stepTol) p.drive(dt, dx, dz, Math.min(T.stepMag, d), { face: { x: Math.sin(s.aim), z: Math.cos(s.aim) } });
+    else p.drive(dt, 0, 0, 0, { face: { x: Math.sin(s.aim), z: Math.cos(s.aim) } });
+  }
+
+  // Da dove parte la rincorsa per la mira attuale: il rilascio sul punto della
+  // rimessa, coi piedi lineGap oltre la linea.
+  throwStart(s) {
+    const T = RULES.throwIn, side = Math.sign(s.spot.z) || 1;
+    if (s.run === undefined) s.run = Math.max(0, rootAt(this.m.tpl, T.clip, T.release).a - rootAt(this.m.tpl, T.clip, T.from).a);
+    const fx = Math.sin(s.aim), fz = Math.cos(s.aim);
+    return { x: s.spot.x - fx * s.run, z: side * (HW + T.lineGap) - fz * s.run };
+  }
+
+  // Girato verso la mira e al suo posto: si puo' lanciare.
+  throwReady(p) {
+    const s = this.set, T = RULES.throwIn, st = this.throwStart(s);
+    return Math.abs(Math.atan2(Math.sin(p.heading - s.aim), Math.cos(p.heading - s.aim))) < T.aimTol && Math.hypot(st.x - p.pos.x, st.z - p.pos.z) < T.stepTol * 2;
   }
 
   throwIn(p, kind, inp, power = 0.3) {
     const m = this.m, T = RULES.throwIn, s = this.set;
-    // nella direzione in cui guarda (si e' girato prima, aimThrow) o della
-    // levetta; l'IA al compagno verso cui si e' girata
-    const ax = inp && inp.mag > 0 ? inp.x : p.dirX, az = inp && inp.mag > 0 ? inp.z : p.dirZ;
-    const to = !inp && s && s.aimTo && !s.aimTo.sentOff && !s.aimTo.down ? s.aimTo : this.throwTarget(p, kind, ax, az, power);
+    // Come in PES: nella direzione in cui guarda (si e' girato prima con la
+    // levetta o verso il compagno, aimThrow). Mai la levetta letta alla
+    // pressione: mollandola tornava indietro di lato (1, 0 a 0,26) e la palla
+    // partiva da quella parte. L'IA al compagno verso cui si e' girata, se e'
+    // ancora davanti a lei.
+    const ax = p.dirX, az = p.dirZ;
+    const aimed = !inp && s && s.aimTo && !s.aimTo.sentOff && !s.aimTo.down ? s.aimTo : null;
+    const inFront = aimed && Math.acos(clamp(((aimed.pos.x - p.pos.x) * ax + (aimed.pos.z - p.pos.z) * az) / (Math.hypot(aimed.pos.x - p.pos.x, aimed.pos.z - p.pos.z) || 1), -1, 1)) < T.cone;
+    const to = inFront ? aimed : this.throwTarget(p, kind, ax, az, power);
     const hold = (T.end - T.from) / T.rate;
     if (!p.avatar.resume(T.clip, T.rate, hold)) p.avatar.playOnce(T.clip, T.from, hold, T.rate);
+    // la rincorsa si allunga o si accorcia quanto serve perche' al rilascio i
+    // piedi siano sulla linea, da dove si trova davvero (non sempre e' finito
+    // di sistemarsi): continua, nessuno scatto
+    const side = Math.sign(s.spot.z) || 1, inward = -side * az;
+    const run = s.run ?? Math.max(0, rootAt(m.tpl, T.clip, T.release).a - rootAt(m.tpl, T.clip, T.from).a);
+    const need = inward > 0.2 ? (side * p.pos.z - (HW + T.lineGap)) / inward : run;
+    const scaleA = run > 0.2 ? clamp(need / run, T.runScale[0], T.runScale[1]) : 1;
     p.action = rootAction(m, p, T.clip, T.from, T.end, T.rate, {
+      scaleA,
       events: [{ at: T.release - T.from, fn: () => {
         // la palla lascia le mani dove l'ha tenuta l'ultimo disegno
         const b = m.ball, h = p.avatar.heldAt;
@@ -324,8 +375,15 @@ export class Rules {
         p.throwHold = false;
         p.inPlaceMin = undefined;
         b.hold(h.x, Math.max(1.2, h.y), h.z);
-        if (to) b.lobTo(to.pos.x + to.vel.x * 0.6, to.pos.z + to.vel.z * 0.6, Math.max(b.pos.y, 1.8) + (kind === 'long' ? T.longApex : T.shortApex));
-        else b.kick(p.dirX * 10, 3, p.dirZ * 10);
+        const apex = Math.max(b.pos.y, 1.8) + (kind === 'long' ? T.longApex : T.shortApex);
+        if (to) b.lobTo(to.pos.x + to.vel.x * 0.6, to.pos.z + to.vel.z * 0.6, apex);
+        else {
+          // nessuno davanti: nello spazio dove guarda, lontano quanto la potenza
+          const [d0, d1] = kind === 'long' ? T.spaceLong : T.spaceShort, d = d0 + (d1 - d0) * clamp(power, 0, 1);
+          b.lobTo(b.pos.x + ax * d, clamp(b.pos.z + az * d, -HW + 1, HW - 1), apex);
+        }
+        // fuori di pochi centimetri al rilascio (mani sopra la linea): entra, non e' fuori
+        b.entering = Math.sign(p.pos.z) || 1;
         m.poss.fly('rimessa', p, to || null);
         m.note('rimessa', { p, a: to || null, tipo: kind, busto: p.heading });
         m.noOffsideSeq = m.poss.seq;

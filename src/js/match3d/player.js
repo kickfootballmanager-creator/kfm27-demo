@@ -4,7 +4,7 @@ import { playerParams } from './attributes.js';
 import { Avatar } from './avatar.js';
 import { Locomotion } from './anim.js';
 import { pickTransition, stopTime, rootPath, distAt, timeAtDist, timeAtSpeed } from './anim-pick.js';
-import { rollSpeedFor, rollTime, loftFor } from './ball.js';
+import { rollSpeedFor, rollSpeedIn, rollTime, loftFor } from './ball.js';
 
 const HL = PITCH.length / 2;
 const HW = PITCH.width / 2;
@@ -529,8 +529,26 @@ export function passSpeed(d, power, press = 0) {
 }
 
 // Filtrante: arriva nello spazio alla velocita' voluta, piu' veloce se piu' lontano.
-export function throughSpeed(d, power) {
+export function throughSpeed(d, power, t) {
+  // con il tempo del compagno (throughPoint): arriva sul punto insieme a lui
+  if (t > 0 && Number.isFinite(t)) return clamp(rollSpeedIn(d, t), THROUGH.speedMin, THROUGH.speedMax);
   return clamp(rollSpeedFor(d, lerp2(THROUGH.arrive, power)), THROUGH.speedMin, THROUGH.speedMax);
+}
+
+// Secondi che `m` impiega a correre `dist` metri al massimo verso (dx, dz),
+// partendo da come si muove (accelerazione dagli attributi): conta solo la
+// velocita' in quella direzione, e se va dall'altra parte prima si ferma.
+// Senza direzione, quella della sua corsa.
+export function runTime(m, dist, dx, dz) {
+  const vmax = m.params.maxSpeed, a = m.params.accel || vmax;
+  const l = Math.hypot(dx || 0, dz || 0);
+  let v0 = l > 1e-6 ? (m.vel.x * dx + m.vel.z * dz) / l : Math.min(vmax, m.speed || 0);
+  let t0 = 0;
+  if (v0 < 0) { t0 = -v0 / a; dist += v0 * v0 / (2 * a); v0 = 0; }
+  v0 = Math.min(vmax, v0);
+  const ta = (vmax - v0) / a, da = v0 * ta + 0.5 * a * ta * ta;
+  if (dist <= da) return t0 + (-v0 + Math.sqrt(v0 * v0 + 2 * a * dist)) / a;
+  return t0 + ta + (dist - da) / vmax;
 }
 
 // Chi e' a terra o impegnato in un tuffo non riceve passaggi.
@@ -567,18 +585,26 @@ const throughX = (x, dir) => clampX(dir * Math.min(dir * x, HL - THROUGH.goalGap
 
 // Punto del filtrante: `lead` metri davanti alla corsa del compagno, ma mai
 // dietro a dove sara' quando arriva la palla.
+// Come in PES la potenza decide quanto lontano nello spazio: il punto e'
+// `lead` metri (fra THROUGH.lead con la potenza) davanti al compagno, nella
+// sua corsa. `t`: secondi che il compagno, in corsa piena da come si muove
+// adesso (runTime), impiega ad arrivarci; la velocita' della palla
+// (throughSpeed) li fa coincidere. Se la palla non puo' arrivare con lui
+// (troppo vicino per speedMax, o speedMin la fa arrivare prima) il punto va
+// piu' avanti, dove il compagno, piu' lento della palla, recupera la differenza.
 export function throughPoint(from, m, power) {
   const run = runDirection(m);
-  const lead = lerp2(THROUGH.lead, power);
-  const sp = Math.hypot(m.vel.x, m.vel.z);
-  let L = lead;
-  for (let i = 0; i < 2; i++) {
+  let L = lerp2(THROUGH.lead, power), t = 0;
+  for (let i = 0; i < 8; i++) {
     const tx = m.pos.x + run.x * L, tz = m.pos.z + run.z * L;
+    t = runTime(m, L, run.x, run.z);
     const d = Math.hypot(tx - from.pos.x, tz - from.pos.z);
-    const t = rollTime(throughSpeed(d, power), d);
-    L = Math.max(lead, sp * (Number.isFinite(t) ? t : 2) + lead * 0.5);
+    const v = throughSpeed(d, power, t), tb = rollTime(v, d);
+    if (!Number.isFinite(tb) || Math.abs(tb - t) < 0.05) break;
+    L += Math.abs(tb - t) * m.params.maxSpeed * 0.8;
   }
-  return { tx: throughX(m.pos.x + run.x * L, from.attackDir), tz: clampZ(m.pos.z + run.z * L) };
+  const tx = throughX(m.pos.x + run.x * L, from.attackDir), tz = clampZ(m.pos.z + run.z * L);
+  return { tx, tz, t: runTime(m, Math.hypot(tx - m.pos.x, tz - m.pos.z), tx - m.pos.x, tz - m.pos.z) };
 }
 
 // Dove corre il compagno: la sua corsa se va in avanti, altrimenti verso la

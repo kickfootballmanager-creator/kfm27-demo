@@ -5,7 +5,7 @@ import { Ball, shadowTexture, aimWithSpin, rollSpeedIn } from './ball.js';
 import { BroadcastCamera } from './camera.js';
 import { Hud } from './hud.js';
 import { Controls, glyph } from './controls.js';
-import { buildTeam, separate, choosePass, passAim, shotVelocity, pressure, chooseThrough, chooseCross, loftError, headingOf, passSpeed, throughSpeed, throughPoint } from './player.js';
+import { buildTeam, separate, choosePass, passAim, shotVelocity, pressure, chooseThrough, chooseCross, loftError, headingOf, passSpeed, throughSpeed, throughPoint, runTime } from './player.js';
 import { loadPlayerModel, kitMaterial, rootAt, clipDuration, attachLibrary } from './avatar.js';
 import { pickKick, pickTrap, pickIntercept, kickStill } from './anim-pick.js';
 import { Possession } from './possession.js';
@@ -1149,6 +1149,8 @@ class Match {
       const c = chooseThrough(p, ax, az, mates, opp, power);
       a.target = given ? inp.to : c.mate;
       a.spot = { tx: c.tx, tz: c.tz };
+      // come in PES chi riceve il filtrante parte gia' al comando, verso lo spazio
+      if (a.target && !a.target.keeper) this.teams[a.target.team].ai.goRun(a.target);
     } else if (kind === 'cross') {
       const c = chooseCross(p, ax, az, mates, opp, power);
       a.target = c.mate;
@@ -1182,6 +1184,14 @@ class Match {
     if (pick) p.avatar.playOnce(pick.clip, pick.from, hold(pick.clip, pick.from, pick.rate), pick.rate);
     else if (K.fallback) { const from = Math.max(0, K.fallback.contact - lead); p.avatar.playOnce(K.fallback.clip, from, hold(K.fallback.clip, from, 1)); }
     a.clip = pick ? pick.clip : K.fallback && K.fallback.clip;
+    // Il corpo si gira come la radice della clip, non verso il bersaglio:
+    // cosi' al contatto la palla parte dove la calcia la clip (pick.dir
+    // rispetto al corpo all'inizio). Il poco che manca alla direzione voluta
+    // (corr) si aggiunge piano fino al contatto.
+    if (pick) {
+      a.h0 = p.heading; a.mh0 = p.moveHeading; a.clipFrom = pick.from; a.clipRate = pick.rate; a.yaw0 = pick.yaw0; a.clipDir = pick.dir;
+      a.corr = clamp(wrapAngle(Math.atan2(a.dx, a.dz) - p.heading - pick.dir), -ANIM.kickCorr, ANIM.kickCorr);
+    }
     // calcio da fermo: il giocatore non avanza. Quasi fermo al comando prende
     // una clip sul posto, poi andava verso il bersaglio fino a 1,7 m/s e la
     // posa del calcio traslava
@@ -1195,7 +1205,14 @@ class Match {
     const a = p.action;
     a.t += dt * (a.rate || 1);
     if (a.kick) {
-      p.drive(dt, a.dx, a.dz, a.moveMag, { withBall: this.owner === p, turnMul: a.turn });
+      if (a.h0 !== undefined) {
+        // fino al contatto il corpo segue la rotazione della clip; la corsa gira con lui
+        const u = a.contact > 0 ? Math.min(1, a.t / a.contact) : 1;
+        const turn = rootAt(this.tpl, a.clip, a.clipFrom + Math.min(a.t, a.contact) * a.clipRate).yaw - a.yaw0 + a.corr * u;
+        const h = wrapAngle(a.h0 + turn), mv = wrapAngle(a.mh0 + turn);
+        p.drive(dt, Math.sin(mv), Math.cos(mv), a.moveMag, { withBall: this.owner === p, face: { x: Math.sin(h), z: Math.cos(h) } });
+        p.heading = h;
+      } else p.drive(dt, a.dx, a.dz, a.moveMag, { withBall: this.owner === p, turnMul: a.turn });
       if (!a.done && a.t >= a.contact) { a.done = true; this.kickNow(p, a); }
     } else if (a.root) {
       const r = rootAt(this.tpl, a.clip, a.from + Math.min(a.t, a.end));
@@ -1239,7 +1256,7 @@ class Match {
     if (a.kind === 'pass') return passAim(p, b, a.target, a.ax, a.az, a.power);
     if (a.kind === 'through') {
       const pt = a.target ? throughPoint(p, a.target, a.power) : a.spot, e = loftError(p);
-      return { tx: pt.tx + e.x * 0.5, tz: pt.tz + e.z * 0.5 };
+      return { tx: pt.tx + e.x * 0.5, tz: pt.tz + e.z * 0.5, t: pt.t };
     }
     if (a.kind === 'cross') {
       const e = loftError(p);
@@ -1260,10 +1277,10 @@ class Match {
       b.rollAt(aim.tx, aim.tz, passSpeed(d, a.power, press) * aim.speedMul);
       this.poss.fly('passaggio', p, t);
     } else if (a.kind === 'through') {
-      b.rollAt(aim.tx, aim.tz, throughSpeed(d, a.power));
+      b.rollAt(aim.tx, aim.tz, throughSpeed(d, a.power, aim.t));
       this.poss.fly('filtrante', p, a.target);
-      // chi aspettava sulla linea parte adesso
-      if (a.target && a.target.run) this.teams[a.target.team].ai.goRun(a.target);
+      // chi riceve corre adesso nello spazio (se non era gia' partito al comando)
+      if (a.target && a.target.run && !a.target.run.go) this.teams[a.target.team].ai.goRun(a.target);
     } else if (a.kind === 'cross') {
       b.lobTo(aim.tx, aim.tz, a.apex);
       // effetto all'indietro e a rientrare, con la mira che lo tiene sul punto
@@ -1323,33 +1340,38 @@ class Match {
   }
 
   // Filtrante (skill: "Filtranti e inserimenti"): il ricevente corre nello
-  // spazio, non verso la palla. Sulla traiettoria prevista cerca il primo
-  // punto davanti a lui dove arriva insieme al pallone correndo ad almeno
-  // THROUGH.runMin della velocita' massima, e ci va a quella velocita': non
-  // arriva prima per poi fermarsi ad aspettare, prende la palla in corsa.
+  // spazio, non verso la palla: in corsa piena verso il punto in cui arriva
+  // insieme al pallone, mai fermo ad aspettarlo; prende la palla in corsa.
   runOnto(dt, p) {
-    const b = this.ball, T = THROUGH, top = p.params.maxSpeed;
+    const b = this.ball, T = THROUGH;
     const path = b.predict(this.path, RECEIVE.step, RECEIVE.horizon);
     const d = this.dirOf(p.team);
-    let pick = null, first = null;
+    // il primo punto della traiettoria dove arriva insieme al pallone correndo
+    // al massimo (runTime, con l'accelerazione): prima sceglieva il primo
+    // punto raggiungibile al 60% della velocita' e frenava proprio al
+    // passaggio, poi la palla gli scappava (filtranti inutili, 04/10)
+    // Palla che arriva da dietro (lui e' gia' davanti, in corsa): continua a
+    // correre e lei lo raggiunge, nel primo punto in cui non e' piu' in
+    // anticipo; palla gia' davanti a lui: il primo punto che raggiunge.
+    // Mai indietro lungo la strada della palla: tornava a prenderla ai piedi.
+    const bl = Math.hypot(b.vel.x, b.vel.z) || 1, ux = b.vel.x / bl, uz = b.vel.z / bl;
+    let pick = null, early0 = null;
     for (const s of path) {
       if (s.y > CONTROL.trapHeight) continue;
-      // mai indietro verso la propria porta
-      if ((s.x - p.pos.x) * d < -T.behind) continue;
-      const dist = Math.max(0, Math.hypot(s.x - p.pos.x, s.z - p.pos.z) - CONTROL.receiveRadius * 0.6);
-      const v = dist / Math.max(0.05, s.t - RECEIVE.reaction);
-      if (v > top) continue;
-      if (!first) first = { s, v };
-      if (v >= top * T.runMin) { pick = { s, v }; break; }
+      // mai indietro verso la propria porta, ne' dietro di lui sulla strada della palla
+      if ((s.x - p.pos.x) * d < -T.behind || (s.x - p.pos.x) * ux + (s.z - p.pos.z) * uz < -T.behindBall) continue;
+      const dist = Math.max(0, Math.hypot(s.x - p.pos.x, s.z - p.pos.z) - RECEIVE.capture);
+      const early = runTime(p, dist, s.x - p.pos.x, s.z - p.pos.z) + RECEIVE.reaction <= s.t;
+      if (early0 === null) early0 = early;
+      if (early !== early0) { pick = s; break; }
     }
-    pick = pick || first;
-    const s = pick ? pick.s : path[path.length - 1];
+    const s = pick || path[path.length - 1];
     const dx = s.x - p.pos.x, dz = s.z - p.pos.z, dd = Math.hypot(dx, dz);
     const bx = b.pos.x - p.pos.x, bz = b.pos.z - p.pos.z;
     if (dd < 0.15) { p.drive(dt, bx, bz, T.runMin, { sprint: true }); return; }
-    const mag = Math.max(T.runMin, Math.min(1, (pick ? pick.v : top) / top));
-    p.drive(dt, dx, dz, mag, { sprint: true, face: Math.hypot(bx, bz) < 2.5 ? { x: bx, z: bz } : null });
+    p.drive(dt, dx, dz, 1, { sprint: true, face: Math.hypot(bx, bz) < 2.5 ? { x: bx, z: bz } : null });
   }
+
 
   // Palla in coordinate polari attorno al giocatore (angolo nel campo): lo
   // segue a ogni passo e per cambiare lato gira attorno ai piedi, a velocita'
@@ -1357,6 +1379,26 @@ class Match {
   // si allunga subito e rallenta, il giocatore la riprende al tocco dopo.
   dribble(dt) {
     const p = this.owner, b = this.ball, D = DRIBBLE;
+    // controllo in corso (startTrap): la palla va da sola con la fisica, il
+    // corpo gira come la clip di stop; poi la conduzione riparte da li'
+    const tr = p.trap;
+    if (tr && (tr.seq !== this.poss.seq || p.action)) p.trap = null;
+    else if (tr) {
+      tr.t += dt;
+      if (tr.k) p.face(wrapAngle(tr.h0 + rootAt(this.tpl, tr.clip, Math.min(tr.t, tr.T)).yaw * tr.k));
+      b.step(dt);
+      const c = Math.exp(-RECEIVE.trap.cushion * dt);
+      b.vel.x = p.vel.x + (b.vel.x - p.vel.x) * c;
+      b.vel.z = p.vel.z + (b.vel.z - p.vel.z) * c;
+      p.ballAngle = Math.atan2(b.pos.x - p.pos.x, b.pos.z - p.pos.z);
+      p.ballDist = Math.hypot(b.pos.x - p.pos.x, b.pos.z - p.pos.z);
+      if (tr.t >= tr.T || p.ballDist > RECEIVE.trap.lost) {
+        p.trap = null;
+        const rel = p.carryRel || (p.carryRel = { vx: 0, vz: 0, seq: 0, tick: 0 });
+        rel.vx = b.vel.x - p.vel.x; rel.vz = b.vel.z - p.vel.z; rel.seq = this.poss.seq; rel.tick = this.tickN;
+      }
+      return;
+    }
     const run = Math.min(1, p.speed / p.params.maxSpeed);
     const moving = smoothstep(D.moveFrom, D.moveFull, p.speed);
     // fase del tocco: dalle clip di conduzione (Ball_Bone), altrimenti la config
@@ -1377,9 +1419,17 @@ class Match {
     const dist = kicking ? D.kick : D.rest + (touch - D.rest) * moving + swing * moving * Math.sin(Math.PI * Math.pow(u, D.push));
     // sul piede che tocca (destro), o sul lato lontano dal difensore se la protegge
     const side = p.shield ? p.shield * AI.carrier.protect.shieldSide : 1;
-    const want = p.heading - Math.atan2(D.side * side, dist);
+    let want = p.heading - Math.atan2(D.side * side, dist);
+    // quasi fermo con la palla di lato o dietro: si gira il giocatore verso la
+    // palla, non la palla attorno a lui (replay 4 del 04/10)
+    const steering = p === this.ctrl && this.lastInp && this.lastInp.mag > 0.2;
+    if (p.speed < D.orbitBelow && !kicking && !steering && Math.abs(wrapAngle(want - p.ballAngle)) > D.orbitAngle) {
+      const g = wrapAngle(p.ballAngle + Math.atan2(D.side * side, dist) - p.heading), r = D.faceBall * dt;
+      p.face(wrapAngle(p.heading + Math.max(-r, Math.min(r, g))));
+      want = p.heading - Math.atan2(D.side * side, dist);
+    }
     const turn = wrapAngle(want - p.ballAngle);
-    const step = D.turnRate * dt;
+    const step = (p.speed < D.orbitBelow ? D.stillTurn : D.turnRate) * dt;
     p.ballAngle = wrapAngle(p.ballAngle + Math.max(-step, Math.min(step, turn)));
     p.ballDist += (dist - p.ballDist) * (1 - Math.exp(-D.follow * dt));
     // Mentre gira attorno ai piedi la palla si allarga: mai dentro le gambe.
@@ -1517,17 +1567,24 @@ class Match {
     return false;
   }
 
-  // Il destinatario la controlla sempre entro receiveRadius, a ogni velocita';
-  // i suoi compagni non gliela rubano; libera, la prende il piu' vicino.
+  // Il destinatario la controlla sempre (al corpo, o nel punto piu' vicino
+  // entro receiveRadius), a ogni velocita'; i suoi compagni non gliela rubano;
+  // libera, la prende il piu' vicino.
   contacts(inp) {
     const b = this.ball, poss = this.poss;
-    if (b.pos.y > CONTROL.trapHeight) return;
     const locked = (p) => this.kickLock && this.kickLock.p === p;
     const to = this.receiver;
-    if (to && !locked(to) && !to.down && Math.hypot(b.pos.x - to.pos.x, b.pos.z - to.pos.z) < CONTROL.receiveRadius) {
-      this.receive(to, inp, 'ricezione');
-      return;
+    // il destinatario la controlla quando gli arriva al corpo, o nel punto piu'
+    // vicino se gli passa accanto: prima la prendeva a 1,25 m e la palla
+    // cambiava strada a mezz'aria per andargli ai piedi
+    if (to && !locked(to) && !to.down && b.pos.y < RECEIVE.trapHeight) {
+      const rx = b.pos.x - to.pos.x, rz = b.pos.z - to.pos.z, d = Math.hypot(rx, rz);
+      // ...o lenta rispetto a lui (tocco d'inizio, palla che si ferma): ci arriva con un passo
+      const rvx = b.vel.x - to.vel.x, rvz = b.vel.z - to.vel.z;
+      const away = rx * rvx + rz * rvz > 0, slow = Math.hypot(rvx, rvz) < RECEIVE.slowRel;
+      if (d < RECEIVE.capture || (d < CONTROL.receiveRadius && (away || slow))) { this.receive(to, inp, 'ricezione'); return; }
     }
+    if (b.pos.y > CONTROL.trapHeight) return;
     let best = null, bestD = CONTROL.trapRadius;
     for (const p of this.everyone) {
       if (locked(p) || p.down || (p.action && p.action.root)) continue;
@@ -1575,26 +1632,70 @@ class Match {
       const pk = pickIntercept(this.tpl, p, { ballLeft: -(bx * p.rightX + bz * p.rightZ), ballAhead: bx * p.dirX + bz * p.dirZ, speed: p.speed });
       if (pk) { p.avatar.playOnce(pk.clip, Math.max(0, pk.contact - R.lead), R.length, 1, R.fade, p.speed > FIRST_TOUCH.receiveBelow); return; }
     }
+    // una partenza, un arresto o una svolta della corsa non impediscono lo stop
+    const busy = !!p.action || (p.avatar.busy && !(p.avatar.one && p.avatar.one.loco));
     if (inp && inp.mag > 0 && !this.buffer) {
       const ang = Math.acos(Math.max(-1, Math.min(1, inp.x * p.dirX + inp.z * p.dirZ)));
       if (ang > FIRST_TOUCH.minAngle) {
         const want = Math.atan2(inp.x, inp.z), turn = wrapAngle(want - p.heading);
-        p.face(wrapAngle(p.heading + turn * FIRST_TOUCH.turn));
         p.moveHeading = want;
-        p.ballDist = DRIBBLE.touch[1] + DRIBBLE.swing[1] * 0.5;
-        // primo tocco orientato: lo stop che porta la palla da quella parte
-        if (!p.avatar.busy && !p.action) {
+        // primo tocco orientato: lo stop che gira il corpo e porta la palla da quella parte
+        if (!busy) {
           const pk = pickTrap(this.tpl, p, { turn, ballY: b.pos.y, speed: p.speed });
-          if (pk) p.avatar.playOnce(pk.clip, 0, R.length, 1, R.fade, true);
+          if (pk) { p.avatar.playOnce(pk.clip, 0, R.length, 1, R.fade, true); this.startTrap(p, pk, turn, want); return; }
         }
+        p.face(wrapAngle(p.heading + turn * FIRST_TOUCH.turn));
+        p.ballDist = DRIBBLE.touch[1] + DRIBBLE.swing[1] * 0.5;
         return;
       }
     }
-    if (p.avatar.busy || p.action) return;
-    // stop di palla scelto per altezza della palla e velocita' (la clip parte
-    // con la palla al piede); in corsa lo stop in corsa, parte della corsa
+    if (busy) return;
+    // stop di palla scelto per altezza della palla e velocita'; in corsa lo
+    // stop in corsa, parte della corsa
     const pk = pickTrap(this.tpl, p, { turn: 0, ballY: b.pos.y, speed: p.speed });
-    if (pk) p.avatar.playOnce(pk.clip, 0, R.length, 1, R.fade, p.speed >= FIRST_TOUCH.receiveBelow);
+    if (pk) { p.avatar.playOnce(pk.clip, 0, R.length, 1, R.fade, p.speed >= FIRST_TOUCH.receiveBelow); this.startTrap(p, pk, 0, null); }
+  }
+
+  // Controllo della palla (skill: "Le ricezioni usano le clip di controllo
+  // col Ball_Bone"): la palla tocca il corpo dove arriva e da li' va, con la
+  // fisica, dove la clip di stop la lascia alla fine (ballEnd), o nella
+  // direzione della levetta nel primo tocco orientato. Il petto la smorza e
+  // cade sul piede con la gravita', il piede la ferma rotolando. Prima la
+  // conduzione la tirava subito a terra e le girava attorno al giocatore fermo
+  // (replay 4 del 04/10). Il corpo gira come la clip (yawEnd, scalato sulla
+  // rotazione voluta). `want`: direzione della levetta, o null.
+  startTrap(p, pk, turn, want) {
+    const b = this.ball, T = RECEIVE.trap, R = ANIM.receive;
+    const dur = Math.min(R.length, clipDuration(this.tpl, pk.clip) || R.length);
+    const k = Math.abs(pk.yawEnd) > 0.2 ? clamp(turn / pk.yawEnd, T.yawScale[0], T.yawScale[1]) : 0;
+    const hE = wrapAngle(p.heading + pk.yawEnd * k);
+    const ex = p.pos.x + p.vel.x * dur, ez = p.pos.z + p.vel.z * dur;
+    let tx, tz, ty = BALL.radius;
+    if (want !== null) {
+      tx = ex + Math.sin(want) * T.push; tz = ez + Math.cos(want) * T.push;
+    } else if (pk.ballEnd) {
+      const [bx, by, bz] = pk.ballEnd;
+      tx = ex + Math.sin(hE) * bz + Math.cos(hE) * bx; tz = ez + Math.cos(hE) * bz - Math.sin(hE) * bx;
+      ty = Math.max(BALL.radius, by);
+    } else {
+      tx = ex + Math.sin(hE) * T.push; tz = ez + Math.cos(hE) * T.push;
+    }
+    // il tocco smorza la palla: rispetto al giocatore la velocita' cala come
+    // e^(-cushion t) (dribble), e in Tf copre proprio la strada fino al punto
+    const Tf = Math.max(0.15, dur * T.reach);
+    const rx = tx - ex - (b.pos.x - p.pos.x), rz = tz - ez - (b.pos.z - p.pos.z), rd = Math.hypot(rx, rz);
+    const v0 = Math.min(T.maxHoriz, rd * T.cushion / (1 - Math.exp(-T.cushion * Tf)));
+    const vx = p.vel.x + (rd > 1e-3 ? rx / rd * v0 : 0), vz = p.vel.z + (rd > 1e-3 ? rz / rd * v0 : 0);
+    if (b.pos.y > T.airY) {
+      // palla alta: smorzata dal corpo, cade sul punto con la gravita'
+      b.vel.set(vx, (ty - b.pos.y + 0.5 * BALL.gravity * Tf * Tf) / Tf, vz);
+      b.w.multiplyScalar(T.spinKeep);
+    } else {
+      b.pos.y = BALL.radius;
+      b.kick(vx, 0, vz);
+    }
+    p.trap = { t: 0, T: dur, seq: this.poss.seq, clip: pk.clip, h0: p.heading, k };
+    this.note('stop', { p, clip: pk.clip, altezza: b.pos.y, verso: want !== null ? 'levetta' : 'clip' });
   }
 
   // Cambio: il compagno piu' vicino alla palla, mai il portiere.

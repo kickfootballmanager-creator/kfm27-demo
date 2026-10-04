@@ -39,6 +39,7 @@ export const BALL = {
   rollFriction: 1.6,      // m/s^2 costanti quando rotola
   rollDrag: 0.05,         // 1/s: a 26 m/s la palla perde 2,9 m/s^2, a 8 m/s 2
   restitution: 0.6,       // rimbalzo verticale
+  carryBounce: 1.2,       // m/s: palla al piede che cade piu' piano di cosi' non rimbalza piu'
   minBounce: 0.6,         // sotto questa velocita' verticale smette di rimbalzare
   // Rotazione (ball.js): magnus k in a = k (w x v); a 25 m/s con 50 rad/s
   // di effetto (8 giri al secondo) la palla curva di 6 m/s^2. spinToW: rad/s
@@ -124,6 +125,10 @@ export const DRIBBLE = {
   moveFull: 1.6,
   side: 0.1,              // spostata verso il piede destro, quello che tocca
   turnRate: 14,           // rad/s: la palla gira attorno al giocatore, mai attraverso le gambe
+  // quasi fermi (sotto orbitBelow m/s) con la palla oltre orbitAngle rad dal
+  // davanti: il giocatore si gira verso di lei a faceBall rad/s, e la palla
+  // si sposta al piu' a stillTurn rad/s
+  orbitBelow: 1.2, orbitAngle: 0.45, faceBall: 5, stillTurn: 2.5,
   follow: 22,             // 1/s: quanto in fretta la distanza si adegua
   maxRel: 9,              // m/s: velocita' massima della palla rispetto al giocatore
   relAcc: 70,             // m/s^2: quanto in fretta cambia (tocco continuo)
@@ -143,7 +148,8 @@ export const CONTROL = {
   kickLock: 0.35,         // chi ha appena calciato non la ricontrolla subito
   reach: 1.3,             // palla abbastanza vicina per un tiro o passaggio al volo
   buffer: 0.4,            // un comando dato un attimo prima di ricevere vale lo stesso
-  doubleTap: 0.3,         // difesa: X due volte entro tanti secondi = contrasto
+  doubleTap: 0.2,         // difesa: X due volte entro tanti secondi = contrasto...
+  tapHold: 0.15,          // ...se il primo tocco dura meno di tanti secondi
   zones: [6, 3],          // cambio automatico: fasce lungo il campo e in larghezza
   switchMargin: 2,        // si cambia solo se il nuovo e' piu' vicino di tanti metri
   switchCone: 1.1         // levetta destra: semiapertura del cono di ricerca (rad)
@@ -162,7 +168,22 @@ export const RECEIVE = {
   horizon: 5,             // secondi di traiettoria previsti
   reaction: 0.05,
   faceDist: 6,            // sotto questa distanza dalla palla il ricevente la guarda
-  timeout: 6              // passaggio che nessuno raggiunge: dopo 6 s il joystick torna libero
+  timeout: 6,             // passaggio che nessuno raggiunge: dopo 6 s il joystick torna libero
+  // Il destinatario la controlla quando la palla gli arriva al corpo (entro
+  // capture m), o nel punto piu' vicino se gli passa accanto entro
+  // CONTROL.receiveRadius, o li' con la palla piu' lenta di slowRel m/s
+  // rispetto a lui; palla fino a trapHeight m (stop di petto).
+  capture: 0.6,
+  slowRel: 3,
+  trapHeight: 1.9,
+  // Stop (main.startTrap): la palla arriva dove la clip la lascia in reach
+  // della durata dello stop, piano (maxHoriz m/s al piu', rispetto al giocatore
+  // la velocita' cala come e^(-cushion t)); sopra airY m e'
+  // smorzata dal corpo e cade con la gravita' (spinKeep: rotazione che resta);
+  // push: metri del primo tocco orientato o senza punto della clip; yawScale:
+  // quanto si puo' allargare o stringere la rotazione della clip; lost: palla
+  // oltre tanti metri, lo stop finisce e la riprende la conduzione.
+  trap: { reach: 0.85, maxHoriz: 7, cushion: 6, airY: 0.35, spinKeep: 0.3, push: 0.9, yawScale: [0.4, 1.6], lost: 2.2 }
 };
 
 // Primo tocco orientato: con il joystick lontano dal busto il ricevente
@@ -204,7 +225,7 @@ export const PASS = {
 export const THROUGH = {
   cone: 0.9,
   lead: [4, 16],          // metri davanti alla corsa del compagno, a potenza zero e piena
-  arrive: [4, 10],        // m/s con cui arriva nello spazio: ci corre sopra il compagno
+  arrive: [4, 10],        // m/s con cui arriva nello spazio senza un compagno (palla nel vuoto)
   speedMin: 12,
   speedMax: 26,
   wReach: 1.1,            // come nel passaggio la barra sceglie anche il compagno, ma conta lo spazio
@@ -213,7 +234,8 @@ export const THROUGH = {
   // chi lo riceve corre nello spazio incontro al pallone, mai sotto runMin
   // della velocita' massima, senza tornare indietro di oltre `behind` m
   runMin: 0.6,
-  behind: 1.5
+  behind: 1.5,
+  behindBall: 0.5          // ne' oltre tanti metri dietro di lui lungo la strada della palla
 };
 
 // Cross dalle fasce verso l'area, lancio lungo altrove. Palla alta che
@@ -860,6 +882,9 @@ export const ANIM = {
   // ogni livello; la clip scelta parte e si accelera per rispettarli.
   // recover: secondi dopo il contatto prima di tornare a correre.
   kickRate: [0.6, 1.8],
+  // rad: durante il calcio il corpo gira come la clip; quel che manca alla
+  // direzione voluta si aggiunge fino al contatto, al massimo tanto
+  kickCorr: 0.6,
   pass: { role: 'pass', lead: 0.22, recover: 0.3, moveMag: 0.35, turn: 4 },
   through: { role: 'pass', lead: 0.22, recover: 0.3, moveMag: 0.35, turn: 4 },
   cross: { role: 'long', lead: 0.27, recover: 0.35, moveMag: 0.3, turn: 4 },
@@ -894,12 +919,13 @@ export const ANIM = {
     restartBelow: 2, cut: 0.07, redoFade: 0.1, turnedFade: 0.12,
     match: { yaw: 1, speed: 0.35, dir: 1.5, accept: 1.2 }
   },
-  // Pesi della scelta per corrispondenza (anim-pick.js): rad di rotazione,
+  // Pesi della scelta per corrispondenza (anim-pick.js): rad fra la direzione
+  // in cui la clip calcia e quella voluta (kick), rad di rotazione (turn, stop),
   // metri di lato della palla, m/s, posa dei piedi, potenza, altezza della
   // palla; keep: vantaggio della clip gia' usata dal giocatore per quel ruolo.
   // runAbove: m/s oltre cui si scelgono solo clip che entrano in corsa (runClip: m/s d'entrata della clip)
   // move: per m/s che la radice di un calcio fa in meno del giocatore fino al contatto
-  match: { turn: 1.2, side: 2.5, speed: 0.25, pose: 1, power: 0.6, height: 1.5, lob: 1, inPlace: 0.8, rate: 0.4, keep: 0.2, runAbove: 2.5, runClip: 1.5, move: 0.5 }
+  match: { turn: 1.2, kick: 3, side: 2.5, speed: 0.25, pose: 1, power: 0.6, height: 1.5, lob: 1, inPlace: 0.8, rate: 0.4, keep: 0.2, runAbove: 2.5, runClip: 1.5, move: 0.5 }
 };
 
 // Pacchetti della libreria di animazioni per livello di qualita' (anim-lib.js):
@@ -996,13 +1022,21 @@ export const RULES = {
   // Rimessa: in attesa si resta fermi nel primo fotogramma (palla in mano),
   // poi la clip riparte da li'; la rincorsa della radice (2,07 m fino al
   // rilascio) riporta il battitore sulla linea.
-  throwIn: { clip: 'throw_in', from: 0, release: 1.55, end: 2.3, rate: 1.25, outside: 2.3, shortApex: 0.9, longApex: 3.2, shortMax: 16, longMax: 30,
+  // lineGap: piedi oltre la linea al rilascio (la rincorsa della clip parte da
+  // rules.throwStart); stepTol/stepMag: chi batte si sistema a passi entro
+  // tanti metri, a questa frazione della corsa; un lancio chiesto prima di
+  // essere girato e al posto parte appena lo e', al piu' dopo alignWait s;
+  // la mira segue la levetta solo tenuta oltre aimStick (non mentre torna al centro).
+  // cone: rad attorno a dove guarda in cui si cerca il compagno; senza
+  // nessuno, nello spazio a spaceShort/spaceLong metri (con la potenza)
+  throwIn: { clip: 'throw_in', from: 0, release: 1.55, end: 2.3, rate: 1.25, lineGap: 0.15, shortApex: 0.9, longApex: 3.2, shortMax: 16, longMax: 30,
+    stepTol: 0.08, stepMag: 0.35, alignWait: 0.6, aimStick: 0.5, runScale: [0.4, 1.8], cone: 0.45, spaceShort: [7, 14], spaceLong: [14, 26],
     // prima del lancio (PES) chi batte si gira verso dove la mandera': al
     // massimo turnMax rad dalla perpendicolare alla linea, coi giri sul posto
     // della libreria gia' da turnFrom rad; l'IA lancia girata entro aimTol
     // rad (o dopo aimWait s). Intanto la palla sta al petto: chest = metri
     // davanti e sotto l'osso Spine2
-    turnMax: 1.4, turnFrom: 0.35, aimTol: 0.15, aimWait: 2.6, chest: [0.3, -0.1] },
+    turnMax: 1.2, turnFrom: 0.35, aimTol: 0.15, aimWait: 2.6, chest: [0.3, -0.1] },
   goalKick: { x: 5.5, z: 5 },  // metri dalla linea di porta, dal centro della porta
   cornerInset: 0.4,
   foulPause: 2.4,         // fischio del fallo: caduta, cartellino, poi la punizione
