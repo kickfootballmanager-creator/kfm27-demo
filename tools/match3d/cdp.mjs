@@ -4,6 +4,7 @@
 import { spawn } from 'node:child_process';
 import { mkdtempSync, rmSync, existsSync, createReadStream, statSync } from 'node:fs';
 import { createServer } from 'node:http';
+import { createServer as createNetServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, dirname, extname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -43,10 +44,23 @@ const CHROME = [
   '/usr/bin/google-chrome', '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 ].find((p) => existsSync(p));
 
+// Porta libera scelta dal sistema. Con una porta a caso fra 500 due Chrome
+// avviati insieme (test di durata e catture in parallelo) a volte prendevano
+// la stessa: il secondo non si apriva e le sue pagine finivano nel primo,
+// che chiuso dall'altro processo lasciava la partita ferma per sempre.
+function freePort() {
+  return new Promise((ok, ko) => {
+    const s = createNetServer();
+    s.unref();
+    s.on('error', ko);
+    s.listen(0, '127.0.0.1', () => { const { port } = s.address(); s.close(() => ok(port)); });
+  });
+}
+
 // Avvia Chrome con un profilo temporaneo; close() lo chiude e cancella il profilo.
 export async function launch({ width = 1280, height = 720 } = {}) {
   if (!CHROME) throw new Error('Chrome non trovato');
-  const port = 9300 + Math.floor(Math.random() * 500);
+  const port = await freePort();
   const profile = mkdtempSync(join(tmpdir(), 'm3dsoak-'));
   const chrome = spawn(CHROME, [
     '--headless=new', '--remote-debugging-port=' + port, '--user-data-dir=' + profile,

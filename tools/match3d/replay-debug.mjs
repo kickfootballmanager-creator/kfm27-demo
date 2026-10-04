@@ -7,6 +7,7 @@
 //        [--from F] [--to F] [--every N] [--out cartella] [--size 960x540]
 //        [--dist 6] [--height 1.6] [--sheet 6x4] [--no-frames]
 //        [--cam x,y,z --look x,y,z]   telecamera fissa (stessa inquadratura prima e dopo)
+//        [--hook file.js]   espressione propria sul nastro caricato (window.__rd)
 //
 // --list: solo eventi e picchi delle misure (scatti delle ossa, bacino lontano
 // dall'anello, piedi che scivolano), per trovare chi e quando guardare.
@@ -297,6 +298,13 @@ async function main() {
     console.log(`  ${String(p.i).padStart(2)} ${p.who.padEnd(10)} osso ${p.bone.toFixed(3)} f${p.boneAt} ${p.boneName.padEnd(14)} bacino ${p.hipsOff.toFixed(1).padStart(5)} f${p.hipsAt}  salto ${p.hipsStep.toFixed(2)} f${p.stepAt}  scivola ${p.skate.toFixed(2)} f${p.skateAt}  braccia ${p.arm.toFixed(1)} f${p.armAt}`);
   }
   if (flag('list')) { cdp.closeBrowser(); srv.close(); return; }
+  // --hook file.js: espressione valutata nella pagina col nastro caricato
+  // (window.__rd: tape, bodies, json, rig, C); stampa il risultato in JSON
+  if (opt('hook', '')) {
+    const res = await evaluate(cdp, readFileSync(resolve(opt('hook')), 'utf8'));
+    console.log(JSON.stringify(res, null, 1));
+    cdp.closeBrowser(); srv.close(); return;
+  }
   // --bones home:1:LeftHand,RightHand: ossa nel mondo e distanza dalla palla (con --from/--to)
   if (opt('bones', '')) {
     const [t, n, list] = opt('bones').split(':');

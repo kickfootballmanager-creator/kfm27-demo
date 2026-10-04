@@ -291,8 +291,9 @@ class Match {
 
     try { if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(() => {}); } catch (e) { /* non supportato */ }
 
-    // Solo nella partita di prova: accesso dalla console per i test.
-    if (this.opts.exitMode === 'test') window.__m3d = this;
+    // Solo nella partita di prova, o se lo chiede un test (tools/match3d/career.mjs):
+    // accesso dalla console.
+    if (this.opts.exitMode === 'test' || window.__m3dTest) window.__m3d = this;
 
     this.last = performance.now();
     this.raf = requestAnimationFrame((t) => this.frame(t));
@@ -949,6 +950,7 @@ class Match {
 
   tick(dt) {
     const b = this.ball;
+    this.tickN = (this.tickN || 0) + 1;
     const inp = this.mapInput(this.controls.read(dt));
     this.lastInp = inp;
     const me = this.ctrl;
@@ -1385,11 +1387,30 @@ class Match {
     const ang = p.ballAngle;
     let nx = p.pos.x + Math.sin(ang) * r, nz = p.pos.z + Math.cos(ang) * r;
     if (this.dribbleRoll(dt, p, b, u, touch, side, turn, kicking, nx, nz)) return;
-    // Rispetto al giocatore la palla non va piu' veloce di D.maxRel: niente scatti.
-    const rx = nx - b.pos.x - (p.pos.x - p.prev.x), rz = nz - b.pos.z - (p.pos.z - p.prev.z);
-    const rl = Math.hypot(rx, rz), lim = D.maxRel * dt;
-    if (rl > lim) { nx -= rx * (1 - lim / rl); nz -= rz * (1 - lim / rl); }
-    b.carry(nx, nz, (nx - b.pos.x) / dt, (nz - b.pos.z) / dt, dt);
+    // Rispetto al giocatore la palla non va piu' veloce di D.maxRel e non cambia
+    // velocita' piu' in fretta di D.relAcc: all'uscita da un tocco (palla che
+    // rotola), dopo un arresto o una svolta la riprende senza schizzare via a
+    // 15 m/s per tre fotogrammi, che facevano sobbalzare palla e telecamera.
+    // La continuita' vale solo fra due passi della conduzione (tocco continuo o
+    // palla che rotolava fra due tocchi, p.carryRel): appena ricevuta la palla
+    // ha ancora la velocita' del passaggio e la si ferma come prima.
+    const mx = p.pos.x - p.prev.x, mz = p.pos.z - p.prev.z;
+    const rx = nx - b.pos.x - mx, rz = nz - b.pos.z - mz, rl = Math.hypot(rx, rz);
+    const cr = p.carryRel && p.carryRel.seq === this.poss.seq && p.carryRel.tick === this.tickN - 1 ? p.carryRel : null;
+    if (dt > 0 && rl > 1e-6) {
+      const vmax = Math.min(D.maxRel, Math.sqrt(2 * D.relAcc * rl), rl / dt);
+      let wx = rx / rl * vmax, wz = rz / rl * vmax;
+      if (cr) {
+        const ax = wx - cr.vx, az = wz - cr.vz, al = Math.hypot(ax, az), amax = D.relAcc * dt;
+        if (al > amax) { wx = cr.vx + ax * amax / al; wz = cr.vz + az * amax / al; }
+      }
+      nx = b.pos.x + mx + wx * dt;
+      nz = b.pos.z + mz + wz * dt;
+    }
+    const rel = p.carryRel || (p.carryRel = { vx: 0, vz: 0, seq: 0, tick: 0 });
+    rel.vx = dt > 0 ? (nx - b.pos.x - mx) / dt : 0; rel.vz = dt > 0 ? (nz - b.pos.z - mz) / dt : 0;
+    rel.seq = this.poss.seq; rel.tick = this.tickN;
+    b.carry(nx, nz, dt > 0 ? (nx - b.pos.x) / dt : 0, dt > 0 ? (nz - b.pos.z) / dt : 0, dt);
   }
 
   // Conduzione a tocchi (skill: "tocchi di palla sincronizzati con i passi",
@@ -1430,6 +1451,9 @@ class Match {
     b.step(dt);
     p.ballAngle = Math.atan2(b.pos.x - p.pos.x, b.pos.z - p.pos.z);
     p.ballDist = Math.hypot(b.pos.x - p.pos.x, b.pos.z - p.pos.z);
+    // al ritorno al tocco continuo la palla riparte da questa velocita'
+    const rel = p.carryRel || (p.carryRel = { vx: 0, vz: 0, seq: 0, tick: 0 });
+    rel.vx = b.vel.x - p.vel.x; rel.vz = b.vel.z - p.vel.z; rel.seq = this.poss.seq; rel.tick = this.tickN;
     return true;
   }
 
@@ -1652,6 +1676,28 @@ class Match {
       stats: { cards: this.cards, fouls: this.stats.fouls, offsides: this.stats.offsides }
     });
   }
+
+  // Avvio fallito a meta': via tutto quello che esiste gia' (ascoltatori dei
+  // tasti, ciclo di disegno, controlli, contesto WebGL). Prima restava solo la
+  // radice tolta: i tasti continuavano ad andare alla partita morta e ogni
+  // tentativo lasciava un contesto WebGL aperto.
+  abort() {
+    const safe = (f) => { try { f(); } catch (e) { /* parte non ancora creata */ } };
+    safe(() => cancelAnimationFrame(this.raf));
+    safe(() => { for (const [t, type, fn, cap] of this.handlers) t.removeEventListener(type, fn, cap); this.handlers = []; });
+    safe(() => this.controls && this.controls.destroy());
+    safe(() => this.debug && this.debug.destroy());
+    safe(() => this.hud && this.hud.destroy());
+    safe(() => { for (const p of [...(this.everyone || []), ...(this.leaving || [])]) p.avatar.dispose(); });
+    safe(() => this.referee && this.referee.p.avatar.dispose());
+    safe(() => closeAudio());
+    safe(() => this.setpieces && this.setpieces.dispose());
+    safe(() => this.gfx && this.gfx.dispose());
+    safe(() => this.scene && disposeScene(this.scene));
+    safe(() => { if (this.renderer) { this.renderer.dispose(); this.renderer.forceContextLoss(); } });
+    safe(() => this.root && this.root.remove());
+    if (window.__m3d === this) window.__m3d = null;
+  }
 }
 
 // Unico punto d'ingresso: la futura schermata pre-partita chiamera' questa.
@@ -1659,7 +1705,7 @@ export function startMatch(opts) {
   return new Promise((resolve, reject) => {
     const m = new Match(opts || {}, resolve);
     m.start().catch((e) => {
-      try { if (m.root) m.root.remove(); } catch (_) { /* gia' rimosso */ }
+      m.abort();
       reject(e);
     });
   });

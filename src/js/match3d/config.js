@@ -126,6 +126,7 @@ export const DRIBBLE = {
   turnRate: 14,           // rad/s: la palla gira attorno al giocatore, mai attraverso le gambe
   follow: 22,             // 1/s: quanto in fretta la distanza si adegua
   maxRel: 9,              // m/s: velocita' massima della palla rispetto al giocatore
+  relAcc: 70,             // m/s^2: quanto in fretta cambia (tocco continuo)
   // Conduzione a tocchi (main.dribbleRoll): sopra minSpeed m/s e con la svolta
   // sotto maxTurn rad la palla rotola libera fra un tocco e l'altro; il tocco
   // dopo fra minT e maxT s; si torna al tocco continuo con la palla oltre
@@ -758,7 +759,14 @@ export const MODEL = {
   attachRate: 18,         // 1/s: palla che passa a una mano sola e si appoggia sul palmo
   holdRate: 8,            // 1/s: la presa a due mani entra e si scioglie senza scatti
   holdTurn: 12,           // rad/s massimi del braccio per effetto del peso della presa
-  holdArm: 20             // rad/s massimi della soluzione IK della presa
+  holdArm: 20,            // rad/s massimi della soluzione IK della presa
+  // Palla tenuta a due mani mai dentro il corpo: fra i palmi della clip
+  // (portiere che aspetta col pallone al ventre) il centro cadeva 8 cm dal
+  // bacino. Si sposta in avanti quanto basta per restare fuori da queste
+  // sfere [osso, osso verso cui spostarsi, frazione, raggio] (piu' holdClear di aria).
+  holdBody: [['Hips', null, 0, 0.16], ['Spine', null, 0, 0.15], ['Spine1', null, 0, 0.15], ['Spine2', null, 0, 0.17],
+    ['LeftUpLeg', 'LeftLeg', 0.35, 0.1], ['RightUpLeg', 'RightLeg', 0.35, 0.1]],
+  holdClear: 0.01
 };
 
 // Animazioni, sulla libreria Studio33 (anim.js, anim-pick.js). Locomozione
@@ -919,6 +927,7 @@ export const CAMERA = {
   nearBack: 1,            // metri di arretramento per metro di palla verso la tribuna
   maxFov: 75,
   lead: 0.35,             // anticipo in secondi nella direzione della palla
+  leadRate: 3,            // 1/s: filtro della velocita' usata per l'anticipo (tocchi e calci non fanno sobbalzare l'inquadratura)
   limitX: 44,
   rate: 2.6,              // velocita' dello smorzamento (1/s)
   fovRate: 1.2,

@@ -31,6 +31,7 @@
     detached: 2.5,               // m fra possessore e palla
     kickFoot: 1.0,               // m: al contatto di un calcio il piede della clip piu' lontano di cosi' dalla palla
     detachedFrames: 15,
+    heldPierce: 0.03,            // m: palla in mano piu' dentro di cosi' nelle sfere del corpo (MODEL.holdBody)
     unclaimedFrames: 30,         // palla accanto al destinatario che non la prende
     abandonedFrames: 360,        // palla ferma e lontana da tutti
     // Continuita' delle ossa, due tipi di scatto (rad in 1/60 s):
@@ -611,7 +612,21 @@
       // a gioco fermo (riprese) chi batte tiene la palla ferma sul punto mentre ci arriva
       S.persist(st, 'detached', m.phase === 'play' && d > T.detached, T.detachedFrames, 'palla: staccata dal possessore', o, { distanza: +d.toFixed(2) });
       S.stats.possession[o.team] += DT;
-    } else st.detached = 0;
+      // palla in mano (portiere, rimessa): mai dentro il corpo (replay 1 del 04/10:
+      // il portiere fermo col pallone lo teneva 19 cm dentro il bacino)
+      let pierce = 0, part = '';
+      if (o.holding && !o.holdHand) {
+        const r = o.avatar.rig, bm = b.mesh.position;
+        for (const [name, toB, f, rad] of S.C.MODEL.holdBody) {
+          if (!r[name]) continue;
+          r[name].getWorldPosition(S._hc || (S._hc = bm.clone()));
+          if (toB && r[toB]) S._hc.lerp(r[toB].getWorldPosition(S._hc2 || (S._hc2 = bm.clone())), f);
+          const pen = rad + S.C.BALL.radius - S._hc.distanceTo(bm);
+          if (pen > pierce) { pierce = pen; part = name; }
+        }
+      }
+      S.persist(st, 'pierce', pierce > T.heldPierce, 3, 'palla: in mano ma dentro il corpo', o, { dentro_cm: +(pierce * 100).toFixed(1), osso: part, clip: o.avatar.gestureName() || S.poseClips(o) });
+    } else { st.detached = 0; st.pierce = 0; }
     const to = poss.flying ? poss.to : null;
     const near = to && !to.down && Math.hypot(b.pos.x - to.pos.x, b.pos.z - to.pos.z) < C.receiveRadius && b.pos.y < C.trapHeight;
     S.persist(st, 'unclaimed', !!near && m.phase === 'play' && b.live, T.unclaimedFrames, 'palla: il destinatario non la controlla', to);

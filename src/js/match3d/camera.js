@@ -18,10 +18,16 @@ export class BroadcastCamera {
     this.sp = { on: false, w: 0, pos: new THREE.Vector3(), look: new THREE.Vector3(), fov: CAMERA.fov };
     this._pos = new THREE.Vector3();
     this._look = new THREE.Vector3();
+    // velocita' della palla filtrata per l'anticipo: un tocco, un passaggio o un
+    // tiro cambiano la velocita' in un fotogramma, e con l'anticipo diretto la
+    // mira saltava di metri (tutta l'inquadratura a scatti, corsa compresa)
+    this.lead = { x: 0, z: 0 };
   }
 
   snap(ball) {
     this.target.set(ball.pos.x * CAMERA.followX, 0, CAMERA.aimZ + ball.pos.z * CAMERA.followZ);
+    this.lead.x = ball.vel ? ball.vel.x : 0;
+    this.lead.z = ball.vel ? ball.vel.z : 0;
     this._place();
   }
 
@@ -39,9 +45,12 @@ export class BroadcastCamera {
 
   update(ball, dt) {
     const k = 1 - Math.exp(-CAMERA.rate * dt);
+    const kl = 1 - Math.exp(-CAMERA.leadRate * dt);
+    this.lead.x += (ball.vel.x - this.lead.x) * kl;
+    this.lead.z += (ball.vel.z - this.lead.z) * kl;
     const lim = CAMERA.limitX;
-    const tx = Math.max(-lim, Math.min(lim, (ball.pos.x + ball.vel.x * CAMERA.lead) * CAMERA.followX));
-    const tz = CAMERA.aimZ + (ball.pos.z + ball.vel.z * CAMERA.lead) * CAMERA.followZ;
+    const tx = Math.max(-lim, Math.min(lim, (ball.pos.x + this.lead.x * CAMERA.lead) * CAMERA.followX));
+    const tz = CAMERA.aimZ + (ball.pos.z + this.lead.z * CAMERA.lead) * CAMERA.followZ;
     this.target.x += (tx - this.target.x) * k;
     this.target.z += (tz - this.target.z) * k;
 

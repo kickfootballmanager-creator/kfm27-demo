@@ -325,6 +325,7 @@ function numberTexture(number, shirt) {
 
 const _hl = new THREE.Vector3(), _hr = new THREE.Vector3(), _lat = new THREE.Vector3();
 const _tl = new THREE.Vector3(), _tr = new THREE.Vector3();
+const _cb = new THREE.Vector3(), _cb2 = new THREE.Vector3();
 const _twist = new THREE.Quaternion(), _up = new THREE.Vector3(0, 1, 0);
 const smooth01 = (u) => { const c = Math.max(0, Math.min(1, u)); return c * c * (3 - 2 * c); };
 const _hq = new THREE.Quaternion();
@@ -596,19 +597,70 @@ export class Avatar {
     this.object.updateMatrixWorld(true);
     const L = palm(r, 'Left', _hl), R = palm(r, 'Right', _hr);
     const out = this.heldCenter.addVectors(L, R).multiplyScalar(0.5);
-    const cw = this.holdChest ? 1 - (this.one ? this.one.a.getEffectiveWeight() : 0) : 0;
+    // solo la clip della rimessa porta la palla fra i suoi palmi: un giro sul
+    // posto (721_Stand_Turn_270) ha le mani lungo i fianchi, e la palla finiva
+    // a 6 cm dal bacino
+    const throwW = this.one && this.one.a.getClip().name === RULES.throwIn.clip ? this.one.a.getEffectiveWeight() : 0;
+    const cw = this.holdChest ? 1 - throwW : 0;
     if (cw > 0) {
       const C = RULES.throwIn.chest, h = this.object.rotation.y;
       r.Spine2.getWorldPosition(_tl);
       _tl.x += Math.sin(h) * C[0]; _tl.z += Math.cos(h) * C[0]; _tl.y += C[1];
       out.lerp(_tl, cw);
     }
+    this.clearBody(out, radius);
     const lat = _lat.subVectors(R, L);
     const n = lat.length();
     if (n > 1e-4) lat.divideScalar(n); else lat.set(-Math.cos(this.object.rotation.y), 0, Math.sin(this.object.rotation.y));
     const g = radius + MODEL.holdGap;
     this.object.worldToLocal(this.holdL.copy(out).addScaledVector(lat, -g));
     this.object.worldToLocal(this.holdR.copy(out).addScaledVector(lat, g));
+  }
+
+  // Palla tenuta fuori dal corpo: il minimo spostamento in avanti (direzione
+  // del busto, in orizzontale) che la porta fuori da tutte le sfere di
+  // MODEL.holdBody, poi lungo il raggio per quel che resta dentro. Funzione
+  // continua della posa: niente salti.
+  clearBody(out, radius) {
+    const r = this.rig, h = this.object.rotation.y, fx = Math.sin(h), fz = Math.cos(h), B = MODEL.holdBody;
+    // per ogni sfera l'intervallo di spostamenti che la palla la tocca: [lo, hi]
+    const span = this._holdSpan || (this._holdSpan = new Float32Array(B.length * 2));
+    for (let i = 0; i < B.length; i++) {
+      const [name, to, f, rad] = B[i], bone = r[name];
+      span[i * 2] = 1; span[i * 2 + 1] = -1;
+      if (!bone) continue;
+      bone.getWorldPosition(_cb);
+      if (to && r[to]) _cb.lerp(r[to].getWorldPosition(_cb2), f);
+      const R = rad + radius + MODEL.holdClear;
+      const dx = out.x - _cb.x, dy = out.y - _cb.y, dz = out.z - _cb.z;
+      const b = dx * fx + dz * fz, disc = b * b - (dx * dx + dy * dy + dz * dz - R * R);
+      // palla ben dietro il centro della sfera (braccia indietro, carica di un
+      // rinvio): spingerla avanti la farebbe passare attraverso il corpo
+      if (disc > 0 && b >= -0.5 * R) { span[i * 2] = -b - Math.sqrt(disc); span[i * 2 + 1] = -b + Math.sqrt(disc); }
+    }
+    // il piu' piccolo s >= 0 fuori da tutti gli intervalli
+    let s = 0;
+    for (let pass = 0; pass < B.length; pass++) {
+      let moved = false;
+      for (let i = 0; i < B.length; i++) if (s > span[i * 2] && s < span[i * 2 + 1]) { s = span[i * 2 + 1]; moved = true; }
+      if (!moved) break;
+    }
+    if (s > 0) { out.x += fx * s; out.z += fz * s; }
+    // portiere a terra dopo un tuffo basso: la coscia sta davanti alla palla e
+    // la spinta in avanti non basta; quel che resta dentro esce lungo il raggio
+    for (let pass = 0; pass < 2; pass++) {
+      for (let i = 0; i < B.length; i++) {
+        const [name, to, f, rad] = B[i], bone = r[name];
+        if (!bone) continue;
+        bone.getWorldPosition(_cb);
+        if (to && r[to]) _cb.lerp(r[to].getWorldPosition(_cb2), f);
+        const R = rad + radius + MODEL.holdClear, d = out.distanceTo(_cb);
+        if (d >= R) continue;
+        if (d < 1e-4) { out.x += fx * R; out.z += fz * R; continue; }
+        out.sub(_cb).multiplyScalar(R / d).add(_cb);
+      }
+    }
+    return s;
   }
 
   // Salti isolati della posa finale (mixer, IK, torsione: un IK che cambia

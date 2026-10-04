@@ -139,7 +139,9 @@ window.playMatch3D = function(){
     .catch(function(e){
       avvio = false;
       console.error('KFM27: partita 3D non avviata', e);
-      if (typeof window.showToast === 'function') window.showToast('Partita 3D non disponibile');
+      /* il motivo nel messaggio: senza, l'errore restava solo in console */
+      var why = String((e && e.message) || e || '').split('\n')[0].slice(0, 90);
+      if (typeof window.showToast === 'function') window.showToast('Partita 3D non disponibile' + (why ? ': ' + why : ''));
       ridisegna();
     });
 };
