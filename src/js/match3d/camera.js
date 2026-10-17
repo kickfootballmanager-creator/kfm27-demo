@@ -1,33 +1,32 @@
 import * as THREE from 'three';
 import { CAMERA } from './config.js';
 
-// Visuale da tribuna, alta sul lato +Z: segue la palla con smorzamento
-// esponenziale e anticipa un po' nella direzione del gioco. Nei calci
-// piazzati (setpieces.js) passa, con una transizione morbida, alla visuale
-// dietro a chi calcia, e poi torna.
+// Visuale da tribuna sul lato +Z, come nel riferimento: segue la palla da
+// vicino senza anticipo, vicino alle aree si avvicina e si abbassa, al calcio
+// d'inizio resta larga sul cerchio. Nei calci piazzati (setpieces.js) passa,
+// con una transizione morbida, alla visuale dietro a chi calcia, e poi torna.
 const smooth = (u) => u * u * (3 - 2 * u);
+const RAD = Math.PI / 180;
+// campo visivo verticale che da' `h` gradi in orizzontale su uno schermo `aspect`
+const vfov = (h, aspect) => 2 * Math.atan(Math.tan(h * RAD / 2) / aspect) / RAD;
 
 export class BroadcastCamera {
-  constructor(aspect) {
-    this.cam = new THREE.PerspectiveCamera(CAMERA.fov, aspect, 0.5, 600);
+  // kickoff(): true mentre si aspetta il calcio d'inizio
+  constructor(aspect, kickoff) {
+    this.cam = new THREE.PerspectiveCamera(vfov(CAMERA.hfov, aspect), aspect, 0.5, 600);
     this.target = new THREE.Vector3();
-    this.fov = CAMERA.fov;
-    this.cam.position.set(0, CAMERA.height, CAMERA.sideDistance);
-    this.cam.lookAt(this.target);
+    this.kickoff = kickoff || (() => false);
+    this.ko = 0;          // peso della visuale del calcio d'inizio
     // calcio piazzato: posa voluta e quanto pesa (0 tribuna, 1 calcio piazzato)
-    this.sp = { on: false, w: 0, pos: new THREE.Vector3(), look: new THREE.Vector3(), fov: CAMERA.fov };
+    this.sp = { on: false, w: 0, pos: new THREE.Vector3(), look: new THREE.Vector3(), fov: this.cam.fov };
     this._pos = new THREE.Vector3();
     this._look = new THREE.Vector3();
-    // velocita' della palla filtrata per l'anticipo: un tocco, un passaggio o un
-    // tiro cambiano la velocita' in un fotogramma, e con l'anticipo diretto la
-    // mira saltava di metri (tutta l'inquadratura a scatti, corsa compresa)
-    this.lead = { x: 0, z: 0 };
+    this._place();
   }
 
   snap(ball) {
     this.target.set(ball.pos.x * CAMERA.followX, 0, CAMERA.aimZ + ball.pos.z * CAMERA.followZ);
-    this.lead.x = ball.vel ? ball.vel.x : 0;
-    this.lead.z = ball.vel ? ball.vel.z : 0;
+    this.ko = this.kickoff() ? 1 : 0;
     this._place();
   }
 
@@ -45,40 +44,45 @@ export class BroadcastCamera {
 
   update(ball, dt) {
     const k = 1 - Math.exp(-CAMERA.rate * dt);
-    const kl = 1 - Math.exp(-CAMERA.leadRate * dt);
-    this.lead.x += (ball.vel.x - this.lead.x) * kl;
-    this.lead.z += (ball.vel.z - this.lead.z) * kl;
     const lim = CAMERA.limitX;
-    const tx = Math.max(-lim, Math.min(lim, (ball.pos.x + this.lead.x * CAMERA.lead) * CAMERA.followX));
-    const tz = CAMERA.aimZ + (ball.pos.z + this.lead.z * CAMERA.lead) * CAMERA.followZ;
+    const tx = Math.max(-lim, Math.min(lim, ball.pos.x * CAMERA.followX));
+    const tz = CAMERA.aimZ + ball.pos.z * CAMERA.followZ;
     this.target.x += (tx - this.target.x) * k;
     this.target.z += (tz - this.target.z) * k;
-
-    const near = Math.abs(ball.pos.x) > CAMERA.areaX;
-    const fovGoal = near ? CAMERA.fovArea : CAMERA.fov;
-    this.fov += (fovGoal - this.fov) * (1 - Math.exp(-CAMERA.fovRate * dt));
+    this.ko = this.kickoff() ? 1 : Math.max(0, this.ko - dt / CAMERA.kickoff.blend);
     const s = this.sp;
     s.w = Math.max(0, Math.min(1, s.w + (s.on ? 1 : -1) * dt / CAMERA.setPieceBlend));
     this._place();
   }
 
   _place() {
-    const c = this.cam;
-    // palla verso la tribuna: la telecamera arretra, cosi' la linea laterale vicina resta in quadro
-    const back = Math.max(0, this.target.z - CAMERA.aimZ) * CAMERA.nearBack;
-    this._pos.set(this.target.x, CAMERA.height, CAMERA.sideDistance + back);
+    const c = this.cam, C = CAMERA, A = C.area, K = C.kickoff;
+    // palla in larghezza (dalla mira gia' filtrata) e vicinanza a un'area, 0..1
+    const bz = (this.target.z - C.aimZ) / C.followZ;
+    const near = smooth(Math.max(0, Math.min(1, (Math.abs(this.target.x) - A.from) / (A.to - A.from))));
+    let dist = C.distance - C.distanceZ * bz - A.closer * near;
+    let tilt = C.tilt - A.tilt * near;
+    let hfov = C.hfov;
+    const ko = smooth(this.ko);
+    if (ko > 0) {
+      dist += (K.distance - dist) * ko;
+      tilt += (K.tilt - tilt) * ko;
+      hfov += (K.hfov - hfov) * ko;
+    }
     this._look.copy(this.target);
-    let fov = this.fov;
+    this._pos.set(this.target.x, dist * Math.sin(tilt * RAD), this.target.z + dist * Math.cos(tilt * RAD));
+    let fov = vfov(hfov, c.aspect);
     const w = smooth(this.sp.w);
     if (w > 0) {
       this._pos.lerp(this.sp.pos, w);
       this._look.lerp(this.sp.look, w);
-      fov += (this.sp.fov - fov) * w;
+      // la posa del calcio piazzato da' il campo verticale: sugli schermi stretti si allarga
+      const spf = c.aspect < 1.2 ? this.sp.fov * 1.2 / Math.max(0.5, c.aspect) : this.sp.fov;
+      fov += (spf - fov) * w;
     }
     c.position.copy(this._pos);
     c.lookAt(this._look);
-    // Schermi stretti (telefono in verticale): si allarga il campo visivo.
-    const f = c.aspect < 1.2 ? Math.min(CAMERA.maxFov, fov * 1.2 / Math.max(0.5, c.aspect)) : fov;
+    const f = Math.min(C.maxFov, fov);
     if (Math.abs(c.fov - f) > 1e-3) { c.fov = f; c.updateProjectionMatrix(); }
   }
 

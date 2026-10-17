@@ -948,24 +948,30 @@ export const ANIMLIB = {
   }
 };
 
+// Telecamera di gioco come nel riferimento (docs/match3d-riferimento.md, A1):
+// carrello sul lato +Z, guarda il punto inquadrato da `distance` metri con
+// `tilt` gradi di inclinazione e lo stesso campo visivo orizzontale su ogni
+// schermo (46 m di campo in larghezza al centro). In larghezza la mira sta a
+// followZ della palla piu' aimZ verso la telecamera, e la telecamera si
+// avvicina di distanceZ metri per metro di palla verso di lei: cosi' si
+// sposta del 40% della palla e si abbassa, come nel riferimento.
 export const CAMERA = {
-  // A grandezza vera giocatori e palla sono piccoli: la telecamera sta piu'
-  // vicina al campo che nella fase 1.
-  fov: 26,
-  fovArea: 23,            // piu' stretta vicino alle aree
-  areaX: 36,              // da qui in poi si considera "vicino all'area"
-  height: 16,
-  sideDistance: 42,       // distanza dal centro in Z (lato tribuna)
-  followX: 1,             // quanto segue la palla lungo il campo
-  followZ: 0.8,
-  aimZ: 1.5,              // mira spostata verso la tribuna: la linea laterale vicina resta in quadro
-  nearBack: 1,            // metri di arretramento per metro di palla verso la tribuna
+  hfov: 44.7,             // gradi orizzontali (21,4 verticali su uno schermo 2,17:1)
+  tilt: 25.7,
+  distance: 55.6,         // palla al centro in larghezza: telecamera alta 24 m
+  distanceZ: 0.4,
+  followX: 1,
+  followZ: 0.76,
+  aimZ: 1.1,
+  // vicino alle aree (|x| della mira da `from` a `to`) piu' bassa e un po'
+  // piu' vicina: tilt gradi e closer metri in meno, 41-44 m di campo in larghezza
+  area: { from: 22, to: 34, closer: 1.5, tilt: 3 },
+  // calcio d'inizio: larga sul cerchio (60 m) finche' non si batte, poi torna
+  // alla visuale di gioco in `blend` secondi
+  kickoff: { distance: 64, tilt: 22.7, hfov: 50, blend: 1.2 },
   maxFov: 75,
-  lead: 0.35,             // anticipo in secondi nella direzione della palla
-  leadRate: 3,            // 1/s: filtro della velocita' usata per l'anticipo (tocchi e calci non fanno sobbalzare l'inquadratura)
   limitX: 44,
-  rate: 2.6,              // velocita' dello smorzamento (1/s)
-  fovRate: 1.2,
+  rate: 7,                // 1/s: insegue la palla con circa 0,14 s di ritardo, senza anticipo
   setPieceBlend: 0.9      // secondi della transizione fra partita e calcio piazzato
 };
 

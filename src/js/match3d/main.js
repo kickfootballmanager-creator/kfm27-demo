@@ -274,7 +274,7 @@ class Match {
 
     this.rules = new Rules(this, this.opts.durationMinutes);
     this.rules.kickoff(this.userSide);
-    this.camera = new BroadcastCamera(window.innerWidth / window.innerHeight);
+    this.camera = new BroadcastCamera(window.innerWidth / window.innerHeight, () => this.phase === 'kickoff');
     this.camera.snap(this.ball);
     this.gfx = new Graphics(r, scene, this.camera.cam, this.sun, (level, shadows, chosen) => this.applyLevel(level, shadows, chosen));
     this.ball.sync(1, 0);

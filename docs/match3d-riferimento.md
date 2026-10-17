@@ -609,3 +609,59 @@ sui giocatori entro 20 m dalla palla):
 
 Confronti: `debug/riferimenti/confronto/tappe/tappa1_centro.png` (prima,
 dopo, riferimento a 64,9 s), `tappa1_area.png`, `tappa1_replay.png`.
+
+### Tappa 2: telecamera
+
+Cosa cambia (`config.js` CAMERA, `camera.js`, una riga in `main.js`):
+
+- **Geometria**: la telecamera guarda il punto inquadrato da 55,6 m con 25,7
+  gradi di inclinazione (24,1 m di altezza con la palla al centro in
+  larghezza) e tiene fisso il campo visivo orizzontale, 44,7 gradi: su ogni
+  schermo orizzontale vedi la stessa larghezza di campo. Prima: altezza 16
+  m, 42 m dall'asse, 26 gradi verticali (53 orizzontali sul telefono).
+- **In larghezza**: la mira sta a 0,76 volte la palla piu' 1,1 m verso la
+  telecamera; la telecamera si avvicina di 0,4 m per metro di palla verso di
+  lei, quindi si sposta del 40% della palla e si abbassa (21 m con la palla
+  a 19 m verso la telecamera). Prima arretrava solo quando la palla veniva
+  verso la tribuna.
+- **Aree**: con la mira oltre 22 m dal centro la telecamera scende di 3
+  gradi e si avvicina di 1,5 m (completo a 34 m), zoom fermo: 41-44 m di
+  campo in larghezza, come nei calcoli esatti del riferimento vicino alle
+  aree (40,7-43,3 m, 21,8-23,7 gradi). Una prima prova con 5 m e 2,5 gradi
+  stringeva a 39-41 m. Prima della tappa stringeva lo zoom da 26 a 23 gradi.
+- **Inseguimento**: smorzamento 7/s (0,14 s di ritardo), nessun anticipo.
+  Prima: 2,6/s piu' 0,35 s di anticipo filtrato.
+- **Calcio d'inizio**: finche' si aspetta il calcio, visuale larga sul
+  cerchio (64 m, 22,7 gradi, 50 gradi orizzontali, 60 m di campo); dopo il
+  tocco torna alla visuale di gioco in 1,2 s, come nel riferimento.
+- **Calci piazzati e schermi stretti**: le pose dietro al tiratore
+  (setpieces.js) non cambiano; in verticale il campo visivo arriva al
+  massimo di 75 gradi come prima.
+
+Misure dal registro di `kfm_frame.mjs` (`kfm_cam.py`), stessi istanti prima
+e dopo:
+
+| | Prima | Dopo | Riferimento |
+|---|---|---|---|
+| Altezza a centrocampo | 16,0 m | 24,2-24,5 m | 24,8 m |
+| Inclinazione | 21,4 gradi | 25,6-25,7 | 25,7 |
+| Campo visivo (schermo 2,17:1) | 26,0 verticali, 53,3 orizzontali | 21,4 e 44,7 | 21,4 e 44,7 |
+| Distanza dal punto inquadrato | 43,8 m | 55,7-56,7 m | 57,2 m |
+| Larghezza inquadrata al centro | 44,0 m | 45,8-46,8 m | 46,9 m |
+| Palla a 19 m verso la telecamera | 16 m, 56,9 m dall'asse, 43,8 m di larghezza | 21,1 m, 58,3 m dall'asse, 39,9 m | 18-19 m, 59-60 m dall'asse, 41-48 m |
+| Palla a 13 m verso la telecamera (03:39) | 16 m, 52,2 m dall'asse, 43,8 m di larghezza | 21,8 m, 56,6 m dall'asse, 41,3 m | tracce: 19,5-20,4 m e 54-55 m dall'asse; corrette per il -7% delle tracce, 21-22 m e 58 m |
+| Limite dell'area (palla a 34-48 m dal centro, 01:32-01:49) | 16 m, 21,5 gradi, 40,6-43,8 m di larghezza (zoom) | 19,4-20,5 m, 22,7-22,8 gradi, 41,2-43,8 m | 18,1-22,0 m, 21,8-23,7 gradi, 40,7-43,3 m |
+| Calcio d'inizio | uguale al gioco | 24,7 m, 22,7 gradi, 24,2 verticali, 64 m, 59,7 m di campo | 24,6 m, 22,7, 24,2, 63,8 m, 59,5 m |
+
+Confronti: `debug/riferimenti/confronto/tappe/tappa2_centro.png` (prima,
+dopo, riferimento a 64,9 s), `tappa2_calcio_inizio.png` (con il
+riferimento a 56,0 s), `tappa2_area.png` (con il riferimento v2 a 5,0 s),
+`tappa2_verso_tribuna.png` (con il riferimento a 255,0 s). Il caso
+dell'area viene da una lista d'istanti diversa (4, 7, 8,5, 9,2, 9,6 s), la
+stessa prima e dopo.
+
+Con la telecamera piu' alta le tribune lontane escono dall'inquadratura di
+gioco: in cima allo schermo restano i cartelloni, come nel riferimento. Con
+la palla verso la telecamera la linea laterale vicina resta appena fuori
+dal bordo basso, come nel riferimento a 255 s; i tasti touch in basso a
+destra coprono la stessa parte di campo di prima.
