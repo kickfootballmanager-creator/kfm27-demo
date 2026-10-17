@@ -43,7 +43,7 @@ Leggere "Stato" qui sotto: l'ultimo blocco "in corso" e la sua lista "manca".
 | B, palla e gesti | fatto | vedi registro |
 | C, equilibrio | fatto | vedi registro |
 | D, gol e calcio d'inizio | fatto | vedi registro |
-| E, stadio | da fare | |
+| E, stadio | fatto | vedi registro |
 | F, Meshy | da fare | |
 
 Crediti Meshy spesi: 0 (saldo 2992 il 17/10).
@@ -159,8 +159,32 @@ carrierThink decide appena ricevuta palla (tenuta 0,5 s); difesa larga
   aggiornata. Test di durata: 5 violazioni, statistiche nell'obiettivo.
 - Restano: replay dopo una grande parata, VAR sul fuorigioco.
 
-### Blocco E (in corso)
+### Blocco E (fatto)
 
-- 3ds Max 2027 in `F:dsmaxds Max 2027\`, V-Ray in
-  `C:\Program Files\Chaos\V-Rayds Max 2027`; MultiScatter assente (restano
-  le spline di distribuzione "MS ..."). Controllo: `debug/stadio/strumenti/vray_check.ms`.
+- 3ds Max 2027 in `F:\3dsmax\3ds Max 2027\`, V-Ray 7 in
+  `C:\Program Files\Chaos\V-Ray\3ds Max 2027`; MultiScatter assente.
+  Lancio in batch: `debug/stadio/strumenti/run_batch.ps1 -Script <.ms> -Scene <.max> -Out <cartella> [-Bip <.bip>]`
+  (mette le variabili di V-Ray e risponde "No" all'avviso di aggiornamento;
+  il 3ds Max aperto a mano non si tocca). `ok` in MAXScript e' riservata.
+- Esportati (in `kfm27/debug/stadio/`, fuori da git):
+  `export/stadium.fbx` (strutture, senza luci, proxy, personaggi e oggetti
+  di MultiScatter), `export/splines.json` (spline di distribuzione: 2789 file
+  di seggiolini, 2789 di tifosi), `asset/Seat_01a|b.fbx` e 9 tifosi con un
+  movimento .bip ciascuno (`run_assets.ps1`).
+- Visibilita' misurata (`strumenti/visibili.py`): la telecamera di gioco
+  vede quasi solo la tribuna bassa di fronte; replay e primi piani il resto.
+  Budget per oggetto in `tools/match3d/stadium_build.py` (KEEP).
+- `tools/match3d/stadium_sprites.py`: `sprites/crowd.png` (9 persone, braccia
+  giu' e su, maschera di maglia, sciarpa e bandiera per i colori della
+  squadra) e `sprites/seats.png` (fila di 32 posti aperti e chiusi).
+- `tools/match3d/stadium_build.py` -> `src/assets/match3d/stadium/stadium-high|low.glb`
+  (gitignored): pezzi minuscoli tolti, riduzione per oggetto, fusione per
+  materiale, texture 1024/512, banner neutri, AO di Cycles nei vertici,
+  seggiolini a strisce lungo le file, 51.000 tifosi nelle extras.
+- `stadium.js`: carica il modello se c'e' (altrimenti lo stadio semplice),
+  taglio 8 m davanti alla telecamera, banner con gli sponsor della palla e
+  KFM27, maxischermi col risultato, pubblico instanziato dall'atlante reso.
+- Controllo a occhio fatto (banner leggibili, maxischermo col risultato,
+  terreno erboso dietro i cartelloni), disegno misurato ai tre livelli.
+- Test di durata: 6 violazioni in 10 partite (limite 7), 0 errori,
+  statistiche nell'obiettivo. Commit e push del blocco E.

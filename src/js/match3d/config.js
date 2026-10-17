@@ -1322,5 +1322,21 @@ export const STADIUM = {
     cheerTime: 7,         // secondi di esultanza dopo un gol
     neutral: ['#39414d', '#5a6270', '#7a6a58', '#2d3f55', '#6b3b3b', '#4c5a3c', '#8a8d93'],
     density: { low: 0.35, medium: 0.65, high: 1 }
+  },
+  // modello del progetto 3ds Max (stadium-<livello>.glb): taglio davanti alla
+  // telecamera (puo' stare dentro la tribuna VIP), materiali da ritagliare con
+  // l'alfa, vetri, luci sotto il tetto, curve (oltre endFrom m dalla linea di
+  // fondo) col tifo di una squadra, persone nell'atlante dei tifosi
+  model: {
+    clipAhead: 8,
+    cutout: ['Seats', 'Fence 01', 'Fence 02'],
+    glass: ['Glass', 'Windows', 'Roof Glass Plates'],
+    glassOpacity: 0.35,
+    lamps: 1.2,
+    endFrom: 8,
+    atlasCells: 9,             // persone in crowd.png (stadium_sprites.py)
+    crowdSize: [1.15, 2.3],    // metri della cella dell'atlante: piedi in basso
+    crowdLight: 0.95,
+    groundDrop: 0.1
   }
 };

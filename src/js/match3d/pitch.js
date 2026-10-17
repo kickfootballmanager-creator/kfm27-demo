@@ -253,7 +253,9 @@ function stands() {
   add(hl * 2 + depth * 2, Math.PI, hw);
   add(hw * 2, Math.PI / 2, hl);
   add(hw * 2, -Math.PI / 2, hl);
-  return new THREE.Mesh(mergeGeometries(parts), new THREE.MeshLambertMaterial({ map: crowdTexture() }));
+  const m = new THREE.Mesh(mergeGeometries(parts), new THREE.MeshLambertMaterial({ map: crowdTexture() }));
+  m.name = 'stands';
+  return m;
 }
 
 export function buildPitch(renderer) {

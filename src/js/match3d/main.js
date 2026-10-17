@@ -19,7 +19,7 @@ import { Referee } from './referee.js';
 import { unlockAudio, closeAudio } from './audio.js';
 import { SetPieces } from './setpieces.js';
 import { Graphics, savedQuality, detectQuality } from './render.js';
-import { Stadium } from './stadium.js';
+import { Stadium, loadStadiumModel } from './stadium.js';
 import { Recorder, Replay, CloseCam } from './replay.js';
 import { Tape, replayFolder, saveReplayFiles } from './tape.js';
 import { loadBallLook } from './ball-look.js';
@@ -217,7 +217,7 @@ class Match {
     // palla del modello dell'utente col disegno della competizione (ball-look.js)
     const look = loadBallLook({ comp: this.opts.competition || null, winter: this.opts.ball === 'inverno', size: BALL_LOOK.size[level] || 1024 })
       .catch((e) => { console.warn('match3d palla: aspetto non caricato', e); return null; });
-    const [tpl, ballLook] = await Promise.all([loadPlayerModel(level), look, loadCss(), fontsReady()]);
+    const [tpl, ballLook, stadiumModel] = await Promise.all([loadPlayerModel(level), look, loadStadiumModel(level), loadCss(), fontsReady()]);
     this.animLevel = level;
     this.loadStats = { level, loadMs: Math.round(performance.now() - t0), heapBefore: mem0, heapAfter: heapBytes(), anim: tpl.lib.stats };
     // livello medio: il resto della libreria arriva durante la partita
@@ -236,8 +236,11 @@ class Match {
     sun.position.fromArray(L.sun.dir).multiplyScalar(LIGHT.sunDistance);
     scene.add(sun);
     this.sun = sun;
-    scene.add(buildPitch(r));
-    this.stadium = new Stadium({ home: kitOf(this.home, 'home'), away: kitOf(this.away, 'away') });
+    const pitch = buildPitch(r);
+    scene.add(pitch);
+    this.stadium = new Stadium({ home: kitOf(this.home, 'home'), away: kitOf(this.away, 'away') }, stadiumModel, r);
+    // con il modello dello stadio le tribune piane del campo non servono
+    if (this.stadium.model) pitch.getObjectByName('stands').visible = false;
     scene.add(this.stadium.group);
     this.scene = scene;
 
@@ -479,7 +482,8 @@ class Match {
     this.hud.setPrompt(this.setpieces.prompt(glyph, this.controls.device, this.controls.padKind));
     this.syncMarkers(dt);
     this.blobShadows();
-    this.stadium.update(this.paused ? 0 : dt);
+    this.stadium.update(this.paused ? 0 : dt, this.camera.cam);
+    this.stadium.screen(this.home.name, this.away.name, this.goals.home, this.goals.away, this.rules.clockText().split(':')[0]);
     // dopo il gol si registra solo quanto serve al replay (REPLAY.after)
     const rec = this.phase !== 'goal' || this.recorder.count - this.goalMark < REPLAY.after * REPLAY.hz;
     if (!this.paused && this.phase !== 'end') { if (rec) this.recorder.tick(dt); this.tape.tick(dt); }
@@ -561,7 +565,7 @@ class Match {
     else this.controls.read(dt);
     if (d > 0 && !r.step(d)) this.skipGoal();
     r.apply(this.camera.cam, d);
-    this.stadium.update(d);
+    this.stadium.update(d, this.camera.cam);
   }
 
   // Regia dopo il gol (REPLAY): diretta con la telecamera di gioco, poi primo

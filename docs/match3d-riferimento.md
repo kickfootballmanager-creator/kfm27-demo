@@ -1130,3 +1130,28 @@ gialli 0,3, rossi 0, scivolate 0,9 a partita; 2,8 gol a partita.
 
 Test di durata (10 partite): 5 violazioni (portiere 3, piedi 1, osso 1),
 falli 1,7, gialli 0,2, rossi 0, scivolate 0,6 a partita.
+
+### Blocco E: stadio (18/10)
+
+Il riferimento ha tribune piene in 3D con molte varianti, tabelloni e tetto
+aperto col cielo (tabella A, riga 5). Ora KFM27 usa lo stadio Soccer Stadium
+CF convertito (`tools/match3d/stadium_build.py`, file fuori da git):
+
+- Strutture del progetto 3ds Max ridotte per oggetto in base a quanto si
+  vedono dalle visuali di gioco e di replay: livello alto 272.000 triangoli
+  (25 MB), basso 154.000 (15 MB); occlusione ambientale cotta nei vertici.
+- Seggiolini e tifosi al posto di MultiScatter: strisce di posti lungo le 2789
+  file di seggiolini e 51.000 tifosi sulle loro spline, sagome rese dai 9
+  tifosi del progetto (braccia giu' e su) con maglia, sciarpa e bandiera nei
+  colori della squadra; casa dietro una porta, ospiti dietro l'altra.
+- Banner TurboSquid/DTP.3D sostituiti dagli sponsor della palla e dal marchio
+  KFM27; i maxischermi mostrano squadre, risultato e minuto. Le maglie dei
+  calciatori del progetto non si usano (giocano i nostri); tra le texture dei
+  tifosi solo m_20 ha un marchio stampato e non e' fra le 9 rese.
+- La telecamera di gioco vede quasi solo la tribuna bassa di fronte (come
+  nel riferimento); le tribune piene si vedono nei replay, nei primi piani e
+  sul lato lontano. Il modello si taglia 8 m davanti alla telecamera, che
+  puo' stare dentro la tribuna VIP.
+- Disegno: basso 112 chiamate e 538.000 triangoli (senza stadio 76 e
+  246.000), alto 143 e 835.000. Test di durata: 6 violazioni in 10 partite,
+  statistiche nell'obiettivo.
