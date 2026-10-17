@@ -147,7 +147,8 @@ ROLES = [
     (r"^Tricks$", "feint", None),
     (r"^KickOff_\d+$", "kickoff", None),
     (r"^Ball_Avoid_Jump$", "wallJump", None),
-    (r"^(Celebration_0[12]_ForSequence|Ceremony_00[12])$", "celebrate", None),
+    # tutte le 26 esultanze (17/10): quelle in corsa il gioco le segue con la radice (rules.goal)
+    (r"^(Celebration_0[12]_ForSequence|Ceremony_00[12]|Ceremony)$", "celebrate", None),
     (r"^Keeper_Save_", "gkSave", None),
     (r"^Keeper_Punching_", "gkPunch", None),
     (r"^Keeper_Ball_(Center|Left01|Right01|Dive)_", "gkCatch", None),
@@ -215,7 +216,6 @@ MIRROR = {
 # clip utilizzabili ma senza un posto nel gioco: il motivo va nel catalogo
 NO_ROLE = [
     (r"^Back steps_0$", "corsa all'indietro con giro completo: nessuna situazione di gioco la chiede"),
-    (r"^Ceremony$", "esultanza in corsa: il giocatore resta sul posto e la corsa della clip andrebbe persa"),
     (r"^Defense_FastJogging_180_[LR]$", "corsa all'indietro col corpo girato: doppione della 180"),
     (r"^Diving_Head", "tuffo di testa: comando non presente"),
     (r"^Tackles01_Reaction_02$", "caduta di 7 secondi, troppo lunga per la partita"),

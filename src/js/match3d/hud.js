@@ -126,8 +126,16 @@ export class Hud {
     this.skipBtn.innerHTML = ICON_SKIP;
     this.skipBtn.appendChild(el('span', null, 'Salta'));
     this.skipBtn.addEventListener('click', () => { if (on.skip) on.skip(); });
-    // dissolvenza al nero fra replay e calcio d'inizio
-    this.fadeEl = el('div', 'm3d-fade');
+    // dissolvenza fra due inquadrature del replay: l'ultimo fotogramma della
+    // prima, fotografato, sfuma sopra la seconda
+    this.snapEl = el('canvas', 'm3d-snap');
+    this.snapEl.hidden = true;
+    // stacco col logo fra diretta, replay e calcio d'inizio
+    this.stingEl = el('div', 'm3d-sting');
+    const logo = el('img');
+    logo.src = 'src/img/logo.png';
+    logo.alt = '';
+    this.stingEl.appendChild(logo);
 
     this.dialog = this._dialog(exitMode);
     this.dialog.hidden = true;
@@ -136,7 +144,7 @@ export class Hud {
     rotate.innerHTML = ICON_ROTATE;
     rotate.appendChild(el('span', null, 'Gira il telefono in orizzontale'));
 
-    hud.append(this.fadeEl, this.marks, score, this.tag, exit, this.layer, this.power, this.prompt, this.banner, this.replayTag, this.skipBtn, this.toastEl, this.hint, this.dialog, rotate);
+    hud.append(this.snapEl, this.marks, score, this.tag, exit, this.layer, this.power, this.prompt, this.banner, this.replayTag, this.skipBtn, this.toastEl, this.hint, this.stingEl, this.dialog, rotate);
     root.appendChild(hud);
     this.node = hud;
   }
@@ -255,8 +263,34 @@ export class Hud {
     this.skipBtn.hidden = !on;
   }
 
-  // true: verso il nero; false: di nuovo in chiaro
-  fade(on) { this.fadeEl.classList.toggle('on', !!on); }
+  // Pulsante Salta da solo (primo piano dell'esultanza, prima del replay).
+  showSkip(on) { this.skipBtn.hidden = !on; }
+
+  // Comandi touch: nascosti dal gol al calcio d'inizio, come nel riferimento.
+  showControls(on) { this.layer.hidden = !on; }
+
+  // Stacco col logo: 'in' entra e copre tutto, 'out' esce, null a riposo.
+  sting(state) {
+    this.stingEl.classList.toggle('in', state === 'in');
+    this.stingEl.classList.toggle('out', state === 'out');
+  }
+
+  // Dissolvenza: `src` (la tela del 3D appena disegnata) fotografata a meta'
+  // risoluzione, poi sfuma in `seconds` s sopra l'inquadratura nuova.
+  dissolve(src, seconds) {
+    const c = this.snapEl, w = Math.max(1, src.width >> 1), h = Math.max(1, src.height >> 1);
+    if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+    c.getContext('2d').drawImage(src, 0, 0, w, h);
+    c.hidden = false;
+    c.style.transition = 'none';
+    c.style.opacity = '1';
+    clearTimeout(this.snapTimer);
+    requestAnimationFrame(() => {
+      c.style.transition = `opacity ${seconds}s linear`;
+      c.style.opacity = '0';
+      this.snapTimer = setTimeout(() => { c.hidden = true; }, seconds * 1000 + 50);
+    });
+  }
 
   toast(text) {
     this.toastEl.textContent = text;

@@ -1,4 +1,4 @@
-import { SHAPE, AI, PITCH, GOAL, CROSS, RULES, PRESS, TACKLE } from './config.js';
+import { SHAPE, AI, PITCH, GOAL, CROSS, RULES, PRESS, TACKLE, ANIM } from './config.js';
 import { freeness } from './player.js';
 import { autoTackle, aiPressState, tackleWorth, slideWorth, rashRate, approach } from './defense.js';
 
@@ -589,6 +589,11 @@ export class TeamAI {
   steer(dt, p) {
     const m = this.m;
     if (p.aiState === 'PORTATORE' && m.owner === p) {
+      // da fermo non si riparte mentre il gesto appena finito (contrasto vinto)
+      // sfuma: la partenza della libreria lo aspetta e senza di lei il corpo
+      // traslava in piedi. Col calcio in coda si resta fermi: lo gira la clip
+      const g = p.avatar.one, fading = !!g && g.t >= g.hold && !(p.trans && p.trans.one === g);
+      if (p.speed < ANIM.trans.startBelow && (fading || p.kickQueue)) { p.drive(dt, 0, 0, 0, { withBall: true }); return; }
       const dd = p.dribbleDir || { x: this.dir, z: 0 };
       // protezione: con un difensore addosso la palla va sul lato lontano da
       // lui e il portatore gli gira le spalle a passo corto

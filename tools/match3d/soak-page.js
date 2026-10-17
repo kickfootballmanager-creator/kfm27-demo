@@ -670,8 +670,9 @@
     S.persist(st, 'throughStop', waiting, 20, 'filtrante: il ricevente si ferma prima della palla', to, { distanza_palla: to ? +Math.hypot(b.pos.x - to.pos.x, b.pos.z - to.pos.z).toFixed(1) : null });
   };
 
-  // Dopo il gol (skill: "Dopo il gol"): il replay parte, finisce e non
-  // rompe le pose; poi calcio d'inizio senza attesa, gia' pronto.
+  // Dopo il gol (skill: "Dopo il gol"; regia del riferimento, circa 32 s):
+  // il replay parte, finisce e non rompe le pose; poi calcio d'inizio senza
+  // attesa, gia' pronto.
   S.checkGoal = () => {
     const m = S.m, st = S.goalSt || (S.goalSt = {});
     if (m.phase === 'goal' && !st.goal) { st.goal = true; st.t = 0; st.sawReplay = false; }
@@ -685,13 +686,14 @@
         st.goal = false;
         if (!st.sawReplay) S.flag('replay: il gol non ha avuto il replay', null, { secondi: +st.t.toFixed(1) });
         if (m.phase !== 'kickoff' || !m.rules.set || !m.rules.set.ready) S.flag('dopo il gol: calcio d\'inizio non pronto', null, { fase: m.phase });
-      } else if (st.t > 20) { S.flag('dopo il gol: la sequenza non finisce', null, { secondi: +st.t.toFixed(1) }); st.t = -1e9; }
+      } else if (st.t > 40) { S.flag('dopo il gol: la sequenza non finisce', null, { secondi: +st.t.toFixed(1) }); st.t = -1e9; }
     }
   };
 
-  // Calcio d'inizio (skill: "Calcio d'inizio"): all'avvio ognuno nella sua
-  // meta' (chi batte puo' stare sulla linea), avversari fuori dal cerchio, due
-  // di chi batte al centro; poi il tocco corto arriva al compagno.
+  // Calcio d'inizio (come nel riferimento, tappa 5): all'avvio ognuno nella
+  // sua meta' (chi batte puo' stare sulla linea), avversari fuori dal
+  // cerchio, al centro solo chi batte; poi il passaggio all'indietro arriva
+  // al compagno.
   S.checkKickoff = () => {
     const m = S.m, st = S.koSt || (S.koSt = {});
     const ko = m.phase === 'kickoff' && m.rules.set && m.rules.set.ready;
@@ -706,7 +708,7 @@
         if (p.team !== s.side && r < R - 0.3) { S.flag('calcio d\'inizio: avversario nel cerchio', p, { distanza: +r.toFixed(2) }); break; }
         if (p.team === s.side && r < 3.5) center++;
       }
-      if (center < 2) S.flag('calcio d\'inizio: meno di due giocatori al centro', s.taker, { al_centro: center });
+      if (center !== 1) S.flag('calcio d\'inizio: al centro non c\'e\' solo chi batte', s.taker, { al_centro: center });
       S.stats.kickoffs++;
     } else if (m.phase !== 'kickoff') st.ko = false;
     const poss = m.poss, last = poss.log[poss.log.length - 1];

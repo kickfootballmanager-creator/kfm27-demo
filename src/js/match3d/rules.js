@@ -1,4 +1,4 @@
-import { RULES, PITCH, BALL, CONTROL, FOUL, ADVANTAGE, FK, REPLAY, REACT } from './config.js';
+import { RULES, PITCH, BALL, CONTROL, FOUL, ADVANTAGE, FK, REACT } from './config.js';
 import { headingOf, choosePass } from './player.js';
 import { rollSpeedFor } from './ball.js';
 import { rootAction, react } from './gestures.js';
@@ -52,10 +52,8 @@ export class Rules {
       if (!shot || (this.over += dt) > RULES.shotGrace) { this.endHalf(); return; }
     }
     if (m.phase === 'kickoff' || m.phase === 'restart') this.setPiece(dt, inp);
-    else if (m.phase === 'goal') {
-      // esultanza dal vivo, poi il replay; il calcio d'inizio lo fa partire main.endGoal
-      if (this.t > REPLAY.celebrate) m.startReplay();
-    } else if (m.phase === 'out') {
+    // goal: la regia (main.goalShow) porta a replay e calcio d'inizio
+    else if (m.phase === 'out') {
       if (this.t > RULES.outPause) this.restart(this.pending);
     } else if (m.phase === 'foul') {
       if (this.t > RULES.foulPause) this.restart(this.pending);
@@ -241,7 +239,10 @@ export class Rules {
     }
     // rimessa dell'IA: si lancia girati verso il compagno e al posto (aimThrow)
     const facing = s.type !== 'throw' || user || this.throwReady(p) || this.t > RULES.throwIn.aimWait;
-    if (facing && this.t > (user ? (aiming ? FK.userWait : RULES.userWait) : RULES.aiTake)) this.take('auto', s.aimPower ?? 0.2 + Math.random() * 0.75, null);
+    // calcio d'inizio dell'IA: contatto aiContact s dopo che lo schieramento e'
+    // in vista (dopo un gol lo stacco col logo lo copre ancora `hidden` s)
+    const K = RULES.kickoff, ai = s.type === 'kickoff' ? K.aiContact - K.lead + (s.hidden || 0) : RULES.aiTake;
+    if (facing && this.t > (user ? (aiming ? FK.userWait : RULES.userWait) : ai)) this.take('auto', s.aimPower ?? 0.2 + Math.random() * 0.75, null);
   }
 
   // `btn`: pulsante dell'utente (pass, through, cross, shot) o 'auto' per l'IA.
@@ -267,7 +268,8 @@ export class Rules {
 
   kickoffTap(p) {
     const m = this.m, K = RULES.kickoff, d = m.dirOf(p.team);
-    // al compagno accanto (placeKickoff); se non c'e', al piu' vicino dietro la palla
+    // al compagno del punto di ricezione (placeKickoff); se non c'e', al piu'
+    // vicino dietro la palla
     let to = m.kickMate && m.kickMate.team === p.team && !m.kickMate.sentOff && !m.kickMate.down ? m.kickMate : null, bd = Infinity;
     if (!to) for (const q of m.teams[p.team].players) {
       if (q === p || q.keeper || q.pos.x * d > -0.5) continue;
@@ -283,7 +285,7 @@ export class Rules {
     p.action = {
       clip: clip || 'kickoff', t: 0, rate: 1, end: end - from,
       events: [{ at: contact - from, fn: () => {
-        // tocco corto: arriva al compagno a K.arrive m/s, non un rasoterra da passaggio lungo
+        // all'indietro come nel riferimento: parte a circa 15 m/s, arriva a K.arrive
         if (to) m.ball.rollAt(to.pos.x, to.pos.z, rollSpeedFor(Math.hypot(to.pos.x - m.ball.pos.x, to.pos.z - m.ball.pos.z), K.arrive));
         else m.ball.kick(-d * 6, 0, 0);
         m.poss.fly('passaggio', p, to, "calcio d'inizio");
@@ -617,27 +619,45 @@ export class Rules {
     } };
   }
 
-  // --- gol: esultanza di chi ha segnato, il portiere battuto si dispera
+  // --- gol: esultanza di chi ha segnato (su un autogol, del compagno piu'
+  // vicino alla palla); il portiere battuto si dispera
   goal(team, scorer) {
-    const m = this.m, C = RULES.celebration;
+    const m = this.m, b = m.ball.pos;
     whistle('long');
     this.pendingFoul = null;
     this.flushCards();
     for (const p of m.everyone) if (p.action && !p.keeper) { p.action = null; p.avatar.endGesture(); }
-    if (scorer && !scorer.down) {
-      // un'esultanza della libreria (pacchetto extra), diversa di gol in gol; senza, quella Mixamo
-      const list = m.tpl.lib ? m.tpl.lib.role('celebrate') : [];
-      const clip = list.length ? list[(scorer.number + m.goals.home + m.goals.away) % list.length].name : C.clip;
-      const hold = Math.min(C.hold, clipDuration(m.tpl, clip) || C.hold);
-      scorer.avatar.playOnce(clip, C.from, hold);
-      // la corsa dell'esultanza (fino a 8 m nella libreria) sposta il
-      // giocatore: il corpo resta sulla sua posizione di gioco, con anello e ombra
-      scorer.action = rootAction(m, scorer, clip, C.from, C.from + hold, 1, { celebrate: true });
-      m.cameraFocus = scorer;
+    const ok = (p) => !!p && p.team === team && !p.keeper && !p.down;
+    const far = (p) => Math.hypot(p.pos.x - b.x, p.pos.z - b.z);
+    const p = ok(scorer) ? scorer : m.teams[team].players.filter(ok).sort((x, y) => far(x) - far(y))[0] || null;
+    if (p) {
+      this.celebrate(p, this.nextCelebration());
+      m.cameraFocus = p;
     }
+    m.show.p = p;
     this.next = m.otherSide(team);
     // niente rientro a centrocampo: dopo esultanza e replay le squadre sono gia' schierate
     this.go('goal');
+  }
+
+  // Esultanze della libreria (pacchetto extra) in un mazzo mischiato: tutte
+  // prima di ripeterne una. Senza libreria, quella Mixamo.
+  nextCelebration() {
+    const lib = this.m.tpl.lib;
+    if (!this.deck || !this.deck.length) {
+      const d = this.deck = lib ? lib.role('celebrate').map((c) => c.name) : [];
+      for (let i = d.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [d[i], d[j]] = [d[j], d[i]]; }
+    }
+    return this.deck.length ? this.deck.pop() : RULES.celebration.clip;
+  }
+
+  // Esultanza intera di `p`, con la corsa della clip; false se la clip manca.
+  celebrate(p, clip) {
+    const m = this.m, dur = clipDuration(m.tpl, clip);
+    if (!dur) return false;
+    p.avatar.playOnce(clip, 0, dur);
+    p.action = rootAction(m, p, clip, 0, dur, 1, { celebrate: true });
+    return true;
   }
 
   endHalf() {

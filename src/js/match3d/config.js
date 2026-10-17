@@ -353,7 +353,8 @@ export const SHAPE = {
   attack: { lineOffset: -26, lineMin: -40, lineMax: 6, len: 38, width: 32, ballZ: 0.15 },
   // behindBall: la linea difensiva resta almeno tanti metri dietro la palla (lato porta)
   defend: { lineScale: 0.55, lineOffset: -14, lineMin: -45, lineMax: -4, behindBall: 7, len: 26, width: 28.5, ballZ: 0.4 },
-  kickoff: { line: -24, len: 21, width: 28 },
+  // calcio d'inizio: difensori a 17,5 m dalla meta' campo, punte a 2,9 (riferimento)
+  kickoff: { line: -17.5, len: 14.6, width: 26 },
   maxZ: 32                // nessuna posizione oltre questa distanza dal centro in larghezza
 };
 
@@ -1046,14 +1047,30 @@ export const RULES = {
   returnDelay: 1,         // dopo un gol si torna verso il centrocampo dopo tanti secondi
   gatherMax: 9,           // ripresa: al massimo si aspetta tanto che tutti siano al loro posto
   gatherDist: 0.6,        // entro questa distanza dal proprio posto si e' pronti
-  // esultanze della libreria (pacchetto extra), altrimenti quella Mixamo
-  celebration: { clip: 'celebration', from: 0, hold: 4.6 },
-  // Calcio d'inizio come in PES: chi batte tocca corto al compagno accanto,
-  // mateBack m dietro la linea e mateSide m di lato; la palla gli arriva a
-  // `arrive` m/s. Chi batte guarda avanti con la palla dove la mette la clip
-  // KickOff della libreria scelta per la direzione del compagno (135, 180,
-  // 225 gradi); lead: s dal via al contatto, after: s dopo il contatto.
-  kickoff: { clips: ['444_KickOff_135', '445_KickOff_180', '446_KickOff_225'], lead: 0.5, after: 0.25, arrive: 3, mateBack: 1.2, mateSide: 2 },
+  // Esultanza: chi segna fa una delle 26 clip della libreria (pacchetto extra,
+  // un mazzo mischiato per partita), altrimenti quella Mixamo; se la clip
+  // finisce prima dello stacco segue `filler`. Fino a `gather.max` compagni
+  // entro `gather.range` m lo raggiungono dopo `gather.delay` s, gli si fermano
+  // attorno a `gather.radius` m ed esultano con le clip di `gather.clips`.
+  celebration: {
+    clip: 'celebration', filler: '059_Ceremony',
+    gather: { delay: 0.8, max: 4, range: 40, radius: 2.4, clips: ['052_Ceremony', '033_Celebration_01_ForSequence', '059_Ceremony', '034_Celebration_02_ForSequence'] }
+  },
+  // Calcio d'inizio come nel riferimento (4 calci d'inizio di v1, dal radar):
+  // al centro solo chi batte, che passa all'indietro al giocatore del punto
+  // kick[receiver]; la palla gli arriva a `arrive` m/s. Schieramento in metri
+  // con la propria porta verso x negative e z come sullo schermo: `kick` per
+  // chi batte (lui escluso), `defend` per l'altra squadra; ognuno va al punto
+  // piu' vicino al suo posto nel modulo. L'IA tocca la palla `aiContact` s
+  // dopo che lo schieramento e' in vista. La clip KickOff si sceglie per la
+  // direzione del compagno (135, 180, 225 gradi); lead: s dal via al
+  // contatto, after: s dopo il contatto.
+  kickoff: {
+    clips: ['444_KickOff_135', '445_KickOff_180', '446_KickOff_225'], lead: 0.5, after: 0.25, arrive: 10, aiContact: 2.75,
+    receiver: 3,
+    kick: [[-17.6, -2.9], [-17.6, 5], [-11.7, -15.9], [-11.7, 0.8], [-11.7, 18], [-2.9, -24.5], [-2.9, -10.2], [-2.9, 12.2], [-2.9, 26.2]],
+    defend: [[-1, 10.8], [-2.2, -12.2], [-6, 20], [-9.7, -5.9], [-9.8, 8.9], [-11.7, 1.5], [-14.7, -10.6], [-14.9, 13.5], [-17.5, 5.2], [-17.5, -2.1]]
+  },
   // Rimessa: in attesa si resta fermi nel primo fotogramma (palla in mano),
   // poi la clip riparte da li'; la rincorsa della radice (2,07 m fino al
   // rilascio) riporta il battitore sulla linea.
@@ -1152,20 +1169,32 @@ export const DEBUG = { slowMotion: 0.25 };
 // gioco tenuti in memoria; videoBits: qualita' del video WebM.
 export const TAPE = { hz: 60, seconds: 10, events: 300, videoBits: 8e6 };
 
-// Dopo il gol (replay.js): esultanza dal vivo per `celebrate` s, poi il
-// replay degli ultimi `pre` s prima del gol, laterale basso a velocita'
-// normale e dietro la porta al rallentatore (slowSpeed) negli ultimi `slow`
-// s, fino a `post` s dopo. Buffer di `seconds` s registrato a `hz`. Poi
-// dissolvenza al nero di `fade` s e calcio d'inizio con le squadre schierate.
+// Dopo il gol (main.goalShow, replay.js), tempi misurati sui 4 gol di v1
+// (docs/match3d-riferimento.md, tappa 5). Inquadrature del replay: alta e
+// larga dalla tribuna, laterale bassa dal bordo campo con lo zoom che segue
+// la distanza, alta dall'altro lato verso la porta, dietro la porta.
 // camRate, lookRate: 1/s, quanto in fretta la telecamera segue la palla.
-// Laterale bassa dal bordo campo, con lo zoom che segue la distanza.
 export const REPLAY = {
-  hz: 30, seconds: 10,
-  celebrate: 3,
-  pre: 5, slow: 1.5, post: 0.7, slowSpeed: 0.45, maxTime: 11,
-  fade: 0.35,
+  // registrazione: `seconds` s a `hz`; dopo il gol si registra ancora `after` s
+  hz: 30, seconds: 13, after: 0.6,
+  // regia come nei 4 gol di v1: diretta `live` s con la telecamera di gioco,
+  // primo piano di chi esulta `close` s, stacco col logo `sting` s (entra in
+  // stingIn s, esce negli ultimi stingOut s), replay, stacco, calcio d'inizio
+  live: 4.2, close: 5, sting: 1.05, stingIn: 0.3, stingOut: 0.3,
+  // replay: secondi rispetto al gol, velocita' e dissolvenza in entrata (s);
+  // un'inquadratura con meno di minShot s registrati si salta
+  shots: [
+    { cam: 'high', from: -11.9, to: -3.3, speed: 1 },
+    { cam: 'side', from: -3.3, to: 0.5, speed: 1, dissolve: 0.4 },
+    { cam: 'reverse', from: -3.3, to: 0.5, speed: 1 },
+    { cam: 'goal', from: -1.9, to: 0.25, speed: 0.45, dissolve: 0.4 }
+  ],
+  minShot: 1.5,
+  closeCam: { dist: 5, height: 1.4, look: 1.1, fov: 30, rate: 2.5, turn: 1.2, inside: 4 },   // inside: m oltre le linee fin dove puo' stare
+  highCam: { height: 16, back: 24, follow: 0.75, fov: 20 },
   sideCam: { height: 4, dist: 14, edge: 3, lead: 5, frame: 14, fov: [10, 30] },   // frame: m visibili in altezza sull'azione, fov min e max
-  goalCam: { back: 6, height: 2.6, follow: 0.4, fov: 38 },
+  reverseCam: { back: 48, height: 15, side: -14, goalPull: 0.35, fov: 28 },
+  goalCam: { back: 9, height: 6, follow: 0.4, fov: 38 },
   camRate: 3, lookRate: 8
 };
 

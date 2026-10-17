@@ -20,7 +20,7 @@ import { unlockAudio, closeAudio } from './audio.js';
 import { SetPieces } from './setpieces.js';
 import { Graphics, savedQuality, detectQuality } from './render.js';
 import { Stadium } from './stadium.js';
-import { Recorder, Replay } from './replay.js';
+import { Recorder, Replay, CloseCam } from './replay.js';
 import { Tape, replayFolder, saveReplayFiles } from './tape.js';
 import { loadBallLook } from './ball-look.js';
 
@@ -34,6 +34,33 @@ const KEY_HINT = hintRow('Attacco', ['WASD muovi', 'J passaggio', 'U tiro', 'K c
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 // nome sopra il giocatore: lungo diventa iniziale e cognome (Lautaro Martinez -> L. Martinez)
 const shortName = (n) => { const w = String(n || '').trim().split(/\s+/); return w.length > 1 && w.join(' ').length > MARKS.nameMax ? w[0][0] + '. ' + w.slice(1).join(' ') : w.join(' '); };
+
+// Ogni posto di `from` a un punto diverso di `to` ({x, z}), con la somma dei
+// quadrati delle distanze piccola: prima le coppie piu' vicine, poi scambi
+// finche' migliorano. Restituisce l'indice del punto per ogni posto.
+function assignPoints(from, to) {
+  const d2 = (a, b) => (a.x - b.x) ** 2 + (a.z - b.z) ** 2;
+  const at = [], used = new Set(), pairs = [];
+  from.forEach((a, i) => to.forEach((b, j) => pairs.push([d2(a, b), i, j])));
+  pairs.sort((x, y) => x[0] - y[0]);
+  for (const [, i, j] of pairs) if (at[i] === undefined && !used.has(j)) { at[i] = j; used.add(j); }
+  for (let pass = 0, better = true; better && pass < 20; pass++) {
+    better = false;
+    for (let i = 0; i < from.length; i++) {
+      if (at[i] === undefined) continue;
+      for (let k = i + 1; k < from.length; k++) {
+        if (at[k] === undefined) continue;
+        const now = d2(from[i], to[at[i]]) + d2(from[k], to[at[k]]);
+        if (d2(from[i], to[at[k]]) + d2(from[k], to[at[i]]) < now - 1e-6) { [at[i], at[k]] = [at[k], at[i]]; better = true; }
+      }
+      for (let j = 0; j < to.length; j++) {
+        if (!used.has(j) && d2(from[i], to[j]) < d2(from[i], to[at[i]]) - 1e-6) { used.delete(at[i]); used.add(j); at[i] = j; better = true; }
+      }
+    }
+  }
+  return at;
+}
+
 const wrap01 = (x) => x - Math.floor(x);
 const _kb = { x: 0, z: 0 }, _kw = new THREE.Vector3(), _dn = new THREE.Vector3(), _dw = new THREE.Vector3();
 const smoothstep = (a, b, x) => { const u = clamp((x - a) / (b - a), 0, 1); return u * u * (3 - 2 * u); };
@@ -276,7 +303,9 @@ class Match {
 
     this.rules = new Rules(this, this.opts.durationMinutes);
     this.rules.kickoff(this.userSide);
-    this.camera = new BroadcastCamera(window.innerWidth / window.innerHeight, () => this.phase === 'kickoff');
+    // visuale larga solo al calcio d'inizio dei tempi: dopo un gol il
+    // riferimento resta sull'inquadratura di gioco (tappa 5)
+    this.camera = new BroadcastCamera(window.innerWidth / window.innerHeight, () => this.phase === 'kickoff' && !(this.rules.set && this.rules.set.afterGoal));
     this.camera.snap(this.ball);
     this.gfx = new Graphics(r, scene, this.camera.cam, this.sun, (level, shadows, chosen) => this.applyLevel(level, shadows, chosen));
     this.ball.sync(1, 0);
@@ -402,6 +431,8 @@ class Match {
     this.advance(dt);
     this.gfx.update(dt, this.replay || this.tapePlay ? this.ball.mesh.position : this.ball.pos);
     this.gfx.render();
+    // dissolvenza del replay: la foto si fa subito dopo il disegno, finche' la tela e' piena
+    if (this.replay && this.replay.snap) { this.hud.dissolve(this.renderer.domElement, this.replay.snap); this.replay.snap = 0; }
     this.debug.update(dt);
   }
 
@@ -411,8 +442,8 @@ class Match {
     const step = 1 / PHYSICS.hz;
     // replay di debug in registrazione video: la partita resta ferma
     if (this.tapePlay) { this.tapePlayFrame(dt); return; }
-    // dissolvenza al nero dopo il gol: a nero si schierano le squadre
-    if (this.fadeOut && !this.paused && (this.fadeOut.t += dt) >= REPLAY.fade) { const f = this.fadeOut; this.fadeOut = null; f.then(); }
+    // stacco col logo dopo il gol: a schermo coperto si cambia scena
+    if (this.sting && !this.paused) this.stingStep(dt);
     if (this.replay) { this.replayFrame(dt); return; }
 
     if (this.paused) this.controls.pollMenu();
@@ -428,6 +459,7 @@ class Match {
       const f = this.phase === 'goal' && this.cameraFocus;
       this.camera.setPiece(this.setpieces.pose());
       this.camera.update(f ? { pos: f.pos, vel: f.vel } : this.ball, dt);
+      if (this.phase === 'goal') this.goalShow(dt);
     }
     const alpha = this.paused ? 1 : this.acc / step;
     this.ball.sync(alpha, this.paused ? 0 : dt);
@@ -443,7 +475,9 @@ class Match {
     this.syncMarkers(dt);
     this.blobShadows();
     this.stadium.update(this.paused ? 0 : dt);
-    if (!this.paused && this.phase !== 'end') { this.recorder.tick(dt); this.tape.tick(dt); }
+    // dopo il gol si registra solo quanto serve al replay (REPLAY.after)
+    const rec = this.phase !== 'goal' || this.recorder.count - this.goalMark < REPLAY.after * REPLAY.hz;
+    if (!this.paused && this.phase !== 'end') { if (rec) this.recorder.tick(dt); this.tape.tick(dt); }
   }
 
   // Fatto di gioco per il replay di debug (fallo, tiro, parata, rimessa...).
@@ -520,44 +554,75 @@ class Match {
     const r = this.replay, d = this.paused ? 0 : dt;
     if (this.paused) this.controls.pollMenu();
     else this.controls.read(dt);
-    if (d > 0 && !r.step(d) && !this.fadeOut) this.skipGoal();
+    if (d > 0 && !r.step(d)) this.skipGoal();
     r.apply(this.camera.cam, d);
     this.stadium.update(d);
   }
 
-  // Dopo l'esultanza: replay dell'azione del gol, se c'e' abbastanza registrato.
+  // Regia dopo il gol (REPLAY): diretta con la telecamera di gioco, poi primo
+  // piano di chi esulta, poi stacco col logo e replay.
+  goalShow(dt) {
+    const s = this.show, R = REPLAY;
+    if (!s || this.replay) return;
+    s.t += dt;
+    // stacco sul primo piano: la scritta del gol lascia la scena all'esultanza
+    if (!s.close && s.p && s.t >= R.live) { s.close = new CloseCam(s.p, this.bodies); this.hud.hideGoal(); this.hud.showSkip(true); }
+    if (s.close) s.close.apply(this.camera.cam, dt);
+    if (!s.cut && s.t >= R.live + (s.p ? R.close : 0)) { s.cut = true; this.startSting(() => this.startReplay()); }
+  }
+
+  // Stacco col logo; `then` gira a schermo coperto.
+  startSting(then) {
+    this.sting = { t: 0, then, fired: false, out: false };
+    this.hud.sting('in');
+  }
+
+  stingStep(dt) {
+    const g = this.sting, R = REPLAY;
+    g.t += dt;
+    if (!g.fired && g.t >= R.stingIn) { g.fired = true; g.then(); }
+    if (!g.out && g.t >= R.sting - R.stingOut) { g.out = true; this.hud.sting('out'); }
+    if (g.t >= R.sting) { this.sting = null; this.hud.sting(null); }
+  }
+
+  // A schermo coperto dopo l'esultanza: replay dell'azione del gol, se c'e'
+  // abbastanza registrato, altrimenti subito il calcio d'inizio.
   startReplay() {
-    if (this.replay || this.fadeOut || this.phase !== 'goal') return;
+    if (this.replay || this.phase !== 'goal') return;
     const rec = this.recorder, goalFrame = rec.length - 1 - (rec.count - this.goalMark);
-    if (goalFrame < REPLAY.hz) { this.skipGoal(); return; }
-    this.replay = new Replay(rec, goalFrame, this.goalSide);
+    const r = new Replay(rec, goalFrame, this.goalSide);
+    if (r.done) { this.endGoal(); return; }
+    this.replay = r;
     this.hud.hideGoal();
     this.hud.showReplay(true);
-    this.ctrlRing.visible = this.targetRing.visible = false;
-    this.hud.setCursor(null); this.hud.setBar(null); this.hud.setName(null);
     this.referee.card.visible = false;
   }
 
-  // Salta esultanza o replay: dissolvenza al nero, poi calcio d'inizio.
+  // Salta esultanza o replay (e fine del replay): stacco col logo, poi calcio d'inizio.
   skipGoal() {
-    if (this.phase !== 'goal' || this.fadeOut) return;
-    this.hud.fade(true);
-    this.fadeOut = { t: 0, then: () => this.endGoal() };
+    if (this.phase !== 'goal' || this.sting) return;
+    this.startSting(() => this.endGoal());
   }
 
-  // A nero: niente attesa dei giocatori che rientrano, sono gia' schierati.
+  // A schermo coperto: niente attesa dei giocatori che rientrano, sono gia'
+  // schierati; l'IA batte quando lo stacco ha finito di uscire.
   endGoal() {
     this.replay = null;
+    this.show = null;
     this.hud.showReplay(false);
     this.hud.hideGoal();
+    this.hud.showControls(true);
     this.recorder.clear();
     this.rules.kickoff(this.rules.next, true);
+    this.rules.set.afterGoal = true;
+    this.rules.set.hidden = REPLAY.sting - REPLAY.stingIn;
     this.camera.snap(this.ball);
-    this.hud.fade(false);
   }
 
   syncMarkers(dt) {
-    const c = this.ctrl, t = this.passTarget;
+    // dal gol al calcio d'inizio niente indicatori, come nel riferimento
+    const show = this.phase !== 'goal';
+    const c = show ? this.ctrl : null, t = show ? this.passTarget : null;
     this.ctrlRing.visible = !!c;
     if (c) this.ctrlRing.position.set(c.anchor.x, 0.02, c.anchor.z);
     this.targetRing.visible = !!t;
@@ -568,7 +633,7 @@ class Match {
     if (this.charging) this.barValue = this.charge;
     else if (this.barTimer > 0 && (this.barTimer -= dt) <= 0) this.barValue = null;
     const bar = this.barValue ?? null, open = this.phase === 'play' && !!c;
-    this.hud.setPower(open ? null : bar);
+    this.hud.setPower(open || !show ? null : bar);
     this.camera.cam.updateMatrixWorld();
     const head = (p) => this.screenAt(p.anchor.x, MARKS.head, p.anchor.z);
     const cur = c && !c.sentOff ? head(c) : null;
@@ -580,7 +645,7 @@ class Match {
     this.markOwner = o;
     const nm = this.nameMark;
     if (nm && (nm.t -= dt) <= -MARKS.fade) this.nameMark = null;
-    const ns = this.nameMark && head(nm.p);
+    const ns = show && this.nameMark && head(nm.p);
     if (ns) this.hud.setName(ns.x, ns.y, shortName(nm.p.name), nm.p !== c, nm.t > 0);
     else this.hud.setName(null);
   }
@@ -612,38 +677,37 @@ class Match {
     const put = (p, x, z, h) => {
       if (instant) { p.place(x, z, h); p.homeTarget = null; } else p.homeTarget = { x, z, h };
     };
+    // al centro solo chi batte, l'attaccante piu' avanzato (riferimento)
+    const K = RULES.kickoff, kickers = this.teams[side];
+    const taker = kickers.players.filter((p) => !p.keeper && !p.sentOff).sort((a, b) => a.slot.y - b.slot.y)[0];
+    let mate = null;
     for (const t of Object.values(this.teams)) {
-      const d = this.dirOf(t.side);
+      const d = this.dirOf(t.side), kick = t === kickers;
       const block = { line: SHAPE.kickoff.line, len: SHAPE.kickoff.len, width: SHAPE.kickoff.width, ballZ: 0 };
+      const field = [];
       for (const p of t.players) {
         if (instant) { p.action = null; p.avatar.endGesture(); p.down = false; p.holding = false; p.keeperBusy = false; p.dropping = false; p.holdHand = null; }
         if (p.keeper) { put(p, -d * (PITCH.length / 2 - 1.5), 0, headingOf(d, 0)); continue; }
-        const s = t.ai.shapeTarget(p, block);
-        // nessuno dentro il cerchio di centrocampo, tranne chi batte
-        const r = Math.hypot(s.x, s.z);
-        if (r < PITCH.centerCircle + 0.5) { const k = (PITCH.centerCircle + 0.5) / Math.max(r, 0.1); s.x *= k; s.z *= k; }
-        if (s.x * d > -0.5) s.x = -d * 0.5;
-        put(p, s.x, s.z, headingOf(d, 0));
+        if (p !== taker) field.push(p);
       }
+      // ognuno al punto dello schieramento del riferimento piu' vicino al suo
+      // posto nel modulo (stessa compressione verso la meta' campo)
+      const pts = (kick ? K.kick : K.defend).map(([x, z]) => ({ x: x * d, z }));
+      const at = assignPoints(field.map((p) => t.ai.shapeTarget(p, block)), pts);
+      field.forEach((p, i) => { const q = pts[at[i]]; if (q) put(p, q.x, q.z, headingOf(d, 0)); });
+      if (kick) mate = field[at.indexOf(K.receiver)] || null;
     }
-    const t = this.teams[side], d = this.dirOf(side), K = RULES.kickoff;
-    // due al centro, come in PES: batte l'attaccante piu' avanzato, il
-    // secondo gli sta accanto, un passo dietro la linea, dalla sua parte
-    const fw = t.players.filter((p) => !p.keeper && !p.sentOff).sort((a, b) => a.slot.y - b.slot.y);
-    const side2 = fw[1].slot.x >= fw[0].slot.x ? 1 : -1;
-    const mate = { x: -d * K.mateBack, z: d * side2 * K.mateSide };
-    put(fw[1], mate.x, mate.z, headingOf(d, 0));
     // chi batte guarda avanti; la clip KickOff scelta per la direzione del
-    // compagno dice dove sta la palla rispetto a lui
-    const h = headingOf(d, 0);
-    const k = this.kickoffClip(h, Math.atan2(mate.x, mate.z));
+    // compagno che riceve dice dove sta la palla rispetto a lui
+    const d = this.dirOf(side), h = headingOf(d, 0), r = K.kick[K.receiver];
+    const k = this.kickoffClip(h, Math.atan2(r[0] * d, r[1]));
     this.kickClip = k.clip;
     const fx = Math.sin(h), fz = Math.cos(h), lx = Math.cos(h), lz = -Math.sin(h);
-    put(fw[0], -(fx * k.ball.ahead + lx * k.ball.left), -(fz * k.ball.ahead + lz * k.ball.left), h);
+    put(taker, -(fx * k.ball.ahead + lx * k.ball.left), -(fz * k.ball.ahead + lz * k.ball.left), h);
     this.kickLock = this.buffer = null;
-    this.kickTaker = fw[0];
-    this.kickMate = fw[1];
-    return fw[0];
+    this.kickTaker = taker;
+    this.kickMate = mate;
+    return taker;
   }
 
   // A gioco fermo: chi ha un posto da raggiungere ci va camminando o
@@ -657,8 +721,57 @@ class Match {
     // portiere battuto si ferma e poi si dispera (KeeperAI.concede)
     const C = p.concedeWait;
     if (C && p.speed < ANIM.endMove) { p.concedeWait = null; p.avatar.playOnce(C.clip, C.from, C.end); }
+    if (this.phase === 'goal' && !celebrating && this.cheer(dt, p)) return;
+    if (!celebrating && this.stepAside(dt, p)) return;
     if (!t || celebrating || waiting) { p.drive(dt, 0, 0, 0, { decel: p.concedeWait ? undefined : PLAYER.coastDecel }); return; }
     p.goTo(dt, t.x, t.z, t.h);
+  }
+
+  // Dopo il gol: chi esulta, finita la sua clip, continua con
+  // celebration.filler; fino a gather.max compagni vicini lo raggiungono, gli
+  // si fermano attorno (dalla parte da cui arrivano) ed esultano anche loro.
+  cheer(dt, p) {
+    const s = this.show, c = s && s.p, G = RULES.celebration.gather;
+    if (!c || p.keeper || p.team !== c.team || this.rules.t < G.delay) return false;
+    if (p === c) {
+      if (s.filled) return false;
+      s.filled = true;
+      return this.rules.celebrate(p, RULES.celebration.filler);
+    }
+    const near = (q) => Math.hypot(q.pos.x - c.pos.x, q.pos.z - c.pos.z);
+    if (!s.mates) {
+      s.mates = this.teams[c.team].players.filter((q) => q !== c && !q.keeper && !q.down && near(q) < G.range).sort((a, b) => near(a) - near(b)).slice(0, G.max);
+      s.joined = new Set();
+    }
+    const i = s.mates.indexOf(p);
+    if (i < 0 || s.joined.has(p)) return false;
+    const dx = p.pos.x - c.pos.x, dz = p.pos.z - c.pos.z, d = Math.hypot(dx, dz) || 1;
+    const r = G.radius + 0.3 * i;
+    if (d > r + 0.4) { p.goTo(dt, c.pos.x + dx / d * r, c.pos.z + dz / d * r, headingOf(-dx, -dz)); return true; }
+    s.joined.add(p);
+    if (!this.rules.celebrate(p, G.clips[i % G.clips.length])) p.drive(dt, 0, 0, 0, { face: { x: -dx, z: -dz } });
+    return true;
+  }
+
+  // Corpi che separate() non sposta: a terra, dentro un gesto che li muove con
+  // la radice (contrasto, spinta da fermo) o in un giro sul posto.
+  firm(p) {
+    return p.down || (p.action && (p.action.root || p.action.tackle || (p.action.foulGesture && p.action.clip === FOULACT.clips.ferma))) || (p.trans && p.trans.role === 'turnInPlace' && p.avatar.one === p.trans.one);
+  }
+
+  // A gioco fermo, chi ha addosso un corpo che non si sposta (chi ha subito
+  // il fallo e cade) se ne allontana a passo: separate() lo traslava in piedi.
+  stepAside(dt, p) {
+    const min = PLAYER.radius * 2 + 0.15;
+    for (const q of this.bodies) {
+      if (q === p || !this.firm(q)) continue;
+      const dx = p.pos.x - q.pos.x, dz = p.pos.z - q.pos.z, d = Math.hypot(dx, dz);
+      if (d >= min) continue;
+      const k = d > 1e-3 ? 0.8 / d : 0;
+      p.goTo(dt, p.pos.x + (k ? dx * k : 0.8), p.pos.z + dz * k);
+      return true;
+    }
+    return false;
   }
 
   kickoff(side = this.userSide) { this.rules.kickoff(side); }
@@ -1031,7 +1144,7 @@ class Match {
     // di giro della libreria): spinto a 0,8 m/s, la posa del giro traslava
     // e chi fa la spinta a due mani da fermo: spinto dal portatore che gli
     // corre addosso, la posa sul posto traslava a 5 m/s (test del 17/10)
-    separate(this.bodies, (p) => (p.down || (p.action && (p.action.root || p.action.tackle || (p.action.foulGesture && p.action.clip === FOULACT.clips.ferma))) || (p.trans && p.trans.role === 'turnInPlace' && p.avatar.one === p.trans.one) ? 3 : p === this.ctrl || p === this.owner ? 2 : 0));
+    separate(this.bodies, (p) => this.firm(p) ? 3 : p === this.ctrl || p === this.owner ? 2 : 0);
     for (const p of this.everyone) p.confine();
     // chi va addosso al portatore di corsa, soprattutto alle spalle, fa fallo
     bodyContact(this);
@@ -1807,6 +1920,9 @@ class Match {
     this.lastGoalReason = kAI.goalReason();
     this.note('gol', { squadra: team, p: scorer, motivo: this.lastGoalReason });
     this.hud.showGoal((home ? this.home : this.away).name, scorer ? scorer.name : '');
+    this.hud.showControls(false);
+    // regia (goalShow): rules.goal sceglie chi esulta, `p`
+    this.show = { t: 0, p: null, close: null, cut: false };
     this.rules.goal(team, scorer);
     this.teams[this.otherSide(team)].keeperAI.concede();
     this.stadium.cheer(team);

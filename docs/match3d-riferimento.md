@@ -756,3 +756,164 @@ Test di durata (10 partite): 6 violazioni (portiere 2, piedi 2, osso 1,
 posa ferma che trasla 1: una partenza in conduzione subito dopo un contrasto
 vinto, 510_Run_Tackles_01 poi 195_Dribble_Start; la tappa non tocca il
 gioco), rossi 0,2 a partita.
+
+### Tappa 5: gol e calcio d'inizio
+
+Misure sui 4 gol di v1 (stacchi col logo trovati con `stacchi.py`, cambi di
+inquadratura con `tagli.py`, calcio d'inizio dal radar; secondi dal gol, cioe'
+dall'istante in cui spariscono i comandi):
+
+| | Gol 1 | Gol 2 | Gol 3 | Gol 4 | KFM27 |
+|---|---|---|---|---|---|
+| Gol | 118,6 s | 272,6 | 385,7 | 451,5 | |
+| Diretta, comandi nascosti | 4,35 s | 4,15 | 4,2 | 4,2 | 4,2 s |
+| Primo piano dell'esultanza | 4,3 s | 5,05 | 5,1 | 8,1 | 5 s |
+| Stacco col logo | 1,05 s | 1,05 | 1,0 | 1,0 | 1,05 s |
+| Replay | 20,9 s | 20,7 | 21,2 | 20,8 | 21 s |
+| Stacco col logo | 1,0 s | 1,05 | 1,0 | 1,0 | 1,05 s |
+| Dalla fine dello stacco al calcio | 2,7 s | 2,7 | 2,7 | 2,7 | 2,75 s |
+
+- **Replay** (gol 1, a 2 fotogrammi al secondo): alta e larga dalla tribuna
+  che segue l'azione dal centrocampo all'area (8,6 s), laterale bassa sugli
+  ultimi 3-4 s fino alla palla in rete (3,8 s), alta dall'altro lato verso la
+  porta sugli stessi secondi (3,8 s, stacco netto), dietro la porta al
+  rallentatore (4,75 s). Fra la prima e la seconda e fra la terza e la quarta
+  una dissolvenza. KFM27 (`REPLAY.shots`): alta da 11,9 a 3,3 s prima del gol,
+  laterale bassa e dall'altro lato da 3,3 s prima a 0,5 dopo, dietro la porta
+  da 1,9 prima a 0,25 dopo a 0,45x. Un'inquadratura con meno di 1,5 s
+  registrati si salta (gol subito dopo un calcio d'inizio). Il registratore
+  tiene 13 s e smette 0,6 s dopo il gol.
+- **Esultanze del riferimento**: corsa, salto con mezzo giro e atterraggio a
+  braccia larghe; ruota acrobatica, poi pugni al cielo; capriola all'indietro,
+  poi braccia alzate; piegato con le mani sulle ginocchia, poi mano alla
+  testa. Primo piano con la telecamera bassa davanti al giocatore e i
+  cartelloni dietro.
+- **Calcio d'inizio** (radar, uguale nei 4): al centro solo chi batte, che
+  passa all'indietro di circa 11,5 m al centrocampista (palla a 15 m/s,
+  ricevuta a 11 m dopo 1 s). Chi batte: 4 sulla linea a 2,9 m dalla meta'
+  campo (z -24,5, -10,2, 12,2, 26,2), 3 a 11,7 m (z -15,9, 0,8, 18), 2 a 17,6
+  m (z -2,9, 5). Chi difende: 2 appena fuori dal cerchio, 4 fra 6 e 12 m, 4
+  fra 14,7 e 17,5 m. Le z non si specchiano fra i tempi: lo schieramento e'
+  fisso rispetto allo schermo.
+- **Inquadratura del calcio d'inizio dopo il gol**: e' quella di gioco, non
+  quella larga dell'inizio dei tempi (tappa 2). Dal cerchio di centrocampo
+  (`ko_cam.py`, 4 parametri risolti, errore sotto il pixel): inclinazione
+  25,7 gradi e, col campo di gioco di 44,7 gradi, 56,3 m (gioco: 55,6 m,
+  25,7). Il campo visivo e la distanza non si separano: con 50 gradi viene
+  49,6 m, stesso risultato a schermo. I 4 calci d'inizio hanno il cerchio
+  negli stessi pixel.
+
+Cosa cambia (`config.js` REPLAY, RULES.celebration, RULES.kickoff,
+SHAPE.kickoff; `main.js` goalShow, startSting, cheer, placeKickoff;
+`replay.js` Replay, CloseCam; `rules.js` goal, celebrate; `hud.js` e
+`match3d.css` stacco e dissolvenza; `tools/match3d/studio33_select.py`):
+
+- **Regia**: diretta 4,2 s con la telecamera di gioco su chi esulta, senza
+  comandi, anelli, triangolo e nomi; poi stacco netto sul primo piano
+  (`CloseCam`): telecamera a 1,4 m di altezza e 5 m davanti al bacino, che
+  gira attorno al giocatore al massimo a 1,2 rad/s e sceglie fra 10
+  direzioni quella senza corpi in mezzo o accanto all'obiettivo. Dopo 5 s
+  lo stacco col logo (`src/img/logo.png` sul fondo dei pannelli, entra da
+  destra ed esce a sinistra in 0,3 s; senza animazioni in dissolvenza),
+  sotto il quale parte il replay. Alla fine del replay, o con Salta, un
+  altro stacco; sotto, le squadre gia' schierate.
+- **Dissolvenze del replay**: subito dopo il disegno dell'ultimo fotogramma
+  di un'inquadratura, `hud.dissolve` lo copia a meta' risoluzione su una tela
+  sopra il 3D, che sfuma in 0,4 s sulla nuova. Sostituisce la dissolvenza al
+  nero.
+- **Esultanza**: le 26 clip Studio33 (le 20 scartate sono tornate nel
+  pacchetto extra: regola in `studio33_select.py`, pacchetto da 0,5 a 2,7 MB)
+  in un mazzo mischiato a ogni partita, intere e con la loro corsa. Se la
+  clip finisce prima dello stacco segue 059_Ceremony. Fino a 4 compagni entro
+  40 m raggiungono chi esulta dopo 0,8 s, gli si fermano attorno a 2,4 m
+  (piu' 0,3 a testa) ed esultano con 052, 033, 059, 034. Su un autogol esulta
+  il giocatore della squadra che segna piu' vicino alla palla. Al livello
+  basso, senza pacchetto extra, resta la clip Mixamo.
+- **Calcio d'inizio**: ognuno al punto dello schieramento del riferimento
+  piu' vicino al suo posto nel modulo (assegnazione con scambi), al centro
+  solo l'attaccante piu' avanzato; il passaggio va al giocatore del punto a
+  11,7 m (clip 445_KickOff_180) e arriva a 10 m/s. L'IA tocca la palla 2,75 s
+  dopo che lo stacco e' uscito. Dopo un gol la telecamera resta quella di
+  gioco; la visuale larga della tappa 2 resta all'inizio dei tempi.
+- **Test di durata**: la sequenza dopo il gol puo' durare fino a 40 s (prima
+  20) e al calcio d'inizio al centro deve esserci solo chi batte (prima "due
+  giocatori al centro", la regola della skill).
+- **Portatore fermo** (`team-ai.js`, correzione legata alla tappa 3): l'IA
+  che ha appena vinto palla da ferma non riparte finche' il gesto del
+  contrasto sfuma (circa 0,2 s), e resta ferma durante i 0,25 s di
+  `KICK.setup` se ha un calcio in coda (la clip del calcio fa il giro).
+  Ripartiva subito, quando la partenza della libreria era ancora bloccata dal
+  gesto: "posa ferma che trasla" nei test delle tappe 4 e 5. Dalla tappa 3
+  succedeva piu' spesso, perche' il passaggio non parte piu' da fermo.
+- **A gioco fermo** (`main.js` stepAside): chi ha addosso un corpo che
+  separate() non sposta (chi ha subito il fallo e cade, un gesto con la
+  radice) se ne allontana a passo. Dopo una spinta o una trattenuta fischiate,
+  chi aveva commesso il fallo veniva traslato all'indietro in piedi a 0,5-0,75
+  m/s (prove 1 e 3 sotto).
+
+Le 26 esultanze (`debug/riferimenti/esultanze/foglio_1-3.jpg`, 5 pose per
+clip; lettura dalle pose, la corsa e' quella della radice):
+
+| Clip | Durata | Corsa | Gesto |
+|---|---|---|---|
+| 033 Celebration_01 | 8,3 s | sul posto | si gira verso il pubblico, piccoli gesti |
+| 034 Celebration_02 | 6,3 s | sul posto | cammina e guarda in alto |
+| 035 Ceremony_001 | 8,3 s | 2,9 m | come 033, fatta per tenere la palla (qui senza) |
+| 036 Ceremony_002 | 6,3 s | 2,2 m | come 034, fatta per tenere la palla |
+| 038 | 3 s | 3,8 m | corsa, salto con mezzo giro e braccia alzate |
+| 039 | 5,2 s | 9,1 m | corsa e scivolata in ginocchio a braccia aperte |
+| 040 | 8,4 s | 6,1 m | corsa larga con ampi gesti delle braccia |
+| 041 | 11 s | 9,3 m | aeroplano, braccia larghe |
+| 042 | 6 s | 5,7 m | corsa con i pugni |
+| 043 | 8,9 s | 4,6 m | corsa, mano all'orecchio |
+| 044 | 10,5 s | 5,2 m | corsa, braccia al cielo e mano all'orecchio |
+| 045 | 8,6 s | 2,6 m | corsa, indice al cielo |
+| 046 | 12,2 s | 3 m | corsa con un giro su se stesso, mani al viso |
+| 047 | 8,7 s | 3,5 m | mani al petto, poi saluto al pubblico |
+| 048 | 9,4 s | 3,1 m | giro su se stesso col braccio alzato |
+| 049 | 11,8 s | 2,6 m | in ginocchio su una gamba, braccia al cielo |
+| 050 | 10,6 s | 2,4 m | passi di danza |
+| 051 | 11,5 s | 3 m | braccia alzate, poi saluto |
+| 052 | 13,2 s | 1,4 m | braccia alzate verso il pubblico |
+| 053 | 9,9 s | 4,6 m | mani al petto, poi braccia larghe |
+| 054 | 12,6 s | 5 m | affondo coi pugni, poi braccia aperte |
+| 055 | 9,8 s | 2,6 m | mano alla fronte, poi braccio al cielo |
+| 056 | 9,5 s | 2 m | in ginocchio, mani in testa, poi braccia al cielo |
+| 057 | 9,8 s | 2,7 m | piegato col pugno, poi braccio al cielo |
+| 058 | 5,2 s | sul posto | scivolata in ginocchio (come 039) |
+| 059 | 10,5 s | sul posto | gesti con le braccia, fatta per tenere la palla |
+
+Mancano, rispetto al riferimento, la **capriola all'indietro** e la **ruota
+o capriola in avanti**: nessuna delle 907 clip Studio33 e nessun FBX in
+`source/` ha un salto mortale. Il salto con mezzo giro (038) e
+l'aeroplano (041) sono i piu' vicini al primo gol del riferimento, 057 e 043
+al quarto. Meshy non e' stato usato.
+
+Verifica: sequenza su un gol vero (seme 7, punizione a 38,6 s)
+`debug/riferimenti/tappe5/seq2_tile.jpg`; gol forzato
+`tappe5/seq1_tile.jpg` (`strumenti/gol_prova.js`); in tempo reale con
+stacco e dissolvenza `tappe5/tempo_reale_tile.jpg`
+(`strumenti/prova_dissolvenza.mjs`: la foto della dissolvenza ha l'immagine,
+non una tela vuota); schieramento e riferimento
+`tappe5/kickoff_confronto.jpg`.
+
+Test di durata, 10 partite per prova; lo stato di partenza ne faceva 7
+(portiere 4, piedi 2, osso 1) in una prova sola:
+
+| Prova | Violazioni | Portiere | Piedi | Osso | Posa ferma | Rossi | Gialli | Scivolate |
+|---|---|---|---|---|---|---|---|---|
+| 1, regia e calcio d'inizio | 8 | 4 | 1 | 1 | 2 | 0,1 | 2,7 | 3,6 (fuori, 4-10) |
+| 2, piu' fermo col calcio in coda | 4 | 1 | 2 | 0 | 1 | 0,1 | 2,7 | 4,3 |
+| 3, piu' fermo mentre il gesto sfuma | 9 | 5 | 3 | 0 | 1 | 0,2 | 2,8 | 4,5 |
+| 4, piu' a gioco fermo (codice del commit) | 5 | 1 | 2 | 1 | 1 | 0,4 (fuori, 0-0,2) | 3,5 | 4,2 |
+
+Nessuna violazione cade nella regia del gol o nel calcio d'inizio; ogni gol
+ha avuto il suo replay e tutti i passaggi del calcio d'inizio sono stati
+ricevuti (uno interrotto dal fischio di fine tempo nella prova 3). Le prove
+oscillano molto: media 6,5 violazioni contro le 7 di partenza, misurate una
+volta sola. La posa ferma rimasta nella prova 4 e' un passaggio di prima da
+fermo (502_Nonstop_Pass_Stand_270) subito dopo un contrasto vinto. I rossi
+della prova 4 sono doppie ammonizioni, 2 nella stessa partita con 8 gialli;
+la quota di falli da dietro resta fra il 60 e il 69 per cento in tutte le
+prove. Su 50 partite (tappe 4 e 5) i rossi sono 10, 0,2 a partita: sul
+limite dell'obiettivo.

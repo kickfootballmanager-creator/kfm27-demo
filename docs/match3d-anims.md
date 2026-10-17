@@ -42,16 +42,16 @@ La libreria non si ridistribuisce: FBX, GLB e JSON derivati restano fuori dal re
 | portiere | 87 | 1 | 0 | 20 |
 | finte | 1 | 0 | 0 | 99 |
 | calci piazzati | 4 | 0 | 0 | 0 |
-| esultanze | 0 | 0 | 6 | 20 |
+| esultanze | 0 | 0 | 26 | 0 |
 | duelli di corpo | 0 | 0 | 0 | 51 |
 | schivate | 0 | 0 | 0 | 8 |
 | gesti | 0 | 0 | 0 | 6 |
 | cerimonie | 0 | 0 | 0 | 4 |
 | riscaldamento | 0 | 0 | 0 | 10 |
 | menu e pose | 0 | 0 | 0 | 55 |
-| **totale** | **303** | **276** | **6** | **322** |
+| **totale** | **303** | **276** | **26** | **302** |
 
-Per livello: basso 303 clip (piu' 3 copie specchiate: Sidestep_Jogging_Stop01_L_M, Tricks_M, Slide_Tackles01_M), medio e alto 585 (piu' 3 copie specchiate: Sidestep_Jogging_Stop01_L_M, Tricks_M, Slide_Tackles01_M).
+Per livello: basso 303 clip (piu' 3 copie specchiate: Sidestep_Jogging_Stop01_L_M, Tricks_M, Slide_Tackles01_M), medio e alto 605 (piu' 3 copie specchiate: Sidestep_Jogging_Stop01_L_M, Tricks_M, Slide_Tackles01_M).
 
 ## Locomozione
 
@@ -898,26 +898,26 @@ Per livello: basso 303 clip (piu' 3 copie specchiate: Sidestep_Jogging_Stop01_L_
 | 034_Celebration_02_ForSequence | 6.33 | 0.00 m (+0.00, -0.00) | 0 | si' | extra | esultanza dopo il gol - alto all'avvio, medio in partita |
 | 035_Ceremony_001 | 8.33 | 2.86 m (-2.83, +0.38) | 0 | no | extra | esultanza dopo il gol - alto all'avvio, medio in partita |
 | 036_Ceremony_002 | 6.33 | 2.20 m (-2.17, -0.34) | 0 | no | extra | esultanza dopo il gol - alto all'avvio, medio in partita |
-| 038_Ceremony | 3.00 | 3.82 m (+3.66, -1.08) | -180 | no | scartata | esultanza in corsa: il giocatore resta sul posto e la corsa della clip andrebbe persa |
-| 039_Ceremony | 5.17 | 9.12 m (+9.12, +0.03) | 0 | no | scartata | esultanza in corsa: il giocatore resta sul posto e la corsa della clip andrebbe persa |
-| 040_Ceremony | 8.40 | 6.06 m (+5.34, +2.87) | +228 | no | scartata | esultanza in corsa: il giocatore resta sul posto e la corsa della clip andrebbe persa |
-| 041_Ceremony | 11.00 | 9.29 m (+6.73, +6.39) | -177 | no | scartata | esultanza in corsa: il giocatore resta sul posto e la corsa della clip andrebbe persa |
-| 042_Ceremony | 6.00 | 5.71 m (+5.71, -0.03) | +3 | no | scartata | esultanza in corsa: il giocatore resta sul posto e la corsa della clip andrebbe persa |
-| 043_Ceremony | 8.93 | 4.58 m (+4.56, -0.48) | 0 | no | scartata | esultanza in corsa: il giocatore resta sul posto e la corsa della clip andrebbe persa |
-| 044_Ceremony | 10.50 | 5.21 m (+5.21, +0.07) | 0 | no | scartata | esultanza in corsa: il giocatore resta sul posto e la corsa della clip andrebbe persa |
-| 045_Ceremony | 8.60 | 2.55 m (+2.48, -0.60) | +10 | no | scartata | esultanza in corsa: il giocatore resta sul posto e la corsa della clip andrebbe persa |
-| 046_Ceremony | 12.20 | 3.03 m (+3.01, -0.33) | +368 | no | scartata | esultanza in corsa: il giocatore resta sul posto e la corsa della clip andrebbe persa |
-| 047_Ceremony | 8.67 | 3.48 m (+3.38, -0.85) | +19 | no | scartata | esultanza in corsa: il giocatore resta sul posto e la corsa della clip andrebbe persa |
-| 048_Ceremony | 9.43 | 3.11 m (+2.93, +1.04) | +358 | no | scartata | esultanza in corsa: il giocatore resta sul posto e la corsa della clip andrebbe persa |
-| 049_Ceremony | 11.77 | 2.57 m (+2.57, +0.05) | 0 | no | scartata | esultanza in corsa: il giocatore resta sul posto e la corsa della clip andrebbe persa |
-| 050_Ceremony | 10.60 | 2.41 m (+2.39, +0.36) | 0 | no | scartata | esultanza in corsa: il giocatore resta sul posto e la corsa della clip andrebbe persa |
-| 051_Ceremony | 11.50 | 3.00 m (+2.99, -0.26) | 0 | no | scartata | esultanza in corsa: il giocatore resta sul posto e la corsa della clip andrebbe persa |
-| 052_Ceremony | 13.20 | 1.42 m (+1.41, -0.15) | 0 | no | scartata | esultanza in corsa: il giocatore resta sul posto e la corsa della clip andrebbe persa |
-| 053_Ceremony | 9.93 | 4.62 m (+4.62, +0.08) | 0 | no | scartata | esultanza in corsa: il giocatore resta sul posto e la corsa della clip andrebbe persa |
-| 054_Ceremony | 12.60 | 5.04 m (+5.04, -0.06) | 0 | no | scartata | esultanza in corsa: il giocatore resta sul posto e la corsa della clip andrebbe persa |
-| 055_Ceremony | 9.77 | 2.56 m (+2.54, -0.28) | 0 | no | scartata | esultanza in corsa: il giocatore resta sul posto e la corsa della clip andrebbe persa |
-| 056_Ceremony | 9.53 | 1.96 m (+1.84, -0.70) | 0 | no | scartata | esultanza in corsa: il giocatore resta sul posto e la corsa della clip andrebbe persa |
-| 057_Ceremony | 9.83 | 2.71 m (+2.66, -0.53) | 0 | no | scartata | esultanza in corsa: il giocatore resta sul posto e la corsa della clip andrebbe persa |
+| 038_Ceremony | 3.00 | 3.82 m (+3.66, -1.08) | -180 | no | extra | esultanza dopo il gol - alto all'avvio, medio in partita |
+| 039_Ceremony | 5.17 | 9.12 m (+9.12, +0.03) | 0 | no | extra | esultanza dopo il gol - alto all'avvio, medio in partita |
+| 040_Ceremony | 8.40 | 6.06 m (+5.34, +2.87) | +228 | no | extra | esultanza dopo il gol - alto all'avvio, medio in partita |
+| 041_Ceremony | 11.00 | 9.29 m (+6.73, +6.39) | -177 | no | extra | esultanza dopo il gol - alto all'avvio, medio in partita |
+| 042_Ceremony | 6.00 | 5.71 m (+5.71, -0.03) | +3 | no | extra | esultanza dopo il gol - alto all'avvio, medio in partita |
+| 043_Ceremony | 8.93 | 4.58 m (+4.56, -0.48) | 0 | no | extra | esultanza dopo il gol - alto all'avvio, medio in partita |
+| 044_Ceremony | 10.50 | 5.21 m (+5.21, +0.07) | 0 | no | extra | esultanza dopo il gol - alto all'avvio, medio in partita |
+| 045_Ceremony | 8.60 | 2.55 m (+2.48, -0.60) | +10 | no | extra | esultanza dopo il gol - alto all'avvio, medio in partita |
+| 046_Ceremony | 12.20 | 3.03 m (+3.01, -0.33) | +368 | no | extra | esultanza dopo il gol - alto all'avvio, medio in partita |
+| 047_Ceremony | 8.67 | 3.48 m (+3.38, -0.85) | +19 | no | extra | esultanza dopo il gol - alto all'avvio, medio in partita |
+| 048_Ceremony | 9.43 | 3.11 m (+2.93, +1.04) | +358 | no | extra | esultanza dopo il gol - alto all'avvio, medio in partita |
+| 049_Ceremony | 11.77 | 2.57 m (+2.57, +0.05) | 0 | no | extra | esultanza dopo il gol - alto all'avvio, medio in partita |
+| 050_Ceremony | 10.60 | 2.41 m (+2.39, +0.36) | 0 | no | extra | esultanza dopo il gol - alto all'avvio, medio in partita |
+| 051_Ceremony | 11.50 | 3.00 m (+2.99, -0.26) | 0 | no | extra | esultanza dopo il gol - alto all'avvio, medio in partita |
+| 052_Ceremony | 13.20 | 1.42 m (+1.41, -0.15) | 0 | no | extra | esultanza dopo il gol - alto all'avvio, medio in partita |
+| 053_Ceremony | 9.93 | 4.62 m (+4.62, +0.08) | 0 | no | extra | esultanza dopo il gol - alto all'avvio, medio in partita |
+| 054_Ceremony | 12.60 | 5.04 m (+5.04, -0.06) | 0 | no | extra | esultanza dopo il gol - alto all'avvio, medio in partita |
+| 055_Ceremony | 9.77 | 2.56 m (+2.54, -0.28) | 0 | no | extra | esultanza dopo il gol - alto all'avvio, medio in partita |
+| 056_Ceremony | 9.53 | 1.96 m (+1.84, -0.70) | 0 | no | extra | esultanza dopo il gol - alto all'avvio, medio in partita |
+| 057_Ceremony | 9.83 | 2.71 m (+2.66, -0.53) | 0 | no | extra | esultanza dopo il gol - alto all'avvio, medio in partita |
 | 058_Ceremony | 5.17 | 0.00 m (+0.00, -0.00) | 0 | si' | extra | esultanza dopo il gol - alto all'avvio, medio in partita |
 | 059_Ceremony | 10.50 | 0.00 m (+0.00, -0.00) | 0 | si' | extra | esultanza dopo il gol - alto all'avvio, medio in partita |
 
