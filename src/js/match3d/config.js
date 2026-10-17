@@ -1222,6 +1222,11 @@ export const LIGHT = {
   sunDistance: 71.6       // metri fra il sole e il centro dell'ombra dinamica
 };
 
+// Indicatori sopra i giocatori (main.syncMarkers, hud.setCursor/setBar/setName):
+// ancora a `head` m dal suolo; il nome di chi prende palla resta nameTime s,
+// poi sfuma in `fade` s; oltre nameMax caratteri diventa iniziale e cognome.
+export const MARKS = { head: 1.95, nameTime: 1.6, fade: 0.3, nameMax: 14 };
+
 // Contorno dello stadio (stadium.js e pitch.js).
 export const STADIUM = {
   skyRadius: 480,

@@ -730,3 +730,29 @@ Test di durata (10 partite): prima prova 4 violazioni (portiere 2, posa
 ferma che trasla 2: una era la spinta da fermo, corretta); dopo la
 correzione 3 (piedi 2, portiere 1), rossi 0,2 a partita. Lo stato di
 partenza ne faceva 7.
+
+### Tappa 4 (parziale): indicatori sopra i giocatori
+
+Bozzetto: `debug/riferimenti/bozzetto/bozzetto_indicatori.png` (fotogramma
+vero di KFM27 a 874 x 402 con gli indicatori disegnati sopra; sorgente
+`indicatori.html`). Applicato com'era (`hud.js`, `match3d.css`, `config.js`
+MARKS, `main.js` syncMarkers):
+
+- **Triangolo** bianco come l'anello a terra, 12 x 9 px, 12 px sopra la testa
+  (1,95 m proiettati con la telecamera di gioco), solo sul comandato. Il
+  riferimento lo fa lime: qui resta bianco perche' il lime non e' nella
+  palette e l'anello a terra e' gia' bianco.
+- **Barretta di potenza** 36 x 5 px fra triangolo e testa: compare quando
+  carichi passaggio, filtrante, cross o tiro, diventa rossa oltre la soglia
+  del tiro alto e resta 0,45 s dopo il calcio. In campo aperto prende il
+  posto della barra in basso; nei calci piazzati resta quella in basso.
+- **Nome** (Inter 13 px, bianco con alone scuro) per 1,6 s sopra chi prende
+  palla, di tutte e due le squadre, poi sfuma in 0,3 s. Oltre 14 caratteri
+  diventa iniziale e cognome.
+- Nel replay i tre indicatori spariscono.
+
+Verifica: sequenza in modalita' utente `debug/riferimenti/bozzetto/seq_tile.jpg`.
+Test di durata (10 partite): 6 violazioni (portiere 2, piedi 2, osso 1,
+posa ferma che trasla 1: una partenza in conduzione subito dopo un contrasto
+vinto, 510_Run_Tackles_01 poi 195_Dribble_Start; la tappa non tocca il
+gioco), rossi 0,2 a partita.

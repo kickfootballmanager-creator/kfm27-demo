@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { PHYSICS, RENDER, REPLAY, RULES, PLAYER, CONTROL, DRIBBLE, SHOT, PASS, KIT, RECEIVE, FIRST_TOUCH, ANIM, ANIMLIB, POWER, FEINT, AI, AERIAL, SHAPE, PITCH, SLIDE, BALL, DUEL, OFFSIDE, DEBUG, PRESS, THROUGH, TAPE, BALL_LOOK, LIGHT, KICK, FOULACT } from './config.js';
+import { PHYSICS, RENDER, REPLAY, RULES, PLAYER, CONTROL, DRIBBLE, SHOT, PASS, KIT, RECEIVE, FIRST_TOUCH, ANIM, ANIMLIB, POWER, FEINT, AI, AERIAL, SHAPE, PITCH, SLIDE, BALL, DUEL, OFFSIDE, DEBUG, PRESS, THROUGH, TAPE, BALL_LOOK, LIGHT, KICK, FOULACT, MARKS } from './config.js';
 import { buildPitch } from './pitch.js';
 import { Ball, shadowTexture, aimWithSpin, rollSpeedIn } from './ball.js';
 import { BroadcastCamera } from './camera.js';
@@ -32,6 +32,8 @@ const KEY_HINT = hintRow('Attacco', ['WASD muovi', 'J passaggio', 'U tiro', 'K c
   hintRow('Difesa', ['J pressing, due volte contrasto', 'U raddoppio', 'K scivolata', 'I portiere', 'Q cambio']);
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+// nome sopra il giocatore: lungo diventa iniziale e cognome (Lautaro Martinez -> L. Martinez)
+const shortName = (n) => { const w = String(n || '').trim().split(/\s+/); return w.length > 1 && w.join(' ').length > MARKS.nameMax ? w[0][0] + '. ' + w.slice(1).join(' ') : w.join(' '); };
 const wrap01 = (x) => x - Math.floor(x);
 const _kb = { x: 0, z: 0 }, _kw = new THREE.Vector3(), _dn = new THREE.Vector3(), _dw = new THREE.Vector3();
 const smoothstep = (a, b, x) => { const u = clamp((x - a) / (b - a), 0, 1); return u * u * (3 - 2 * u); };
@@ -532,6 +534,7 @@ class Match {
     this.hud.hideGoal();
     this.hud.showReplay(true);
     this.ctrlRing.visible = this.targetRing.visible = false;
+    this.hud.setCursor(null); this.hud.setBar(null); this.hud.setName(null);
     this.referee.card.visible = false;
   }
 
@@ -560,11 +563,35 @@ class Match {
     this.targetRing.visible = !!t;
     if (t) this.targetRing.position.set(t.anchor.x, 0.02, t.anchor.z);
 
-    if (this.charging) this.hud.setPower(this.charge);
-    else if (this.barTimer > 0) {
-      this.barTimer -= dt;
-      if (this.barTimer <= 0) this.hud.setPower(null);
-    }
+    // potenza: in campo aperto la barretta sopra il comandato, nelle riprese
+    // (camera dietro a chi calcia) la barra in basso
+    if (this.charging) this.barValue = this.charge;
+    else if (this.barTimer > 0 && (this.barTimer -= dt) <= 0) this.barValue = null;
+    const bar = this.barValue ?? null, open = this.phase === 'play' && !!c;
+    this.hud.setPower(open ? null : bar);
+    this.camera.cam.updateMatrixWorld();
+    const head = (p) => this.screenAt(p.anchor.x, MARKS.head, p.anchor.z);
+    const cur = c && !c.sentOff ? head(c) : null;
+    this.hud.setCursor(cur ? cur.x : null, cur && cur.y);
+    this.hud.setBar(open && cur ? bar : null);
+    // nome di chi prende palla, per MARKS.nameTime secondi
+    const o = this.owner;
+    if (o && o !== this.markOwner) this.nameMark = { p: o, t: MARKS.nameTime };
+    this.markOwner = o;
+    const nm = this.nameMark;
+    if (nm && (nm.t -= dt) <= -MARKS.fade) this.nameMark = null;
+    const ns = this.nameMark && head(nm.p);
+    if (ns) this.hud.setName(ns.x, ns.y, shortName(nm.p.name), nm.p !== c, nm.t > 0);
+    else this.hud.setName(null);
+  }
+
+  // Punto del campo in pixel dello schermo (null dietro la telecamera).
+  screenAt(x, y, z) {
+    const v = this._sv || (this._sv = new THREE.Vector3());
+    v.set(x, y, z).project(this.camera.cam);
+    if (v.z < -1 || v.z > 1) return null;
+    const el = this.renderer.domElement;
+    return { x: (v.x + 1) / 2 * el.clientWidth, y: (1 - v.y) / 2 * el.clientHeight };
   }
 
   // Palla in mano: fra i due palmi veri (IK sulle braccia), dopo che

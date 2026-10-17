@@ -2,6 +2,7 @@
 
 const ICON_EXIT = '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M10 8l-4 4 4 4M6 12h10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const ICON_SKIP = '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M6 6l8 6-8 6z" fill="currentColor"/><path d="M17 6v12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+const ICON_CURSOR = '<svg class="m3d-cursor" viewBox="0 0 12 9" aria-hidden="true"><path d="M1 1h10L6 8z" fill="#f2f4f5" stroke="rgba(10,17,28,.72)" stroke-width="1.5" stroke-linejoin="round"/></svg>';
 const ICON_ROTATE = '<svg viewBox="0 0 48 48" width="48" height="48" aria-hidden="true"><rect x="14" y="6" width="20" height="36" rx="4" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M40 30a14 14 0 0 1-10 12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><path d="M29 38l1 4 4-1" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
 function el(tag, cls, text) {
@@ -97,6 +98,23 @@ export class Hud {
     track.append(this.powerFill, mark);
     this.power.append(el('span', 'm3d-power-l', 'Potenza'), track);
 
+    // Indicatori sopra i giocatori (bozzetto del 17/10): triangolo e barretta
+    // di potenza sul comandato, nome di chi prende palla. main.syncMarkers li
+    // posiziona a ogni fotogramma in pixel dello schermo.
+    this.marks = el('div', 'm3d-marks');
+    this.marks.setAttribute('aria-hidden', 'true');
+    this.cursor = el('div', 'm3d-mark');
+    this.cursor.innerHTML = ICON_CURSOR;
+    this.pbar = el('span', 'm3d-pbar');
+    this.pbarFill = el('span', 'm3d-pbar-fill');
+    this.pbar.appendChild(this.pbarFill);
+    this.cursor.appendChild(this.pbar);
+    this.nameMark = el('div', 'm3d-mark');
+    this.nameText = el('span', 'm3d-pname');
+    this.nameMark.appendChild(this.nameText);
+    this.marks.append(this.cursor, this.nameMark);
+    this.cursor.hidden = this.pbar.hidden = this.nameMark.hidden = true;
+
     this.layer = el('div', 'm3d-controls');
 
     // replay dopo il gol: etichetta e pulsante Salta (anche Options, Menu, Invio)
@@ -118,7 +136,7 @@ export class Hud {
     rotate.innerHTML = ICON_ROTATE;
     rotate.appendChild(el('span', null, 'Gira il telefono in orizzontale'));
 
-    hud.append(this.fadeEl, score, this.tag, exit, this.layer, this.power, this.prompt, this.banner, this.replayTag, this.skipBtn, this.toastEl, this.hint, this.dialog, rotate);
+    hud.append(this.fadeEl, this.marks, score, this.tag, exit, this.layer, this.power, this.prompt, this.banner, this.replayTag, this.skipBtn, this.toastEl, this.hint, this.dialog, rotate);
     root.appendChild(hud);
     this.node = hud;
   }
@@ -300,6 +318,32 @@ export class Hud {
     this.tagNum.textContent = number ? String(number) : '';
     this.tagName.textContent = name || '';
     this.tag.hidden = !number && !name;
+  }
+
+  // Triangolo sopra la testa del comandato (pixel dello schermo), o null.
+  setCursor(x, y) {
+    if (x == null) { this.cursor.hidden = true; return; }
+    this.cursor.hidden = false;
+    this.cursor.style.transform = `translate(${x.toFixed(1)}px,${y.toFixed(1)}px)`;
+  }
+
+  // Barretta di potenza sotto il triangolo: 0..1, o null.
+  setBar(p) {
+    if (p == null) { this.pbar.hidden = true; return; }
+    this.pbar.hidden = false;
+    this.pbarFill.style.transform = `scaleX(${p})`;
+    this.pbar.classList.toggle('over', p > this.overPower);
+  }
+
+  // Nome di chi ha preso palla sopra la sua testa; `solo`: senza triangolo
+  // sotto. `on` false lo fa sfumare.
+  setName(x, y, text, solo, on) {
+    if (x == null) { this.nameMark.hidden = true; return; }
+    this.nameMark.hidden = false;
+    if (this.nameText.textContent !== text) this.nameText.textContent = text;
+    this.nameText.classList.toggle('solo', !!solo);
+    this.nameText.classList.toggle('off', !on);
+    this.nameMark.style.transform = `translate(${x.toFixed(1)}px,${y.toFixed(1)}px)`;
   }
 
   // Barra del tiro: p in 0..1, null la nasconde.
