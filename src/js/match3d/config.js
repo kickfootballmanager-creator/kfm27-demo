@@ -122,6 +122,7 @@ export const PLAYER = {
   pivotAngle: 1.2,
   pivotCap: 1.2,          // ...non si va oltre questi m/s finche' il busto non si e' girato
   lateralAccel: 20,       // m/s^2 massimi in curva: a 5 m/s si gira a 4 rad/s, a 8 m/s a 2,5
+  ballAgility: [0.7, 1.25], // accelerazione laterale con la palla: controllo 0 e 1
   turnBrake: 0.35,        // velocita' minima conservata in una curva a 90 gradi
   runBack: [6, 22, 0.35],  // a gioco fermo verso il proprio posto: corsa oltre 6 m, scatto oltre 22, sotto al passo (frazione)
   fieldMargin: 0.6,       // distanza minima dai cartelloni
@@ -214,7 +215,8 @@ export const RECEIVE = {
   // quanto si puo' allargare o stringere la rotazione della clip; lost: palla
   // oltre tanti metri, lo stop finisce e la riprende la conduzione.
   // minAhead: m davanti al busto sotto cui la palla viene spinta avanti a keepRate 1/s
-  trap: { reach: 0.85, maxHoriz: 7, cushion: 6, airY: 0.35, spinKeep: 0.3, push: 0.9, yawScale: [0.4, 1.6], lost: 2.2, minAhead: 0.6, keepRate: 8 },
+  // badTouch: m in piu' (e di lato, meta') di un primo tocco con controllo 0
+  trap: { reach: 0.85, maxHoriz: 7, cushion: 6, airY: 0.35, spinKeep: 0.3, push: 0.9, yawScale: [0.4, 1.6], lost: 2.2, minAhead: 0.6, keepRate: 8, badTouch: 1.2 },
   // Stop anticipato (main.preTrap): la clip parte quando la palla arrivera'
   // al punto del tocco (touch.r m dal giocatore, piu' slack) proprio nel
   // fotogramma del tocco; il destinatario la controlla li', non a capture m.
@@ -331,9 +333,13 @@ export const ATTR = {
   turnRateBall: [3.6, 7], // rad/s con la palla
   dribbleSpeed: [0.84, 0.96],
   passError: [0.09, 0.012],
-  shotSpeed: [30, 35],    // m/s a potenza piena
+  shotSpeed: [27, 36],    // m/s a potenza piena (prima 30-35: fra 60 e 90 di tiro solo 1,7 m/s)
   shotError: [0.1, 0.022],
-  tackle: [0.25, 0.8]
+  tackle: [0.25, 0.8],
+  jump: [0.3, 0.7],       // m di elevazione nel salto (fisico e velocita')
+  // altezza quando il manager non la da': per ruolo principale, +-phy/2 m
+  // dal fisico, +-noise m fissi per giocatore
+  height: { base: { POR: 1.89, DC: 1.87, CDC: 1.82, CC: 1.79, COC: 1.78, TS: 1.78, TD: 1.78, ES: 1.77, ED: 1.77, AS: 1.76, AD: 1.76, ATT: 1.83, default: 1.8 }, phy: 0.08, noise: 0.05 }
 };
 
 // Moduli del manager (007-fm-oh3.js): x 0-100 da sinistra a destra guardando
@@ -363,9 +369,11 @@ export const SHAPE = {
   defY: 73,               // y del modulo che sta sulla linea difensiva
   attY: 15,               // y del modulo che sta sulla linea delle punte
   // width: come nel riferimento le squadre stanno larghe 39 m (prima 34)
-  attack: { lineOffset: -26, lineMin: -40, lineMax: 6, len: 38, width: 32, ballZ: 0.15 },
+  // A10: chi attacca e' lungo 36 m e largo 38
+  attack: { lineOffset: -26, lineMin: -40, lineMax: 6, len: 42, width: 30, ballZ: 0.15 },
   // behindBall: la linea difensiva resta almeno tanti metri dietro la palla (lato porta)
-  defend: { lineScale: 0.55, lineOffset: -14, lineMin: -45, lineMax: -4, behindBall: 7, len: 26, width: 28.5, ballZ: 0.4 },
+  // A10: chi difende sta stretto (29 m) e basso, l'ultimo uomo 22 m dietro la palla
+  defend: { lineScale: 0.55, lineOffset: -20, lineMin: -45, lineMax: -4, behindBall: 19, len: 22, width: 21, ballZ: 0.4 },
   // calcio d'inizio: difensori a 17,5 m dalla meta' campo, punte a 2,9 (riferimento)
   kickoff: { line: -17.5, len: 14.6, width: 26 },
   maxZ: 32                // nessuna posizione oltre questa distanza dal centro in larghezza
@@ -402,17 +410,30 @@ export const AI = {
     shootDist: 25,
     shootMinOpen: 0.25,
     passProgress: 0.05,   // peso dell'avanzamento per metro
-    laneSafe: 2.2,        // un avversario piu' vicino di cosi' alla linea di passaggio la rende rischiosa
+    laneRisk: 2.0,        // peso del rischio della linea (A10: l'81% dei passaggi riesce)
+    // gara sul punto della linea piu' vicino a un avversario (team-ai.passRisk):
+    // la palla ci va a passV m/s medi (compresi i 0,25 s di preparazione), lui
+    // dopo `react` s a `run` della sua velocita' massima, e la tocca da `reach`
+    // m; rischio 0,5 a pari tempo, pieno `span`/2 s prima
+    passV: 11,
+    lane: { react: 0.3, run: 0.8, reach: 0.9, span: 0.5 },
     pressedAt: 3,         // un avversario entro questa distanza mette pressione
     feintChance: 0.25,
     crossChance: 0.7,
     error: [1.6, 0.8],    // moltiplicatore dell'errore di passaggio e tiro [difficulty 0, 1]
     pressedThink: 0.5,    // sotto pressione decide piu' in fretta
+    // Appena presa palla conduce prima di decidere (A10: dalla ricezione al
+    // calcio 2,1 s di mediana, 0,6-3,4): un tocco rapido nel `quick` dei casi
+    // (quickT s), altrimenti med s con dispersione `spread` (log-normale);
+    // pressato entro pressedAt m, al piu' pressedHold s
+    hold: { quick: 0.2, quickT: [0.1, 0.4], med: 2.6, spread: 0.5, pressedHold: 1.1 },
     // protegge la palla: la tiene sul lato lontano dal difensore e rallenta
     protect: { dist: 2.2, mag: 0.45, chance: [0.3, 0.8], shieldSide: 2.2 }
   },
   tackleRate: [0.75, 1.3], // cadenza dei contrasti automatici rispetto a PRESS.autoEvery [difficulty 0, 1]
-  intercept: { base: 0.3, def: 0.5, speed: 0.012 },   // probabilita' d'intercetto: base + def*attr - speed*v
+  // probabilita' d'intercetto: base + def*attr - speed*v (A10: si perde un
+  // passaggio su cinque; con 0,3 e 0,5 l'IA ne perdeva piu' di quattro su dieci)
+  intercept: { base: 0.06, def: 0.3, speed: 0.01 },
   // Difesa di squadra (skill match3d, "Difesa IA e disciplina"): uno solo in
   // pressione che temporeggia, uno in copertura dietro di lui, gli altri in
   // zona sulle linee di passaggio. Vale anche per il giocatore dell'utente
@@ -447,12 +468,14 @@ export const AI = {
   // attaccato (dist m), o lo tiene di spalle oltre la pazienza. Probabilita'
   // al secondo: escape, shield; in area ci si trattiene (box), da ammoniti
   // anche (booked), e cosi' l'ultimo uomo su un'occasione da gol (lastMan).
-  rash: { dist: 1.6, speed: 3, escape: 1.2, shield: 1.2, box: 0.3, booked: 0.35, lastMan: 0.35 },
+  // contrasti azzardati al secondo: rari come i falli del riferimento (prima 1,2 e 1,2)
+  rash: { dist: 1.6, speed: 3, escape: 0.15, shield: 0.15, box: 0.3, booked: 0.35, lastMan: 0.35 },
   // Scivolata, ultima risorsa: portatore lanciato verso la porta (speed m/s,
   // toGoal quota della corsa verso la porta) entro goalDist, arrivo di lato o
   // di fronte, nessun compagno in copertura (entro coverWidth dalla linea
   // portatore-porta). chance: probabilita' al secondo [difficulty 0, 1].
-  slide: { chance: [2.8, 4.4], range: [1.7, 3.3], speed: 3.5, toGoal: 0.4, goalDist: 45, coverWidth: 4 }
+  // scivolate dell'IA: rare come nel riferimento (nessuna vista), prima [2,8, 4,4]
+  slide: { chance: [0.6, 1.0], range: [1.7, 3.3], speed: 3.5, toGoal: 0.4, goalDist: 45, coverWidth: 4 }
 };
 
 // Contrasto in piedi: affondo breve verso la palla, esito al contatto del piede.
@@ -490,8 +513,9 @@ export const PRESS = {
   autoMargin: 0.1,        // metri tenuti di riserva sulla portata del contrasto
   autoAngle: 1.0,         // rad fra il busto e la palla
   autoClose: 0.5,         // sotto questa distanza prevista l'angolo non conta
-  autoReact: [0.4, 0.18], // s in marcatura prima del primo contrasto [difesa bassa, alta]
-  autoEvery: [1.2, 0.6]   // s fra due contrasti automatici [difesa bassa, alta]
+  // il difensore dell'IA accompagna e sceglie il momento: meno tentativi (prima 0,4/0,18 e 1,2/0,6)
+  autoReact: [0.7, 0.4],  // s in marcatura prima del primo contrasto [difesa bassa, alta]
+  autoEvery: [2.2, 1.3]   // s fra due contrasti automatici [difesa bassa, alta]
 };
 
 // Esito di un contrasto: palla recuperata, il portatore salta l'uomo, fallo.
@@ -502,12 +526,17 @@ export const DUEL = {
   angle: { front: 1, side: 0.85, back: 0.6 },
   skillGap: 0.4,          // peso della differenza di difficolta' fra le squadre
   manual: 1.05,           // contrasto premuto: poco piu' efficace, molto piu' rischioso
-  // fallo: base, di lato, da dietro, per m/s di chi entra e del portatore (lanciato si inciampa di piu')
-  foul: { auto: 0.15, manual: 0.22, side: 0.15, back: 0.45, speed: 0.012, carrier: 0.05 },
-  missFoul: { front: 0.5, side: 0.75, back: 0.9 },
+  strength: 0.6,          // differenza di fisico (0-1) fra chi entra e il portatore: vincita x (1 + strength * diff)
+  // fallo: base, di lato, da dietro, per m/s di chi entra e del portatore (lanciato si inciampa di piu').
+  // Come nel riferimento (A10: nessun fallo in 7,6 minuti di gioco) i
+  // contrasti dell'IA sono quasi sempre puliti; il contrasto premuto resta rischioso
+  foul: { auto: 0.005, manual: 0.15, side: 0.015, back: 0.06, speed: 0.001, carrier: 0.003 },
+  missFoul: { front: 0.03, side: 0.06, back: 0.15 },
   // carica o spinta di corsa sul portatore (defense.bodyContact): oltre `speed` m/s
-  // di avvicinamento, probabilita' per provenienza, piena a `full` m/s; gap: m oltre il contatto dei corpi
-  contact: { gap: 0.06, speed: 1, full: 4, front: 0.05, side: 0.9, back: 1 },   // contrasto che manca la palla e prende l'uomo (a portata: TACKLE.manReach)
+  // di avvicinamento, probabilita' per provenienza, piena a `full` m/s; gap: m oltre il contatto dei corpi.
+  // Prima 0,9 di lato e 1 da dietro: quasi ogni avvicinamento diventava una
+  // trattenuta o una spinta (84% dei falli, 18 a partita)
+  contact: { gap: 0.06, speed: 1, full: 4, front: 0.002, side: 0.01, back: 0.025 },   // contrasto che manca la palla e prende l'uomo (a portata: TACKLE.manReach)
   passFirst: [0.15, 0.5], // IA con palla: la passa prima del contrasto [difficolta' 0, 1]
   quickPass: 0.1,         // secondi fra la decisione e il piede sulla palla
   stagger: { miss: 0.45, beaten: 0.8 }, // secondi sbilanciato dopo un contrasto a vuoto
@@ -696,7 +725,13 @@ export const AERIAL = {
   passSpeed: 11,
   clearSpeed: 17,
   bicycleSpeed: [22, 28],
-  error: 0.12
+  error: 0.12,
+  // altezza e salto: le fasce del colpo di testa valgono per refHeight m e
+  // refJump m di elevazione e si spostano con l'altezza e il salto del
+  // giocatore; contrasto aereo fra due avversari sulla stessa palla (entro
+  // duelDist m e duelTime s): vince piu' spesso chi ha altezza piu' salto
+  // piu' strength x forza maggiori (logistica di scala duelScale m)
+  refHeight: 1.82, refJump: 0.5, duelDist: 1.6, duelTime: 0.25, strength: 0.1, duelScale: 0.05
 };
 
 // Portieri.
@@ -705,7 +740,7 @@ export const KEEPER = {
   depthRange: [45, 12],   // distanza della palla a cui si passa da un valore all'altro
   maxZ: 3.2,              // non si sposta oltre questa distanza dal centro della porta
   alertDist: 32,          // palla entro tanti metri dalla porta: in guardia (animazione)
-  react: [0.28, 0.12],    // secondi di reazione a un tiro [difficulty 0, 1]
+  react: [0.32, 0.2],     // secondi di reazione a un tiro [difficulty 0, 1] (prima 0,28-0,12)
   penaltyReact: 0.04,     // sul rigore il lato e' gia' scelto: parte subito
   // errore (m) sul punto d'intercetto previsto [attributo basso, alto]. Piccolo:
   // gli attributi contano nella portata e nella reazione (reach, react), e un
@@ -725,7 +760,7 @@ export const KEEPER = {
   // Solo i punti fra `behind` m dietro e `ahead` m davanti a lui (KEEPER.plan):
   // il portiere non arretra durante il tiro, un pallonetto alle spalle non e' parabile.
   // up: le mani delle clip di parata arrivano al massimo a 2,2-2,3 m (336, presa alta).
-  reach: { body: 0.3, arm: 0.6, armLow: 0.45, lowY: 0.35, armTime: 0.15, dive: [1.6, 2.3], diveTime: 0.55, up: 2.15, behind: 0.3, offPlace: 1.5 },
+  reach: { body: 0.3, arm: 0.6, armLow: 0.45, lowY: 0.35, armTime: 0.15, dive: [1.7, 2.4], diveTime: 0.55, up: 2.15, behind: 0.3, offPlace: 1.5 },
   // Attesa della parata con tempo: passi laterali verso il punto (oltre minWait
   // s alla partenza), ripianificata ogni `every` s, mai a meno di `line` m dalla linea.
   shuffle: { minWait: 0.3, every: 0.12, line: 0.4 },
@@ -750,11 +785,12 @@ export const KEEPER = {
     ahead: 2.2,           // metri davanti al portiere in cui si cerca l'intercetto
     behind: 0.8,          // metri dietro (verso la porta)
     maxY: 3.2,            // punti piu' alti di cosi' non si provano
-    rateMax: 1.8,         // la clip si accelera al massimo di tanto
+    rateMax: 1.25,        // la clip si accelera al massimo di tanto (prima 1,8: tuffi a doppia velocita')
     rateCost: 0.08,       // costo di una clip accelerata o rallentata
     skipCost: 1.5,        // per secondo di clip saltato all'inizio (clip fatta partire piu' avanti)
     standLat: 0.45,       // palla entro tanti metri di lato: solo parate in piedi
     maxResidual: 0.6,     // oltre questo scarto le mani non arrivano: non si prova
+    shortGap: 0.35,       // m in piu' di cui restano corte le mani su un tiro non parabile (avambracci compresi)
     wide: 0.5             // tiro fuori dallo specchio di tanto: si lascia andare
   },
   // Uscite sui palloni alti: prese e pugni della libreria (keeper.js, claimOptions).

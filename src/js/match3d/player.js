@@ -141,7 +141,9 @@ export class Player {
       const target = headingOf(dx, dz);
       // da fermi il primo passo va subito dove si vuole andare, anche all'indietro;
       // in corsa la curva ha un raggio credibile (accelerazione laterale massima)
-      const bend = Math.min(turn, PLAYER.lateralAccel / Math.max(this.speed, 0.5) * dt);
+      // con la palla l'agilita' viene dal controllo (dribbling): curva piu' stretta
+      const agile = o.withBall ? PLAYER.ballAgility[0] + (PLAYER.ballAgility[1] - PLAYER.ballAgility[0]) * (P.control ?? 0.5) : 1;
+      const bend = Math.min(turn, PLAYER.lateralAccel * agile / Math.max(this.speed, 0.5) * dt);
       if (this.speed < PLAYER.pivotSpeed) this.moveHeading = target;
       else this.moveHeading = wrap(this.moveHeading + clamp(wrap(target - this.moveHeading), -bend, bend));
       const left = Math.abs(wrap(target - this.moveHeading));

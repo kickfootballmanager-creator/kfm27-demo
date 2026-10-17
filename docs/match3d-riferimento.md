@@ -1027,3 +1027,83 @@ limite dell'obiettivo.
 
 Test di durata (10 partite): 5 violazioni (piedi 2, portiere 2, osso 1),
 statistiche nell'obiettivo (falli 21,8, gialli 3, rossi 0,1, scivolate 4).
+
+### Blocco C: equilibrio del gioco (17/10)
+
+Misure con `strumenti/hook-eventi.js` (4 partite IA contro IA per ogni
+prova, le stesse grandezze di A10), `strumenti/portiere-rif.js` (tiri come
+nel riferimento contro il portiere) e `strumenti/attributi.js` (ogni
+attributo a 90 contro 60).
+
+| | Prima | Dopo | Riferimento |
+|---|---|---|---|
+| Calci al minuto | 30 | 14-18 | 12,7 |
+| Tenuta palla dalla ricezione al calcio | 0,5 s | 1,6-2,0 s | 2,1 s |
+| Passaggi riusciti | 60% | 77-89% | 81% (sottostima delle perdite: vedi sotto) |
+| Cambi di possesso a terra al minuto | 4,8 | 1,4-2,4 | 2,1 |
+| Falli a partita | 18-33 | 0-4 | nessuno in 7,6 minuti |
+| Chi difende: larghezza, ultimo uomo dietro la palla | 38,5 m, 11 m | 29-30 m, 18-21 m | 29 m, 22 m |
+| Chi attacca: lunghezza, larghezza | 32 x 41 m | 38 x 39-40 m | 36 x 38 m |
+| Tiri al palo dal limite: parate del portiere | 27 su 30 | 8 su 30 | 2 su 9 |
+| Tiri centrali: parate | 10 su 10 | 10 su 10 | |
+
+L'81% dei passaggi riusciti del riferimento conta solo i 43 voli (su 67) in
+cui il radar riconosce sia chi calcia sia chi riceve; i palloni persi in
+mischia hanno spesso il ricevente incerto, quindi il valore vero e' piu'
+basso.
+
+Cosa cambia:
+
+- **Falli** (`DUEL.contact`, `DUEL.foul`, `DUEL.missFoul`, `AI.rash`,
+  `PRESS.autoReact`, `PRESS.autoEvery`, `AI.slide.chance`): l'84% dei falli
+  erano trattenute, spinte e cariche dell'IA, che partivano da quasi ogni
+  avvicinamento di lato (0,9) o da dietro (1). Ora 0,01 e 0,025; contrasti
+  automatici meno frequenti e quasi sempre puliti; scivolate dell'IA un
+  quarto di prima. Il contrasto premuto dall'utente resta rischioso (0,15).
+- **Ritmo** (`AI.carrier.hold`): l'IA decideva appena presa palla e passava
+  dopo 0,5 s. Ora conduce per un tempo come nel riferimento (mediana 2,6 s
+  di decisione, un tocco rapido una volta su cinque, al piu' 1,1 s se ha un
+  avversario entro 3 m).
+- **Scelta del passaggio** (`team-ai.passRisk`, `AI.carrier.passV`,
+  `AI.carrier.lane`): il rischio era la distanza degli avversari dalla linea;
+  ora e' una gara sul punto della linea piu' vicino a ogni avversario (la
+  palla ci arriva a 11 m/s medi, lui dopo 0,3 s di reazione all'80% della sua
+  velocita', e la tocca da 0,9 m). Anticipo meno probabile (`AI.intercept`).
+- **Forma** (`SHAPE.defend`, `SHAPE.attack`): chi difende stretto (21) e basso
+  (ultimo uomo 19 m dietro la palla, prima 7), chi attacca piu' lungo (42) e
+  stretto (30).
+- **Portieri** (`KEEPER.react`, `KEEPER.plan.rateMax`, `KEEPER.plan.shortGap`,
+  `KEEPER.reach.dive`, `keeper.save`, `keeper.plan`): la lettura del tiro
+  (parabile o no per gli attributi) non guidava la parata: clip di tuffo
+  accelerata fino a 1,8 volte, radice allungata e IK prendevano anche i tiri
+  giudicati imprendibili. Ora la reazione e' umana (0,32-0,2 s), il tuffo
+  accelera al massimo 1,25 volte e, su un tiro non parabile, il portiere si
+  tuffa verso il punto piu' lontano che raggiunge davvero: le mani restano
+  corte di 0,35 m e la palla passa (skill: "il gol e' gol").
+- **Attributi**: altezza ricavata (il database non la ha: ruolo principale,
+  fisico, scarto fisso per giocatore; il manager puo' passare `height`),
+  elevazione e forza dal fisico, controllo del primo tocco e agilita' con la
+  palla dal dribbling; contrasto aereo (`gestures.aerialDuel`) e forza nei
+  contrasti (`DUEL.strength`); forbice della forza del tiro allargata (27-36
+  m/s, prima 30-35).
+- **Test di durata**: obiettivi dal riferimento (falli 0-4, gialli 0-1,5,
+  rossi 0-0,1, scivolate 0-3; prima quelli di PES 18-28, 2-6, 0-0,2, 4-10).
+  Skill aggiornata di conseguenza.
+
+Attributi, 90 contro 60 (gli altri a 75), con le funzioni del gioco:
+
+| Attributo | Misura | 90 | 60 |
+|---|---|---|---|
+| Velocita' | 40 m da fermo; velocita' massima | 4,75 s; 9,2 m/s | 5,82 s; 7,6 m/s |
+| Velocita' | 40 m con la palla | 5,1 s | 6,23 s |
+| Tiro | velocita' a potenza 0,8; nello specchio; gol dal limite verso il palo (60 tiri, portiere 75) | 32 m/s; 30; 16 | 28,8 m/s; 21; 7 |
+| Passaggio | scarto a 25 m; passaggi sbagliati (oltre 1,5 m) | 0,38 m; 0% | 1,27 m; 34% |
+| Dribbling | primo tocco: palla piu' lunga del voluto | 0,11 m | 0,76 m |
+| Dribbling | curva di 90 gradi con la palla a 7 m/s | 0,35 s | 0,43 s |
+| Dribbling | palla persa nel contrasto di un difensore 75 | 28% | 41% |
+| Difesa | contrasti vinti contro un portatore 75 | 41% | 25% |
+| Fisico | contrasti vinti; duelli aerei vinti contro un 75 | 39%; 89% | 28%; 11% |
+| Altezza (1,90 contro 1,70 m) | pallone piu' alto colpito di testa; duelli aerei vinti contro un 1,80 | 2,87 m; 88% | 2,58 m; 12% |
+
+Test di durata (10 partite): 3 violazioni (portiere 2, piedi 1); falli 1,5,
+gialli 0,3, rossi 0, scivolate 0,9 a partita; 2,8 gol a partita.

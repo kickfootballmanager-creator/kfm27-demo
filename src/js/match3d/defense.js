@@ -211,7 +211,8 @@ export function tackleFoulChance(def, car, manual) {
 export function duel(m, def, car, manual) {
   const exposed = exposure(m, car);
   const shield = car.action && car.action.feint ? FEINT.shield : 1;
-  const win = lerp2(DUEL.win, defUnit(def)) * (1 - DUEL.dribbleResist * driUnit(car)) * lerp2(DUEL.timing, exposed) *
+  const strong = 1 + DUEL.strength * ((def.params.strength ?? 0.5) - (car.params.strength ?? 0.5));
+  const win = strong * lerp2(DUEL.win, defUnit(def)) * (1 - DUEL.dribbleResist * driUnit(car)) * lerp2(DUEL.timing, exposed) *
     DUEL.angle[approach(def, car)] * (1 + DUEL.skillGap * (skillOf(m, def) - skillOf(m, car))) * (manual ? DUEL.manual : 1) * shield;
   const foul = tackleFoulChance(def, car, manual) * caution(m, def, car);
   const r = Math.random();

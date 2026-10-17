@@ -15,6 +15,19 @@ function unit(v, base) {
 
 const lerp = ([a, b], t) => a + (b - a) * t;
 
+// Altezza in metri: dal manager (`height` in cm o in m) se c'e'; il database
+// non la ha, quindi dal ruolo principale, piu' il fisico, piu' uno scarto fisso
+// per giocatore (dal nome) entro ATTR.heightNoise.
+function heightOf(p, phy) {
+  const h = num(p && p.height);
+  if (h) return h > 3 ? h / 100 : h;
+  const H = ATTR.height, role = String((p && (p.role || (p.roles && p.roles[0]))) || '').toUpperCase().split(/[,\s/]+/)[0];
+  let seed = 0;
+  for (const c of String((p && p.name) || '')) seed = (seed * 31 + c.charCodeAt(0)) >>> 0;
+  const noise = ((seed % 1000) / 1000 * 2 - 1) * H.noise;
+  return (H.base[role] ?? H.base.default) + (phy - 0.5) * H.phy + noise;
+}
+
 export function playerParams(p) {
   const base = num(p && p.overall) ?? ATTR.fallback;
   const a = (p && p.attrs) || {};
@@ -31,6 +44,11 @@ export function playerParams(p) {
     passError: lerp(ATTR.passError, pas),
     shotSpeed: lerp(ATTR.shotSpeed, sho * 0.8 + phy * 0.2),
     shotError: lerp(ATTR.shotError, sho),
-    tackle: lerp(ATTR.tackle, def)
+    tackle: lerp(ATTR.tackle, def),
+    // altezza (m), elevazione nel salto (m), forza e controllo del primo tocco (0-1)
+    height: heightOf(p, phy),
+    jump: lerp(ATTR.jump, phy * 0.7 + pac * 0.3),
+    strength: phy,
+    control: dri
   };
 }

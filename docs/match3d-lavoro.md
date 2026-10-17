@@ -41,7 +41,7 @@ Leggere "Stato" qui sotto: l'ultimo blocco "in corso" e la sua lista "manca".
 | Preparazione (worktree, diario, test di partenza) | fatta | |
 | A, analisi dei video | fatto: `docs/match3d-riferimento.md` A10 | vedi registro |
 | B, palla e gesti | fatto | vedi registro |
-| C, equilibrio | da fare | |
+| C, equilibrio | fatto | vedi registro |
 | D, gol e calcio d'inizio | da fare | |
 | E, stadio | da fare | |
 | F, Meshy | da fare | |
@@ -143,3 +143,12 @@ Prossimo (blocco C), cause trovate: DUEL.contact side 0,9 e back 1,0 (quasi
 ogni avvicinamento laterale diventa trattenuta o spinta: 84% dei falli);
 carrierThink decide appena ricevuta palla (tenuta 0,5 s); difesa larga
 (SHAPE.defend width 28,5) e alta (behindBall 7).
+
+### Blocco C (fatto)
+
+- Falli rari, ritmo e forma del riferimento, scelta del passaggio con la
+  gara d'intercetto, portieri tarati (8 parate su 30 tiri al palo dal
+  limite), attributi che si sentono (banco `strumenti/attributi.js`, tabella
+  in `docs/match3d-riferimento.md`, Blocco C). Obiettivi del test di durata e
+  skill match3d aggiornati (calcio d'inizio dal video, falli rari).
+- Test di durata: 3 violazioni, statistiche nei nuovi obiettivi.

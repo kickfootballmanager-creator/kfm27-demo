@@ -32,6 +32,8 @@ const KEY_HINT = hintRow('Attacco', ['WASD muovi', 'J passaggio', 'U tiro', 'K c
   hintRow('Difesa', ['J pressing, due volte contrasto', 'U raddoppio', 'K scivolata', 'I portiere', 'Q cambio']);
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+// scarto casuale centrato in zero (somma di tre uniformi, come in gestures.js)
+const gauss = () => (Math.random() + Math.random() + Math.random() - 1.5) * 2;
 // nome sopra il giocatore: lungo diventa iniziale e cognome (Lautaro Martinez -> L. Martinez)
 const shortName = (n) => { const w = String(n || '').trim().split(/\s+/); return w.length > 1 && w.join(' ').length > MARKS.nameMax ? w[0][0] + '. ' + w.slice(1).join(' ') : w.join(' '); };
 
@@ -1948,6 +1950,12 @@ class Match {
     // la lasciavano a 0,2 m dal corpo e il giocatore le correva sopra)
     const ahead = (tx - ex) * Math.sin(hE) + (tz - ez) * Math.cos(hE);
     if (ahead < T.minAhead) { tx += Math.sin(hE) * (T.minAhead - ahead); tz += Math.cos(hE) * (T.minAhead - ahead); }
+    // controllo scarso (dribbling): il primo tocco allunga la palla e la sposta di lato
+    const bad = (1 - (p.params.control ?? 0.6)) * T.badTouch;
+    if (bad > 0) {
+      const f = bad * (0.5 + Math.random()), sdv = bad * 0.5 * gauss();
+      tx += Math.sin(hE) * f + Math.cos(hE) * sdv; tz += Math.cos(hE) * f - Math.sin(hE) * sdv;
+    }
     // il tocco smorza la palla: rispetto al giocatore la velocita' cala come
     // e^(-cushion t) (dribble), e in Tf copre proprio la strada fino al punto
     const Tf = Math.max(0.15, left * T.reach);

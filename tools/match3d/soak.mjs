@@ -34,7 +34,9 @@ const TAPE_MAX = +opt('tape-max', 4);
 const slug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
 
 // Obiettivi per partita, entrambe le squadre (skill match3d, "Difesa IA e disciplina").
-const TARGETS = { slides: [4, 10], fouls: [18, 28], yellows: [2, 6], reds: [0, 0.2] };
+// per partita, come nel riferimento (docs/match3d-riferimento.md A10: nessun
+// fallo e nessuna scivolata in 7,6 minuti di gioco); prima gli obiettivi di PES
+const TARGETS = { slides: [0, 3], fouls: [0, 4], yellows: [0, 1.5], reds: [0, 0.1] };
 
 const fmt = (v) => (Number.isInteger(v) ? String(v) : v.toFixed(2));
 

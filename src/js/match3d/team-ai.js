@@ -11,8 +11,27 @@ const HW = PITCH.width / 2;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const lerp = (a, b, t) => a + (b - a) * t;
 const rand = (a, b) => a + Math.random() * (b - a);
+const gauss = () => Math.sqrt(-2 * Math.log(1 - Math.random())) * Math.cos(2 * Math.PI * Math.random());
 
 // Distanza di un punto da un segmento, nel piano del campo.
+// Rischio di un passaggio da `p` a `q` (0..1): per ogni avversario il punto
+// della linea piu' vicino a lui; se ci arriva (reazione, corsa, portata della
+// gamba) prima della palla, il passaggio e' suo. Prima contava solo la
+// distanza dalla linea e chi correva a chiuderla la trovava libera.
+function passRisk(p, q, opp, C) {
+  const ax = p.pos.x, az = p.pos.z, dx = q.pos.x - ax, dz = q.pos.z - az, l2 = dx * dx + dz * dz || 1;
+  let risk = 0;
+  for (const o of opp) {
+    if (o.down) continue;
+    const u = Math.max(0.05, Math.min(1, ((o.pos.x - ax) * dx + (o.pos.z - az) * dz) / l2));
+    const cx = ax + dx * u, cz = az + dz * u;
+    const tBall = Math.sqrt(l2) * u / C.passV;
+    const tDef = C.lane.react + Math.max(0, Math.hypot(o.pos.x - cx, o.pos.z - cz) - C.lane.reach) / (o.params.maxSpeed * C.lane.run);
+    risk = Math.max(risk, Math.max(0, Math.min(1, 0.5 + (tBall - tDef) / C.lane.span)));
+  }
+  return risk;
+}
+
 function segDist(px, pz, ax, az, bx, bz) {
   const dx = bx - ax, dz = bz - az, l2 = dx * dx + dz * dz || 1;
   const t = clamp(((px - ax) * dx + (pz - az) * dz) / l2, 0, 1);
@@ -250,7 +269,19 @@ export class TeamAI {
   carrierThink(p, dt, passOnly = false) {
     const m = this.m, C = AI.carrier;
     p.aiState = 'PORTATORE';
+    // palla appena presa: si conduce per un tempo come nel riferimento, poi si decide
+    if (p.holdSeq !== m.poss.seq) {
+      p.holdSeq = m.poss.seq;
+      const H = C.hold;
+      p.thinkT = Math.random() < H.quick ? rand(H.quickT[0], H.quickT[1]) : H.med * Math.exp(H.spread * gauss());
+      p.dribbleDir = this.dribbleDir(p);
+    }
     p.thinkT = (p.thinkT || 0) - dt;
+    if (p.thinkT > C.hold.pressedHold && !passOnly) {
+      let near = Infinity;
+      for (const o of this.opponents) near = Math.min(near, Math.hypot(o.pos.x - p.pos.x, o.pos.z - p.pos.z));
+      if (near < C.pressedAt) p.thinkT = C.hold.pressedHold;
+    }
     if ((p.thinkT > 0 && !passOnly) || p.action || (p.kickQueue && !passOnly)) return;
 
     const d = this.dir, opp = this.opponents;
@@ -277,12 +308,10 @@ export class TeamAI {
       if (q === p || q.down || (q.keeper && !pressed)) continue;
       const dist = Math.hypot(q.pos.x - p.pos.x, q.pos.z - p.pos.z);
       if (dist < 5 || dist > 42) continue;
-      let lane = Infinity;
-      for (const o of opp) lane = Math.min(lane, segDist(o.pos.x, o.pos.z, p.pos.x, p.pos.z, q.pos.x, q.pos.z));
-      const risk = lane < C.laneSafe ? (C.laneSafe - lane) / C.laneSafe : 0;
+      const risk = passRisk(p, q, opp, C);
       const gain = this.rel(q.pos.x, q.pos.z).a - me.a;
       const free = freeness(q.pos.x, q.pos.z, opp);
-      const base = gain * C.passProgress + 0.6 * free - 0.9 * risk - dist * 0.006 + (pressed ? 0.25 : 0);
+      const base = gain * C.passProgress + 0.6 * free - C.laneRisk * risk - dist * 0.006 + (pressed ? 0.25 : 0);
       options.push({ kind: 'pass', to: q, score: base + noise() });
       // filtrante a chi aspetta sulla linea: parte adesso e la palla va nello spazio dietro la difesa
       if (q.aiState === 'INSERIMENTO' && q.run && !q.run.go && gain > 0) {

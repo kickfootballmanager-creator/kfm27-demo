@@ -332,7 +332,11 @@ export class KeeperAI {
     m.note('lettura', { k, parabile: a.saveable, motivo: a.reason, margine: a.margin, t: a.t });
     // tiro fuori dallo specchio: lo si lascia andare
     if (Math.abs(s.z) > GOAL_HW + KEEPER.plan.wide || s.y > GOAL.height + KEEPER.plan.wide) return false;
-    const plan = this.plan();
+    // non parabile per gli attributi: si tuffa lo stesso, ma verso il punto piu'
+    // lontano che raggiunge davvero, e la palla passa (skill: "il gol e' gol").
+    // Prima clip accelerata, radice allungata e IK arrivavano anche dove la
+    // lettura diceva di no: parava 9 tiri al palo su 10 dal limite (A10: 1 su 4)
+    const plan = this.plan(undefined, undefined, a.saveable || deflected ? 0 : -a.margin + KEEPER.plan.shortGap);
     if (!plan) return false;
     this.pending = { wait: plan.wait, seq: poss.seq, plan };
     this.lastPlan = plan;
@@ -344,7 +348,8 @@ export class KeeperAI {
   // punto, la clip e il fotogramma in cui i palmi arrivano sulla palla:
   // tabelle tpl.poses per le mani, radice scalata entro scaleA/scaleS, clip
   // accelerata o fatta partire piu' avanti se il tempo e' poco.
-  plan(options = libOptions(this.m.tpl, false), P = KEEPER.plan) {
+  // `short`: metri di cui il bersaglio resta corto della palla (tiro non parabile).
+  plan(options = libOptions(this.m.tpl, false), P = KEEPER.plan, short = 0) {
     const m = this.m, k = this.p, tpl = m.tpl;
     const path = m.ball.predict(this.path, 1 / 60, P.horizon);
     let react = lerp(KEEPER.react[0], KEEPER.react[1], this.skill);
@@ -366,8 +371,13 @@ export class KeeperAI {
       if (s.x * toward > HL + 0.3) break;
       const avail = s.t - react;
       if (avail <= 0.05) continue;
-      const px = s.x + ex, py = Math.max(BALL.radius, s.y + ey);
-      const pz = pen && pen.guess !== pen.real ? pen.guess * (GOAL_HW - RULES.penalty.postMargin) : s.z + ez;
+      let px = s.x + ex, py = Math.max(BALL.radius, s.y + ey);
+      let pz = pen && pen.guess !== pen.real ? pen.guess * (GOAL_HW - RULES.penalty.postMargin) : s.z + ez;
+      if (short > 0) {
+        const qx = px - ox, qz = pz - oz, ql = Math.hypot(qx, qz);
+        const k = ql > 1e-3 ? Math.max(0, ql - short) / ql : 0;
+        px = ox + qx * k; pz = oz + qz * k;
+      }
       const dx = px - ox, dz = pz - oz;
       const a = dx * fx + dz * fz, lat = dx * rx + dz * rz;
       // i cross arrivano di lato: si scorre tutta la traiettoria

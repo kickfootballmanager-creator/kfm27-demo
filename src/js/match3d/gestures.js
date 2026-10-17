@@ -455,7 +455,9 @@ export function tryAerial(m, p, intent) {
   const facing = Math.abs(Math.atan2(Math.sin(p.heading - headingOf(d, 0)), Math.cos(p.heading - headingOf(d, 0))));
   const tries = [];
   if (intent === 'shot' && goalDist < A.bicycle.goalDist && facing > A.bicycle.backAngle) tries.push({ C: A.bicycle, lo: A.bicycle.min, hi: A.bicycle.max, bicycle: true });
-  tries.push({ C: aerialSpec(m, A.jump), lo: A.jumpAbove, hi: A.headMax }, { C: aerialSpec(m, A.header), lo: A.headMin, hi: A.jumpAbove });
+  // fasce d'altezza del colpo di testa per l'altezza e il salto di chi salta
+  const k = (p.params.height || A.refHeight) / A.refHeight, up = (p.params.jump ?? A.refJump) - A.refJump;
+  tries.push({ C: aerialSpec(m, A.jump), lo: A.jumpAbove * k, hi: A.headMax * k + up }, { C: aerialSpec(m, A.header), lo: A.headMin * k, hi: A.jumpAbove * k });
   const path = b.predict(m.aerialPath || (m.aerialPath = []), 1 / 60, 1.4);
   for (const { C, lo, hi, bicycle } of tries) {
     const tc = C.contact - C.from;
@@ -493,7 +495,11 @@ function resolveAerial(m, p, intent, bicycle) {
   if (!b.live || m.poss.owned || m.phase !== 'play') return;
   // di testa su un pallone giocato quando era in fuorigioco
   if (m.checkOffside(p)) return;
-  const lo = bicycle ? A.bicycle.min - 0.4 : A.headMin - 0.3, hi = bicycle ? A.bicycle.max + 0.4 : A.headMax + 0.3;
+  // contrasto aereo perso: la palla e' dell'altro
+  if (p.action && p.action.aerialLost) return;
+  if (!bicycle && !aerialDuel(m, p)) return;
+  const k = (p.params.height || A.refHeight) / A.refHeight, up = (p.params.jump ?? A.refJump) - A.refJump;
+  const lo = bicycle ? A.bicycle.min - 0.4 : A.headMin * k - 0.3, hi = bicycle ? A.bicycle.max + 0.4 : A.headMax * k + up + 0.3;
   if (Math.hypot(b.pos.x - p.pos.x, b.pos.z - p.pos.z) > A.reach * 1.4 || b.pos.y < lo || b.pos.y > hi) return;
   const d = m.dirOf(p.team);
   const err = A.error * (p.params.shotError / ATTR.shotError[1]) ** 0.5;
@@ -515,6 +521,26 @@ function resolveAerial(m, p, intent, bicycle) {
   }
   m.kickLock = { p, t: CONTROL.kickLock };
   if (p === m.ctrl && m.poss.to) m.switchTo(m.poss.to);
+}
+
+// Contrasto aereo: un avversario che salta sulla stessa palla (entro
+// duelDist m, col contatto entro duelTime s) la contende; vince piu' spesso
+// chi ha altezza + salto + forza maggiori. false: `p` ha perso.
+function aerialDuel(m, p) {
+  const A = AERIAL, b = m.ball;
+  const score = (q) => (q.params.height || A.refHeight) + (q.params.jump ?? A.refJump) + A.strength * (q.params.strength ?? 0.5);
+  for (const q of m.teams[m.otherSide(p.team)].players) {
+    const a = q.action;
+    if (!a || !a.aerial || a.aerialLost || q.down) continue;
+    if (Math.hypot(q.pos.x - b.pos.x, q.pos.z - b.pos.z) > A.duelDist) continue;
+    const ev = a.events && a.events[0];
+    if (ev && Math.abs(ev.at - a.t) > A.duelTime) continue;
+    const win = 1 / (1 + Math.exp(-(score(p) - score(q)) / A.duelScale));
+    if (Math.random() < win) { a.aerialLost = true; return true; }
+    if (p.action) p.action.aerialLost = true;
+    return false;
+  }
+  return true;
 }
 
 // --- gesti del portiere: parata, uscita, rinvio. La clip porta il corpo, l'IK
