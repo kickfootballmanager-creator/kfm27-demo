@@ -372,6 +372,79 @@ campo e fotografi. Con la telecamera alta, in gioco la tribuna lontana
 compare solo come striscia LED in cima allo schermo; il pubblico si vede nei
 replay, nelle esultanze e nei calci piazzati.
 
+### A10. Partita intera: eventi, ritmo, forma (blocco A, 17/10 sera)
+
+`riferimento-1.mp4` e `riferimento-2.mp4` sono le copie a risoluzione piena
+gia' usate (rinominate da `DBYN9587.MP4` e `UEJC3760.MP4`, stessa
+dimensione al byte). Misure automatiche dal radar a 30 Hz e controllo a vista
+dei momenti chiave; KFM27 dalle stesse misure in 4 partite IA contro IA
+(ultimo commit, senza i 12 file del 04/10).
+
+Strumenti (`debug/riferimenti/strumenti/`): `radar30.py` (palla, comandato e
+segni delle due squadre a ogni aggiornamento del radar; colori di v1 e v2:
+in v2 cerchi grigi, triangoli lime, comandato verde), `eventi.py` (voli
+della palla, squadra di chi calcia e di chi riceve, riprese), `analisi_a.py`
+(tiri, forma, ricezioni), `hook-eventi.js` (le stesse misure in KFM27 con
+`tools/match3d/probe.mjs`). Dati in `debug/riferimenti/eventi/`.
+
+Il segno di chi ha la palla e' sempre coperto dal quadrato rosso della palla:
+la squadra di chi calcia e' quella col segno piu' vicino al punto di partenza
+0,25 s dopo il calcio, quella di chi riceve col segno piu' vicino al punto
+d'arrivo 0,25 s prima.
+
+| | Riferimento (v1, 318 s di radar) | KFM27 (4 partite) |
+|---|---|---|
+| Calci al minuto | 12,7 (v2 11,2) | 30 |
+| Tenuta palla dalla ricezione al calcio successivo | 2,1 s di mediana (0,6-3,4); utente 2,06, IA 2,3 | 0,5 s |
+| Distanza dei passaggi | 13,3 m (11,2-19,5) | |
+| Passaggi riusciti | 81% (35 su 43); i persi sono corti, 12,8 m di mediana | 60% |
+| Cambi di possesso a terra | 11 in 318 s, 2,1 al minuto | 4,8 al minuto |
+| Falli | nessuno in 7,6 minuti di gioco (v1 e v2) | 3,6-7,4 al minuto |
+| Tiri | v1: 6 da 15-20 m, 21-28 m/s, verso il palo (z 2,8-4,4 m sulla linea), 5 gol e 1 parata; v2: 2 gol e 1 parata | 4-10 a partita da 17-22 m, 30-31 m/s; quasi tutti respinti dai difensori o persi |
+| Ricezione: palla all'arrivo, 0,3 s e 0,8 s dopo il controllo | 11,5 / 3,4 / 5,1 m/s | 11,9 / 3,0 / 7,3 m/s |
+| Chi attacca: lunghezza, larghezza | 36 x 38 m | 32 x 41 m |
+| Chi attacca: ultimo uomo dietro la palla, quota davanti alla palla | 26 m, 22% | 27 m, 20% |
+| Chi difende: lunghezza, larghezza | 24 x 29 m | 27 x 38,5 m |
+| Chi difende: ultimo uomo dietro la palla, quota davanti alla palla | 22 m, 29% | 11 m, 40-50% |
+
+Visti nei fotogrammi:
+
+- **Soste**: quasi nessuna. In v1, fra un calcio d'inizio e il gol
+  successivo il radar non si interrompe mai: niente rimesse, angoli, rinvi o
+  falli in 372 s di gioco. Le uniche soste sono un fuorigioco a 316 s
+  (replay col VAR e la linea del fuorigioco, due stacchi col logo, poi la
+  punizione indiretta da ferma a 334,7 s) e l'intervallo (schermata del
+  piano di partita a 352 s, calcio d'inizio del secondo tempo a 358,4 s).
+  In v2 un angolo (dopo una parata, con un replay corto e la traiettoria
+  tratteggiata sulla battuta) e una rimessa.
+- **Contrasti**: il difensore si affianca al portatore e toglie la palla col
+  piede, a volte di spalla, oppure la palla si stacca e la prende lui.
+  Nessuna scivolata, nessuna caduta, nessun fischio.
+- **Gol**: tiri piazzati dal limite dell'area verso il palo; il portiere si
+  tuffa e non ci arriva. In v1 5 gol su 6 tiri: il riferimento lascia
+  segnare chi tira bene da 15-20 m.
+- **Replay**: dopo il gol, dopo una grande occasione (v2 56-68 s) e dopo il
+  fuorigioco (VAR).
+- **Lanci**: il radar non distingue un pallone alto da un rasoterra che
+  rotola a lungo (i "lanci" da 25-50 m in 2-4 s sono quasi tutti filtranti a
+  terra); a questa scala la palla in aria e' di pochi pixel. Quasi tutto il
+  gioco del riferimento e' a terra.
+
+Cosa ne segue per i blocchi B-D:
+
+- **Ritmo** (blocco C): KFM27 calcia due volte e mezzo piu' spesso e tiene
+  la palla un quarto del tempo. Il portatore deve condurre circa 2 s prima
+  di passare, i passaggi devono riuscire 4 volte su 5.
+- **Falli** (blocco C): quasi assenti. Gli obiettivi del test di durata
+  (18-28 falli, 2-6 gialli, scivolate 4-10) vengono da PES, non dal
+  riferimento.
+- **Difesa** (blocco C): stretta (29 m) e bassa, con l'ultimo uomo 22 m
+  dietro la palla; KFM27 difende larga e alta.
+- **Portieri** (blocco C): sui tiri piazzati dal limite verso il palo il
+  riferimento para circa 1 volta su 4.
+- **Ricezione** (blocco B): le velocita' coincidono gia'; quello che non va
+  e' l'aspetto del controllo, da guardare da vicino.
+
 ## B. Stadio (Soccer Stadium CF, 3ds Max)
 
 Cartella `D:\Soccer_Stadium_\Soccer Stadium CF\`, 1,4 GB, 331 file. Non ho

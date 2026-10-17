@@ -1,0 +1,118 @@
+# Diario del lavoro lungo (dal 17/10/2026)
+
+Richiesta: blocchi A-F (analisi dei video, palla e gesti, equilibrio, gol e
+calcio d'inizio, stadio, Meshy), ognuno con test di durata (violazioni non
+oltre le 7 di partenza), commit e push separati. Ci si ferma solo per
+decisioni irreversibili, per superare 1500 crediti Meshy o se 3ds Max e
+V-Ray non funzionano. Risposte del 17/10: triangolo lime come nel
+riferimento; capriola e ruota con Meshy; calcio d'inizio dal video, con la
+skill aggiornata.
+
+## Da dove ripartire
+
+Leggere "Stato" qui sotto: l'ultimo blocco "in corso" e la sua lista "manca".
+
+## Come e' organizzato
+
+- **Si lavora in `C:\Users\UTENTE\Desktop\kfm27-lavoro`**, una worktree di
+  git sul ramo `lavoro`, nata da `8019126`. In `kfm27` restano intatti i 12
+  file modificati e non committati del 04/10 (pressing come PES 2021,
+  pallonetto L1 + tiro, culmine del tiro, portiere rilassato e retropassaggio,
+  rotazione e ombra della palla, note PES): l'utente ha chiesto di non
+  toccarli. Cosi' quello che si prova e' identico a quello che si committa.
+- Push: `git push origin lavoro:main` (fast-forward). Il `main` locale di
+  `kfm27` resta indietro: per provare in `kfm27` bisogna prima decidere cosa
+  fare dei 12 file.
+- Per provare il gioco: `python -m http.server 8080` dentro `kfm27-lavoro`,
+  poi http://localhost:8080/?match3d.
+- File esclusi da git copiati nella worktree: `anims-*.glb`, `player.glb`,
+  `ball/ball.glb`, `ball/soccerball.fbx`, `coach_start_reference.png`,
+  `src/assets/sponsor/` (non tracciato, dell'utente: non committarlo).
+  Collegati con una giunzione: `src/assets/match3d/source/` (Studio33, 1,5 GB),
+  `src/assets/players/`, `debug/` (video di riferimento e strumenti).
+- Gli strumenti in `debug/riferimenti/strumenti/*.mjs` servono la cartella di
+  `KFM_ROOT` (di base `kfm27-lavoro`).
+- Le skill stanno in `kfm27/.claude/skills` (non tracciate).
+
+## Stato
+
+| Blocco | Stato | Commit |
+|---|---|---|
+| Preparazione (worktree, diario, test di partenza) | fatta | |
+| A, analisi dei video | fatto: `docs/match3d-riferimento.md` A10 | vedi registro |
+| B, palla e gesti | da fare | |
+| C, equilibrio | da fare | |
+| D, gol e calcio d'inizio | da fare | |
+| E, stadio | da fare | |
+| F, Meshy | da fare | |
+
+Crediti Meshy spesi: 0 (saldo 2992 il 17/10).
+
+## Registro
+
+### 17/10, sera (interrotto per i limiti di utilizzo)
+
+Fatto:
+- Worktree `kfm27-lavoro` (ramo `lavoro` da `8019126`), asset e strumenti
+  collegati, diario, memoria `lavoro-lungo-diario`.
+- Test di partenza nella worktree (ultimo commit, senza i 12 file del 04/10):
+  5 violazioni (piedi 3, portiere 2), rossi 0, statistiche nell'obiettivo,
+  2,8 gol a partita. `debug/riferimenti/soak_lavoro_base.log`.
+- Blocco A, misure (strumenti in `debug/riferimenti/strumenti/`):
+  `radar30.py` (radar a 30 Hz, colori di v1 e v2: in v2 cerchi grigi,
+  triangoli lime, comandato verde), `eventi.py` (voli, squadre di chi calcia
+  e riceve dai segni vicini al punto di partenza e d'arrivo: il segno di chi
+  ha la palla e' sempre coperto), `analisi_a.py`, `hook-eventi.js` (stesse
+  misure in KFM27 con probe.mjs), dati in `debug/riferimenti/eventi/`.
+
+Risultati (riferimento v1, 318 s di radar; KFM27, 4 partite IA contro IA):
+
+| | Riferimento | KFM27 |
+|---|---|---|
+| Calci al minuto | 12,7 | 30 |
+| Tenuta palla dalla ricezione al calcio | 2,1 s (utente 2,06, IA 2,3) | 0,5 s |
+| Passaggi riusciti | 81% (persi a 12,8 m di mediana) | 60% |
+| Cambi di possesso a terra | 2,1 al minuto, puliti (piede o spalla, nessuna caduta) | 4,8 |
+| Falli | 0 in 7,6 minuti di gioco (v1 e v2); un fuorigioco con VAR (316-336 s v1) | 3,6-7,4 al minuto |
+| Tiri | da 15-20 m, 21-28 m/s, vicino al palo (z 2,8-4,4); v1 5 gol e 1 parata su 6 | 17-22 m, 30-31 m/s, quasi tutti respinti o altro |
+| Ricezione (arrivo, +0,3 s, +0,8 s) | 11,5 / 3,4 / 5,1 m/s | 11,9 / 3,0 / 7,3 |
+| Attacco: lunghezza, larghezza, ultimo uomo dietro la palla, quota davanti alla palla | 36 / 38 / 26 m / 22% | 32 / 41 / 27 m / 20% |
+| Difesa: stesse misure | 24 / 29 / 22 m / 29% | 27 / 38,5 / 11 m / 40-50% |
+| Passaggi: distanza mediana | 13,3 m | non misurata |
+
+- Soste nel riferimento: quasi nessuna. Fra calcio d'inizio e gol il radar non
+  si interrompe; in v2 un angolo (dopo una parata, con replay) e una rimessa.
+- Replay anche dopo una grande occasione (v2 56-68 s) e dopo un fuorigioco (VAR).
+- L'altezza dei lanci non si misura dal radar (non distingue alto e rasoterra).
+
+Cause gia' trovate per il blocco B:
+- `main.deflect()`: i palloni sotto 0,45 m e sotto 12 m/s non toccano mai i
+  corpi; l'intercetto in `contacts()` e' un sorteggio una volta per pallone:
+  se fallisce la palla attraversa le gambe.
+- Barra di potenza bloccata: quando la carica si annulla senza calcio
+  (possesso perso, cambio di modo, colpo di testa) `charging` va a null senza
+  `barTimer`, e `syncMarkers` lascia la barra col vecchio valore.
+
+Da dove ripartire:
+1. Scrivere la sezione "A10. Partita intera" in `docs/match3d-riferimento.md`
+   con la tabella qui sopra; commit e push del blocco A (solo documento: vale
+   il test di partenza). Push: `git push origin lavoro:main`, poi verificare
+   GitHub Pages ("Gioca ora" invariato).
+2. Blocco B: collisione di ogni pallone basso con le sfere del corpo
+   (controllo o deviazione), barra di potenza, ricezione (aspetto visivo:
+   catturare da vicino), palla che fluttua (ombra di contatto, rotazione,
+   lanci).
+3. Blocco C: tenuta palla 2 s e 12-13 calci al minuto, passaggi riusciti
+   80%, falli quasi assenti (nuovi obiettivi del test di durata e della
+   skill), difesa stretta e bassa, portieri: 1 parata su 4 sui tiri piazzati
+   dal limite; test 90 contro 60 per ogni attributo.
+4. Blocco D: triangolo lime, compagni che non attraversano chi esulta, skill
+   del calcio d'inizio (un solo giocatore al centro, passaggio indietro).
+5. Blocchi E (stadio, 3ds Max e V-Ray) e F (Meshy, al massimo 1500 crediti,
+   pilota prima): non iniziati. Crediti Meshy spesi: 0.
+
+### 17/10, notte: blocco A chiuso
+
+- Sezione A10 in `docs/match3d-riferimento.md` con la tabella del registro
+  sopra e le conseguenze per i blocchi B-D. Il blocco cambia solo documenti:
+  il test di durata che vale e' quello di partenza (5 violazioni).
