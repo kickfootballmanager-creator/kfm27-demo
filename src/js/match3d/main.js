@@ -730,7 +730,7 @@ class Match {
     // portiere battuto si ferma e poi si dispera (KeeperAI.concede)
     const C = p.concedeWait;
     if (C && p.speed < ANIM.endMove) { p.concedeWait = null; p.avatar.playOnce(C.clip, C.from, C.end); }
-    if (this.phase === 'goal' && !celebrating && this.cheer(dt, p)) return;
+    if (this.phase === 'goal' && !celebrating && (this.cheer(dt, p) || this.clearWay(dt, p))) return;
     if (!celebrating && this.stepAside(dt, p)) return;
     if (!t || celebrating || waiting) { p.drive(dt, 0, 0, 0, { decel: p.concedeWait ? undefined : PLAYER.coastDecel }); return; }
     p.goTo(dt, t.x, t.z, t.h);
@@ -781,6 +781,23 @@ class Match {
       return true;
     }
     return false;
+  }
+
+  // Dopo il gol chi non esulta si scansa dalla corsa di chi esulta (la sua
+  // posizione e quella fra clear.ahead s): a passo, di lato rispetto alla
+  // corsa. Prima la corsa dell'esultanza (fino a 9 m) gli finiva addosso.
+  clearWay(dt, p) {
+    const s = this.show, c = s && s.p, W = RULES.celebration.clear;
+    if (!c || p === c || p.keeper || p.down || (s.mates && s.mates.includes(p))) return false;
+    const vx = dt > 0 ? (c.pos.x - c.prev.x) / dt : 0, vz = dt > 0 ? (c.pos.z - c.prev.z) / dt : 0;
+    const ax = c.pos.x, az = c.pos.z, dx = vx * W.ahead, dz = vz * W.ahead, l2 = dx * dx + dz * dz;
+    const u = l2 > 1e-6 ? Math.max(0, Math.min(1, ((p.pos.x - ax) * dx + (p.pos.z - az) * dz) / l2)) : 0;
+    const qx = ax + dx * u, qz = az + dz * u;
+    let ox = p.pos.x - qx, oz = p.pos.z - qz, d = Math.hypot(ox, oz);
+    if (d >= W.dist) return false;
+    if (d < 1e-3) { ox = -dz; oz = dx; d = Math.hypot(ox, oz) || 1; if (d < 1e-3) { ox = 1; oz = 0; d = 1; } }
+    p.goTo(dt, qx + ox / d * (W.dist + 0.4), qz + oz / d * (W.dist + 0.4));
+    return true;
   }
 
   kickoff(side = this.userSide) { this.rules.kickoff(side); }
@@ -1143,7 +1160,7 @@ class Match {
       else this.userMove(dt, p, inp, withBall);
     }
     if (live || setting) this.referee.update(dt);
-    else this.referee.p.drive(dt, 0, 0, 0, { face: { x: b.pos.x - this.referee.p.pos.x, z: b.pos.z - this.referee.p.pos.z } });
+    else if (!(this.phase === 'goal' && this.clearWay(dt, this.referee.p))) this.referee.p.drive(dt, 0, 0, 0, { face: { x: b.pos.x - this.referee.p.pos.x, z: b.pos.z - this.referee.p.pos.z } });
     this.walkOff(dt);
     // chi contrasta tiene la posizione anche contro il portatore, che gli
     // gira attorno: spinto via nella posa del contrasto, scivolava sull'erba

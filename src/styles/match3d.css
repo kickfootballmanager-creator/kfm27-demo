@@ -177,8 +177,8 @@ html.m3d-test #kfm-intro, html.m3d-test #kfm-esc{display:none!important}
 .m3d-power-mark{position:absolute; top:0; bottom:0; width:2px; margin-left:-1px; background:rgba(10,17,28,.8)}
 
 /* Indicatori sopra i giocatori: l'ancora e' il punto sopra la testa
-   (main.syncMarkers), gli elementi salgono da li'. Triangolo bianco come
-   l'anello a terra; la barretta diventa rossa oltre la soglia del tiro alto. */
+   (main.syncMarkers), gli elementi salgono da li'. Triangolo lime come nel
+   riferimento (hud.js); la barretta diventa rossa oltre la soglia del tiro alto. */
 .m3d-marks{position:absolute; inset:0; pointer-events:none; overflow:hidden}
 .m3d-mark{position:absolute; left:0; top:0; width:0; height:0}
 .m3d-mark[hidden], .m3d-pbar[hidden]{display:none}

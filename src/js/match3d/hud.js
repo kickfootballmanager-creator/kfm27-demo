@@ -2,7 +2,8 @@
 
 const ICON_EXIT = '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M10 8l-4 4 4 4M6 12h10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const ICON_SKIP = '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M6 6l8 6-8 6z" fill="currentColor"/><path d="M17 6v12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
-const ICON_CURSOR = '<svg class="m3d-cursor" viewBox="0 0 12 9" aria-hidden="true"><path d="M1 1h10L6 8z" fill="#f2f4f5" stroke="rgba(10,17,28,.72)" stroke-width="1.5" stroke-linejoin="round"/></svg>';
+// triangolo lime come nel riferimento (colore misurato a 64,6 s di riferimento-1)
+const ICON_CURSOR = '<svg class="m3d-cursor" viewBox="0 0 12 9" aria-hidden="true"><path d="M1 1h10L6 8z" fill="#7fd34e" stroke="rgba(10,17,28,.72)" stroke-width="1.5" stroke-linejoin="round"/></svg>';
 const ICON_ROTATE = '<svg viewBox="0 0 48 48" width="48" height="48" aria-hidden="true"><rect x="14" y="6" width="20" height="36" rx="4" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M40 30a14 14 0 0 1-10 12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><path d="M29 38l1 4 4-1" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
 function el(tag, cls, text) {

@@ -42,7 +42,7 @@ Leggere "Stato" qui sotto: l'ultimo blocco "in corso" e la sua lista "manca".
 | A, analisi dei video | fatto: `docs/match3d-riferimento.md` A10 | vedi registro |
 | B, palla e gesti | fatto | vedi registro |
 | C, equilibrio | fatto | vedi registro |
-| D, gol e calcio d'inizio | da fare | |
+| D, gol e calcio d'inizio | fatto | vedi registro |
 | E, stadio | da fare | |
 | F, Meshy | da fare | |
 
@@ -152,3 +152,15 @@ carrierThink decide appena ricevuta palla (tenuta 0,5 s); difesa larga
   in `docs/match3d-riferimento.md`, Blocco C). Obiettivi del test di durata e
   skill match3d aggiornati (calcio d'inizio dal video, falli rari).
 - Test di durata: 3 violazioni, statistiche nei nuovi obiettivi.
+
+### Blocco D (fatto)
+
+- clearWay (nessuno attraversa chi esulta), triangolo lime #7fd34e, skill
+  aggiornata. Test di durata: 5 violazioni, statistiche nell'obiettivo.
+- Restano: replay dopo una grande parata, VAR sul fuorigioco.
+
+### Blocco E (in corso)
+
+- 3ds Max 2027 in `F:dsmaxds Max 2027\`, V-Ray in
+  `C:\Program Files\Chaos\V-Rayds Max 2027`; MultiScatter assente (restano
+  le spline di distribuzione "MS ..."). Controllo: `debug/stadio/strumenti/vray_check.ms`.

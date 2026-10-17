@@ -1103,7 +1103,10 @@ export const RULES = {
   // attorno a `gather.radius` m ed esultano con le clip di `gather.clips`.
   celebration: {
     clip: 'celebration', filler: '059_Ceremony',
-    gather: { delay: 0.8, max: 4, range: 40, radius: 2.4, clips: ['052_Ceremony', '033_Celebration_01_ForSequence', '059_Ceremony', '034_Celebration_02_ForSequence'] }
+    gather: { delay: 0.8, max: 4, range: 40, radius: 2.4, clips: ['052_Ceremony', '033_Celebration_01_ForSequence', '059_Ceremony', '034_Celebration_02_ForSequence'] },
+    // gli altri si scansano a passo entro `dist` m dalla corsa di chi esulta,
+    // fino a `ahead` s davanti a lui (main.clearWay)
+    clear: { dist: 1.8, ahead: 0.6 }
   },
   // Calcio d'inizio come nel riferimento (4 calci d'inizio di v1, dal radar):
   // al centro solo chi batte, che passa all'indietro al giocatore del punto

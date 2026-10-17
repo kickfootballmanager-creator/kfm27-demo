@@ -1107,3 +1107,26 @@ Attributi, 90 contro 60 (gli altri a 75), con le funzioni del gioco:
 
 Test di durata (10 partite): 3 violazioni (portiere 2, piedi 1); falli 1,5,
 gialli 0,3, rossi 0, scivolate 0,9 a partita; 2,8 gol a partita.
+
+### Blocco D: gol e calcio d'inizio (17/10)
+
+- **Nessuno attraversa chi esulta** (`main.clearWay`,
+  `RULES.celebration.clear`): la corsa dell'esultanza (fino a 9 m) finiva
+  addosso ai difensori, che la separazione fra corpi spostava in piedi. Ora,
+  dal gol al replay, chi non partecipa all'esultanza (e l'arbitro) si scansa
+  a passo quando sta entro 1,8 m dalla corsa di chi esulta, contando anche
+  dove sara' fra 0,6 s. Sonda `strumenti/hook-esultanza.js` (4 partite):
+  prima, in 7 gol su 11 un avversario arrivava a 0,68-0,75 m; dopo, dal
+  primo mezzo secondo in poi, nessuno sotto 1,44 m in 7 gol.
+- **Triangolo lime** come nel riferimento (`#7fd34e`, il colore pieno del
+  triangolo a 64,6 s di riferimento-1, semitrasparente sul prato), su
+  richiesta dell'utente; la barretta di potenza resta com'era.
+- **Calcio d'inizio e regia**: come nella tappa 5 (schieramento, passaggio
+  all'indietro, telecamera di gioco, tempi; diretta, primo piano, stacco,
+  replay da quattro inquadrature). La skill `match3d` ora descrive il calcio
+  d'inizio e la regia del riferimento al posto di quelli di PES.
+- Non fatto: il replay corto dopo una grande parata (riferimento-2, 56-68 s)
+  e la revisione del fuorigioco col VAR (riferimento-1, 316-336 s).
+
+Test di durata (10 partite): 5 violazioni (portiere 3, piedi 1, osso 1),
+falli 1,7, gialli 0,2, rossi 0, scivolate 0,6 a partita.
