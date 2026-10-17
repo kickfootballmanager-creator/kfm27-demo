@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { PITCH, STADIUM } from './config.js';
+import { PITCH, STADIUM, LIGHT } from './config.js';
 
 // Contorno dello stadio: cielo a gradiente, torri dei riflettori, pubblico.
 // Il pubblico e' una InstancedMesh di sagome (una draw call) animata nello
@@ -9,7 +9,7 @@ import { PITCH, STADIUM } from './config.js';
 const HL = PITCH.length / 2, HW = PITCH.width / 2;
 
 function sky() {
-  const S = STADIUM.sky;
+  const S = LIGHT[LIGHT.preset].sky;
   const mat = new THREE.ShaderMaterial({
     side: THREE.BackSide,
     depthWrite: false,
@@ -73,7 +73,7 @@ function floodlights() {
   }
   const s = new THREE.Mesh(mergeGeometries(steel), new THREE.MeshStandardMaterial({ color: 0x2a303a, roughness: 0.7, metalness: 0.4 }));
   const l = new THREE.Mesh(mergeGeometries(lamps), new THREE.MeshStandardMaterial({
-    color: 0x000000, emissive: 0xffffff, emissiveMap: lampTexture(), emissiveIntensity: F.intensity
+    color: 0x000000, emissive: 0xffffff, emissiveMap: lampTexture(), emissiveIntensity: LIGHT[LIGHT.preset].lamps
   }));
   return [s, l];
 }
@@ -184,7 +184,7 @@ function crowd(kits) {
   const mat = new THREE.ShaderMaterial({
     uniforms: {
       map: { value: crowdAtlas() }, uTime: { value: 0 }, uCheer: { value: new THREE.Vector2() },
-      uSkin: { value: new THREE.Color(C.skin) }, uLight: { value: C.light }
+      uSkin: { value: new THREE.Color(C.skin) }, uLight: { value: LIGHT[LIGHT.preset].crowd }
     },
     vertexShader: CROWD_VERT,
     fragmentShader: CROWD_FRAG

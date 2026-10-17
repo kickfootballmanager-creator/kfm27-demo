@@ -21,6 +21,7 @@ function grass(renderer) {
   const loader = new THREE.TextureLoader();
   const mat = new THREE.MeshStandardMaterial({
     map: loadTex(loader, 'Grass003_1K-JPG_Color.jpg', true, rx, rz, aniso),
+    color: new THREE.Color().fromArray(PITCH.grassColor),
     normalMap: loadTex(loader, 'Grass003_1K-JPG_NormalGL.jpg', false, rx, rz, aniso),
     normalScale: new THREE.Vector2(0.6, 0.6),
     // erba opaca: con la mappa di rugosita' (0,5-0,7) il riflesso dei fari la sbiancava
@@ -29,6 +30,17 @@ function grass(renderer) {
     // l'erba non riflette la stanza dell'environment map: di taglio diventerebbe bianca
     envMapIntensity: 0.12
   });
+  // Strisce di taglio: la striscia scura moltiplica l'albedo (stessa tinta,
+  // meno luce, come nel riferimento); un velo bianco la sbiadirebbe.
+  mat.onBeforeCompile = (sh) => {
+    sh.uniforms.uStripe = { value: new THREE.Vector3(PITCH.stripeWidth, PITCH.stripeDark, PITCH.stripeEdge) };
+    sh.vertexShader = 'varying float vFieldX;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvFieldX = position.x;');
+    sh.fragmentShader = 'uniform vec3 uStripe;\nvarying float vFieldX;\n' + sh.fragmentShader.replace('#include <map_fragment>',
+      '#include <map_fragment>\n' +
+      // seno con periodo di due bande: zero sui bordi, accanto a un bordo vale la distanza in metri
+      'float sd = sin(3.14159265 * vFieldX / uStripe.x) * uStripe.x / 3.14159265;\n' +
+      'diffuseColor.rgb *= mix(uStripe.y, 1.0, smoothstep(-0.5 * uStripe.z, 0.5 * uStripe.z, sd));');
+  };
   const geo = new THREE.PlaneGeometry(sx, sz);
   geo.rotateX(-Math.PI / 2);
   const mesh = new THREE.Mesh(geo, mat);
@@ -45,14 +57,6 @@ function linesCanvas(qx, qz) {
   g.scale(c.width / qx, c.height / qz);
 
   const hl = PITCH.length / 2, hw = PITCH.width / 2;
-  const stripeW = PITCH.length / (PITCH.stripes | 1);
-  for (let k = 0; (k - 0.5) * stripeW < hl; k++) {
-    if (k % 2) continue;
-    const a = Math.max(0, (k - 0.5) * stripeW), b = Math.min(hl, (k + 0.5) * stripeW);
-    g.fillStyle = `rgba(255,255,255,${PITCH.stripeAlpha})`;
-    g.fillRect(a, 0, b - a, hw);
-  }
-
   g.strokeStyle = '#f4f6f2';
   g.fillStyle = '#f4f6f2';
   g.lineWidth = PITCH.lineWidth;
@@ -94,8 +98,10 @@ function lines(renderer) {
   geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
   geo.setIndex(idx);
   geo.computeVertexNormals();
+  // lineGlow: un po' di luce propria, le righe arrivano al bianco del riferimento
   const mat = new THREE.MeshLambertMaterial({
     map: tex, transparent: true, depthWrite: false, side: THREE.DoubleSide,
+    emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: PITCH.lineGlow,
     polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2
   });
   const mesh = new THREE.Mesh(geo, mat);

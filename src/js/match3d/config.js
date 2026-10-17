@@ -6,6 +6,7 @@ export const PITCH = {
   width: 68,
   runoff: 6,              // erba oltre le linee, fino ai cartelloni
   lineWidth: 0.12,
+  lineGlow: 0.3,          // luce propria delle righe (pitch.lines)
   centerCircle: 9.15,
   penaltyDepth: 16.5,
   penaltyWidth: 40.32,
@@ -14,8 +15,16 @@ export const PITCH = {
   penaltySpot: 11,
   cornerArc: 1,
   grassTileMeters: 6,     // lato di una ripetizione della texture erba
-  stripes: 20,            // bande di taglio dell'erba lungo tutto il campo
-  stripeAlpha: 0.055,
+  // Grass003 ha l'albedo giallo-verde (tinta 71 gradi): moltiplicato per
+  // questo colore l'erba arriva alla tinta 104 e saturazione 53% del
+  // riferimento (docs/match3d-riferimento.md, A6)
+  grassColor: [0.37, 1, 0.75],
+  // Strisce di taglio come nel riferimento: bande di stripeWidth metri con un
+  // bordo sulla linea di meta' campo, la scura a stripeDark della chiara,
+  // passaggio sfumato lungo stripeEdge metri (10-90% su 0,6 m)
+  stripeWidth: 6,
+  stripeDark: 0.78,
+  stripeEdge: 1,
   boardHeight: 0.9,
   boardDepth: 0.2
 };
@@ -1142,7 +1151,6 @@ export const RENDER = {
     medium: { pixelRatio: 1.5, shadow: 1024, aa: 'fxaa', bloom: false },
     high: { pixelRatio: 2, shadow: 2048, aa: 'smaa', bloom: true }
   },
-  exposure: 1.05,         // tone mapping ACES
   envIntensity: 0.55,     // riflessi dell'environment map (RoomEnvironment)
   shadowBox: 24,          // metri attorno alla palla coperti dall'ombra dinamica
   shadowBias: -0.0004,
@@ -1154,23 +1162,51 @@ export const RENDER = {
   lowSamples: 2,
   highFps: 58,
   resStep: 0.15,
-  sampleSeconds: 1.5,
-  background: 0x0a111c
+  sampleSeconds: 1.5
+};
+
+// Luce della partita (main.js, render.js, stadium.js): `preset` sceglie
+// giorno o sera. Giorno come nel riferimento (docs/match3d-riferimento.md,
+// A6): sole alto 65 gradi dalla destra dello schermo e un po' dal lato della
+// telecamera, ombre di 0,8 m verso sinistra; all'ombra l'erba riceve circa
+// meta' della luce. Sera: i riflettori, la resa di prima.
+// sun.dir: verso il sole (x lungo il campo, z verso la telecamera);
+// exposure: tone mapping ACES; lamps: luce dei pannelli dei fari; crowd:
+// luminosita' del pubblico (sagome senza luce propria).
+export const LIGHT = {
+  preset: 'day',
+  day: {
+    hemi: { sky: 0xd6e6ff, ground: 0x3c4a2c, intensity: 1 },
+    sun: { color: 0xfff2dc, intensity: 2.4, dir: [0.389, 0.906, 0.161] },
+    exposure: 1.32,
+    background: 0x7fa9d6,
+    sky: { top: 0x2f63a8, horizon: 0x7fa9d6, glow: 0x5d7f9e },
+    lamps: 0.4,
+    crowd: 0.75
+  },
+  night: {
+    hemi: { sky: 0xdfe8ff, ground: 0x2c3a24, intensity: 1.1 },
+    sun: { color: 0xffffff, intensity: 1.6, dir: [-0.419, 0.838, 0.349] },
+    exposure: 1.05,
+    background: 0x0a111c,
+    sky: { top: 0x02050b, horizon: 0x16233a, glow: 0x1e2e4a },
+    lamps: 4,
+    crowd: 0.5
+  },
+  sunDistance: 71.6       // metri fra il sole e il centro dell'ombra dinamica
 };
 
 // Contorno dello stadio (stadium.js e pitch.js).
 export const STADIUM = {
   skyRadius: 480,
-  sky: { top: 0x02050b, horizon: 0x16233a, glow: 0x1e2e4a },
   stands: { depth: 26, rise: 14 },
-  floodlights: { out: 30, height: 40, poleRadius: 0.9, panel: [12, 6], tilt: 0.55, intensity: 4 },
+  floodlights: { out: 30, height: 40, poleRadius: 0.9, panel: [12, 6], tilt: 0.55 },
   crowd: {
     row: 0.95,            // metri fra due file, lungo la tribuna
     seat: 0.62,           // metri fra due posti
     fill: 0.72,           // posti occupati
     size: [0.55, 1.05],   // sagoma: larghezza e altezza
     skin: 0xc9a07e,
-    light: 0.5,           // luminosita' del pubblico (i riflettori guardano il campo)
     cheerTime: 7,         // secondi di esultanza dopo un gol
     neutral: ['#39414d', '#5a6270', '#7a6a58', '#2d3f55', '#6b3b3b', '#4c5a3c', '#8a8d93'],
     density: { low: 0.35, medium: 0.65, high: 1 }

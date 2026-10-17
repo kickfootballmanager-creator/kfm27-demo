@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { PHYSICS, RENDER, REPLAY, RULES, PLAYER, CONTROL, DRIBBLE, SHOT, PASS, KIT, RECEIVE, FIRST_TOUCH, ANIM, ANIMLIB, POWER, FEINT, AI, AERIAL, SHAPE, PITCH, SLIDE, BALL, DUEL, OFFSIDE, DEBUG, PRESS, THROUGH, TAPE, BALL_LOOK } from './config.js';
+import { PHYSICS, RENDER, REPLAY, RULES, PLAYER, CONTROL, DRIBBLE, SHOT, PASS, KIT, RECEIVE, FIRST_TOUCH, ANIM, ANIMLIB, POWER, FEINT, AI, AERIAL, SHAPE, PITCH, SLIDE, BALL, DUEL, OFFSIDE, DEBUG, PRESS, THROUGH, TAPE, BALL_LOOK, LIGHT } from './config.js';
 import { buildPitch } from './pitch.js';
 import { Ball, shadowTexture, aimWithSpin, rollSpeedIn } from './ball.js';
 import { BroadcastCamera } from './camera.js';
@@ -198,10 +198,11 @@ class Match {
     root.appendChild(r.domElement);
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(RENDER.background);
-    scene.add(new THREE.HemisphereLight(0xdfe8ff, 0x2c3a24, 1.1));
-    const sun = new THREE.DirectionalLight(0xffffff, 1.6);
-    sun.position.set(-30, 60, 25);
+    const L = LIGHT[LIGHT.preset];
+    scene.background = new THREE.Color(L.background);
+    scene.add(new THREE.HemisphereLight(L.hemi.sky, L.hemi.ground, L.hemi.intensity));
+    const sun = new THREE.DirectionalLight(L.sun.color, L.sun.intensity);
+    sun.position.fromArray(L.sun.dir).multiplyScalar(LIGHT.sunDistance);
     scene.add(sun);
     this.sun = sun;
     scene.add(buildPitch(r));

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { RENDER } from './config.js';
+import { RENDER, LIGHT } from './config.js';
 
 // Resa grafica a livelli (skill match3d, "Grafica e prestazioni"). Tutti i
 // livelli: sRGB, tone mapping ACES, environment map leggera. Basso: ombre
@@ -54,7 +54,7 @@ export class Graphics {
     scene.add(sun.target);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = RENDER.exposure;
+    renderer.toneMappingExposure = LIGHT[LIGHT.preset].exposure;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     // riflessi credibili su maglie e pelle: una stanza generata, niente file
     const pmrem = new THREE.PMREMGenerator(renderer);
