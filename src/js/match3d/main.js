@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { PHYSICS, RENDER, REPLAY, RULES, PLAYER, CONTROL, DRIBBLE, SHOT, PASS, KIT, RECEIVE, FIRST_TOUCH, ANIM, ANIMLIB, POWER, FEINT, AI, AERIAL, SHAPE, PITCH, SLIDE, BALL, DUEL, OFFSIDE, DEBUG, PRESS, THROUGH, TAPE, BALL_LOOK, LIGHT } from './config.js';
+import { PHYSICS, RENDER, REPLAY, RULES, PLAYER, CONTROL, DRIBBLE, SHOT, PASS, KIT, RECEIVE, FIRST_TOUCH, ANIM, ANIMLIB, POWER, FEINT, AI, AERIAL, SHAPE, PITCH, SLIDE, BALL, DUEL, OFFSIDE, DEBUG, PRESS, THROUGH, TAPE, BALL_LOOK, LIGHT, KICK, FOULACT } from './config.js';
 import { buildPitch } from './pitch.js';
 import { Ball, shadowTexture, aimWithSpin, rollSpeedIn } from './ball.js';
 import { BroadcastCamera } from './camera.js';
@@ -1002,7 +1002,9 @@ class Match {
     // si sposta mai: spinto via, al passo dopo la radice lo riportava indietro
     // e oscillava di 0,3-0,6 m a fotogramma. Nemmeno chi gira sul posto (clip
     // di giro della libreria): spinto a 0,8 m/s, la posa del giro traslava
-    separate(this.bodies, (p) => (p.down || (p.action && (p.action.root || p.action.tackle)) || (p.trans && p.trans.role === 'turnInPlace' && p.avatar.one === p.trans.one) ? 3 : p === this.ctrl || p === this.owner ? 2 : 0));
+    // e chi fa la spinta a due mani da fermo: spinto dal portatore che gli
+    // corre addosso, la posa sul posto traslava a 5 m/s (test del 17/10)
+    separate(this.bodies, (p) => (p.down || (p.action && (p.action.root || p.action.tackle || (p.action.foulGesture && p.action.clip === FOULACT.clips.ferma))) || (p.trans && p.trans.role === 'turnInPlace' && p.avatar.one === p.trans.one) ? 3 : p === this.ctrl || p === this.owner ? 2 : 0));
     for (const p of this.everyone) p.confine();
     // chi va addosso al portatore di corsa, soprattutto alle spalle, fa fallo
     bodyContact(this);
@@ -1024,6 +1026,7 @@ class Match {
       if (o && !o.drive && o.t < o.hold && moved > ANIM.endMove && (!a || (a.kick && a.done)) && p.avatar.gestureSpeed() < ANIM.stillRoot) p.avatar.fadeGesture(ANIM.trans.cut);
     }
 
+    for (const p of this.everyone) if (p.kickQueue) this.stepKickQueue(dt, p);
     if (live || this.rules.userTaking()) this.actions(dt, inp);
 
     const wasLive = b.live;
@@ -1101,12 +1104,14 @@ class Match {
     this.callPress = this.keeperCharge = false;
     if (!this.charging) {
       const k = KICKS.find((c) => inp.down[c]);
-      if (k) { this.charging = k; this.charge = 0; }
+      // chargeT, chargeOwn: secondi dal tasto e palla gia' al piede al tasto (KICK.setup)
+      if (k) { this.charging = k; this.charge = 0; this.chargeT = 0; this.chargeOwn = this.owner === me; }
     }
     if (this.charging) {
       this.charge = Math.min(1, this.charge + dt / POWER.chargeTime);
+      this.chargeT += dt;
       if (inp.up[this.charging] || !inp.held[this.charging]) {
-        this.buffer = { kind: this.charging, power: this.charge, t: CONTROL.buffer };
+        this.buffer = { kind: this.charging, power: this.charge, t: CONTROL.buffer, wait: this.chargeOwn ? Math.max(0, KICK.setup - this.chargeT) : 0 };
         this.charging = null;
         this.barTimer = POWER.barHide;
       }
@@ -1128,10 +1133,31 @@ class Match {
       if ((this.buffer.t -= dt) <= 0) this.buffer = null;
       return;
     }
+    // palla al piede: come nel riferimento si continua la conduzione fino a
+    // KICK.setup secondi dal tasto, poi parte il gesto (ANIM.*.lead)
+    if (this.buffer.wait > 0 && this.owner === me) { this.buffer.wait -= dt; return; }
     const buf = this.buffer;
     this.buffer = null;
     if (buf.kind === 'feint') this.startFeint(me, inp);
     else this.startKick(me, buf.kind, buf.power, inp);
+  }
+
+  // Calcio deciso dall'IA: come per il tasto dell'utente, il portatore
+  // continua la conduzione per KICK.setup secondi, poi parte il gesto.
+  queueKick(p, kind, power, inp) {
+    p.kickQueue = { kind, power, inp, t: KICK.setup, seq: this.poss.seq };
+  }
+
+  stepKickQueue(dt, p) {
+    const q = p.kickQueue;
+    if (this.owner !== p || this.poss.seq !== q.seq || this.phase !== 'play' || p.action || p.down) { p.kickQueue = null; return; }
+    if ((q.t -= dt) > 0) return;
+    p.kickQueue = null;
+    if (!this.canKick(p)) return;
+    // verso dove sta adesso il compagno scelto
+    const inp = q.inp, to = inp.to;
+    if (to) { const dx = to.pos.x - p.pos.x, dz = to.pos.z - p.pos.z, l = Math.hypot(dx, dz) || 1; inp.x = dx / l; inp.z = dz / l; }
+    this.startKick(p, q.kind, q.power, inp);
   }
 
   // Prepara il calcio: bersaglio scelto ora (potenza = distanza), mira e
@@ -1182,8 +1208,10 @@ class Match {
     // passaggi durano 0,33-0,37 s e l'ultimo fotogramma restava fermo a peso
     // pieno per tutto il recupero mentre il giocatore si spostava
     const hold = (clip, from, rate) => Math.max(lead, Math.min(a.end, (clipDuration(this.tpl, clip) - from) / rate - ANIM.fadeOut));
-    if (pick) p.avatar.playOnce(pick.clip, pick.from, hold(pick.clip, pick.from, pick.rate), pick.rate);
-    else if (K.fallback) { const from = Math.max(0, K.fallback.contact - lead); p.avatar.playOnce(K.fallback.clip, from, hold(K.fallback.clip, from, 1)); }
+    // caricamento corto: il gesto e' a peso pieno prima del contatto
+    const fade = Math.min(ANIM.fadeIn, lead * ANIM.kickFade);
+    if (pick) p.avatar.playOnce(pick.clip, pick.from, hold(pick.clip, pick.from, pick.rate), pick.rate, fade);
+    else if (K.fallback) { const from = Math.max(0, K.fallback.contact - lead); p.avatar.playOnce(K.fallback.clip, from, hold(K.fallback.clip, from, 1), 1, fade); }
     a.clip = pick ? pick.clip : K.fallback && K.fallback.clip;
     // Il corpo si gira come la radice della clip, non verso il bersaglio:
     // cosi' al contatto la palla parte dove la calcia la clip (pick.dir
@@ -1328,16 +1356,20 @@ class Match {
   }
 
   // Si corre al massimo sul punto d'intercetto, frenando solo per non
-  // superarlo; da vicino il busto guarda la palla.
+  // superarlo; da vicino il busto guarda la palla. Un passaggio che arriva
+  // con l'intercetto vicino si aspetta di fronte: frenata e giro del busto
+  // verso la palla in circa 0,3 s, come nel riferimento.
   runToBall(dt, p) {
     if (this.poss.flying && this.poss.kind === 'filtrante' && this.poss.to === p) { this.runOnto(dt, p); return; }
-    const b = this.ball, s = this.intercept(p);
+    const b = this.ball, s = this.intercept(p), R = RECEIVE;
     const dx = s.x - p.pos.x, dz = s.z - p.pos.z, d = Math.hypot(dx, dz);
     const bx = b.pos.x - p.pos.x, bz = b.pos.z - p.pos.z;
-    const face = Math.hypot(bx, bz) < RECEIVE.faceDist ? { x: bx, z: bz } : null;
-    const brake = Math.sqrt(2 * PLAYER.decel * d) / p.params.maxSpeed;
-    if (d > 0.15) p.drive(dt, dx, dz, Math.min(1, brake), { sprint: true, face });
-    else p.drive(dt, 0, 0, 0, { face: face || { x: bx, z: bz } });
+    const wait = this.poss.flying && this.poss.to === p && d < R.waitDist;
+    const face = wait || Math.hypot(bx, bz) < R.faceDist ? { x: bx, z: bz } : null;
+    const o = wait ? { face, decel: R.brake, faceRate: R.faceRate[0] + (R.faceRate[1] - R.faceRate[0]) * clamp(p.speed / 5, 0, 1), faceAccel: R.faceAccel } : { sprint: true, face };
+    const brake = Math.sqrt(2 * (wait ? R.brake : PLAYER.decel) * d) / p.params.maxSpeed;
+    if (d > 0.15) p.drive(dt, dx, dz, Math.min(1, brake), o);
+    else p.drive(dt, 0, 0, 0, { ...o, face: face || { x: bx, z: bz } });
   }
 
   // Filtrante (skill: "Filtranti e inserimenti"): il ricevente corre nello

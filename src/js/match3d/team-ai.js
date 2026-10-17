@@ -242,7 +242,7 @@ export class TeamAI {
 
   // Sotto contrasto: il passaggio migliore subito, con il piede quasi sulla palla.
   passNow(p) {
-    if (!p.action && this.m.owner === p) this.carrierThink(p, 0, true);
+    if (!p.action && this.m.owner === p) { p.kickQueue = null; this.carrierThink(p, 0, true); }
   }
 
   // --- portatore IA: tiro, passaggio, filtrante, cross o dribbling.
@@ -251,7 +251,7 @@ export class TeamAI {
     const m = this.m, C = AI.carrier;
     p.aiState = 'PORTATORE';
     p.thinkT = (p.thinkT || 0) - dt;
-    if ((p.thinkT > 0 && !passOnly) || p.action) return;
+    if ((p.thinkT > 0 && !passOnly) || p.action || (p.kickQueue && !passOnly)) return;
 
     const d = this.dir, opp = this.opponents;
     const me = this.rel(p.pos.x, p.pos.z);
@@ -317,7 +317,9 @@ export class TeamAI {
     // Potenza come la darebbe un giocatore: il tiro fra meta' e la tacca,
     // il cross verso un palo a caso, il passaggio in base alla distanza.
     const power = pick.kind === 'shot' ? rand(0.5, 0.84) : pick.kind === 'cross' ? rand(0.1, 0.95) : Math.min(1, Math.hypot(dx, dz) / 45);
-    m.startKick(p, pick.kind, power, { mag: 1, x: dx / l, z: dz / l, to: pick.to, quick: passOnly });
+    // sotto contrasto subito; altrimenti, come col tasto, dopo KICK.setup di conduzione
+    if (passOnly) m.startKick(p, pick.kind, power, { mag: 1, x: dx / l, z: dz / l, to: pick.to, quick: true });
+    else m.queueKick(p, pick.kind, power, { mag: 1, x: dx / l, z: dz / l, to: pick.to });
   }
 
   // Quanto e' libera la porta: 1 nessuno fra il portatore e i pali.

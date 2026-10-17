@@ -665,3 +665,68 @@ gioco: in cima allo schermo restano i cartelloni, come nel riferimento. Con
 la palla verso la telecamera la linea laterale vicina resta appena fuori
 dal bordo basso, come nel riferimento a 255 s; i tasti touch in basso a
 destra coprono la stessa parte di campo di prima.
+
+### Tappa 3: ritmo e IA
+
+Applicata direttamente (non in prova A/B), su richiesta del 17/10.
+
+Cosa cambia (`config.js` BALL, KICK, POWER, PASS, THROUGH, SHOT, ATTR,
+RECEIVE, SHAPE, ANIM, FOUL; `main.js`; `player.js`; `team-ai.js`):
+
+- **Palla a terra**: rallenta di circa 6 m/s² (attrito 4,6 m/s² piu' 0,1
+  per la velocita'). Prima 2,5.
+- **Passaggio**: 11,2 m/s piu' 0,27 per metro piu' 1,5 con la potenza (piu'
+  0,5 sotto pressione), fra 12 e 24 m/s. **Filtrante** fra 10 e 15,5 m/s: il
+  punto nello spazio va piu' avanti, il compagno lo prende in corsa.
+- **Tiro**: da 21 m/s a potenza zero all'attributo (30-35) a potenza piena.
+- **Dal comando al contatto**: il calcio parte dopo `KICK.setup` 0,25 s di
+  corsa o conduzione (per l'utente dal tasto, per l'IA dalla scelta), e il
+  gesto della clip mostra solo gli ultimi 0,12-0,13 s (passaggio, filtrante,
+  tiro; 0,15 cross e pallonetto). La barra si riempie in 0,35 s. Il
+  passaggio d'urgenza sotto contrasto e quello di prima restano immediati.
+- **Ricevente**: con il punto d'intercetto entro 6 m aspetta la palla di
+  fronte, frena a 24 m/s² e gira il busto fino a 14 rad/s (8 a 5 m/s).
+- **Squadre**: mezza larghezza 32 m in attacco e 28,5 in difesa (prima 30 e
+  22).
+- **Rossi**: soglia 1,45 (prima 1,35) per restare nell'obiettivo.
+- **Spinta a due mani da fermo**: chi la fa non viene piu' spostato dal
+  portatore che gli corre addosso (la posa sul posto traslava a 5 m/s).
+
+Misure (`hook-ritmo.js` con `probe.mjs`, 4 partite IA contro IA dopo la
+taratura; prima: 2 partite):
+
+| | Prima | Dopo | Riferimento |
+|---|---|---|---|
+| Passaggio: partenza | 19,6 m/s | 16,3 m/s | 16,4 m/s |
+| Passaggio: arrivo | 18,0 m/s | 10,9 m/s | 11 m/s |
+| Rallentamento a terra | 2,5 m/s² | 6,0 m/s² | 6,1 m/s² |
+| Filtrante: partenza | 22,1 m/s | 15,4 m/s | 15,1 m/s |
+| Tiro: partenza | 24,3 m/s | 27,8 m/s | 27,8 m/s |
+| Dal comando al contatto | passaggio 0,22 s, tiro 0,33 | 0,38 s, 0,42 | 0,35-0,42 s |
+| Ricevente girato verso la palla (oltre 1 rad al passaggio) | 0,48 s | 0,23 s | circa 0,3 s |
+| Larghezza del blocco | 34,4 m | 39,6 m | 38,9 m |
+
+Ricontrollo del riferimento con le fasi di gioco (`fase_tasti.py`: il tasto
+in basso a sinistra e' "Passa" in attacco e "Cambia" in difesa): dei 29
+"passaggi col tasto" della sezione 0, 15 sono in attacco; per loro il tasto
+precede la palla in movimento di 0,42 s (0,27-0,50) con pressioni di 0,13
+s. Gli altri erano passaggi dell'IA avversaria mentre l'utente premeva
+Cambia. Le conclusioni non cambiano.
+
+**Animazioni**: non le ho estratte dal video ne' fatte a mano (regola della
+skill: niente animazioni dell'altro gioco, niente movimenti a tutto corpo
+scritti a mano; da giocatori di 85 pixel una posa 3D ricostruita sarebbe
+inservibile). Restano le clip Studio33, scelte per corrispondenza e portate
+ai tempi misurati. Video affiancati, riferimento sopra e KFM27 sotto, stessa
+durata, prima a velocita' vera e poi a 0,4x:
+`debug/riferimenti/gesti/video/` 1_passaggio, 2_ricezione, 3_tiro,
+4_conduzione, 5_pressing, 6_contrasto, 7_parata (con un'immagine
+`_foto.png` di inizio, meta' e fine). I gesti di KFM27 vengono da una
+partita IA contro IA ripetibile (`hook-gesti.js` trova gli istanti); il
+riferimento segue il giocatore comandato (triangolo) o, per il portiere, un
+percorso preso a mano.
+
+Test di durata (10 partite): prima prova 4 violazioni (portiere 2, posa
+ferma che trasla 2: una era la spinta da fermo, corretta); dopo la
+correzione 3 (piedi 2, portiere 1), rossi 0,2 a partita. Lo stato di
+partenza ne faceva 7.

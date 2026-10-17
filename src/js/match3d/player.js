@@ -154,10 +154,11 @@ export class Player {
     // Il busto segue la corsa o guarda o.face, come una molla con
     // accelerazione angolare limitata: parte e si ferma senza scatti.
     const faceTo = o.face ? headingOf(o.face.x, o.face.z) : this.moveHeading;
-    const FR = PLAYER.faceRun, runMax = o.turnMul ? PLAYER.faceMax : PLAYER.faceMax + (FR[2] - PLAYER.faceMax) * clamp((this.speed - FR[0]) / (FR[1] - FR[0]), 0, 1);
-    const ft = Math.min(runMax, turn * PLAYER.faceTurn / Math.max(dt, 1e-6));
+    const FR = PLAYER.faceRun, runMax = o.faceRate || (o.turnMul ? PLAYER.faceMax : PLAYER.faceMax + (FR[2] - PLAYER.faceMax) * clamp((this.speed - FR[0]) / (FR[1] - FR[0]), 0, 1));
+    const ft = o.faceRate || Math.min(runMax, turn * PLAYER.faceTurn / Math.max(dt, 1e-6));
     const wantVel = clamp(wrap(faceTo - this.heading) * PLAYER.faceGain, -ft, ft);
-    this.faceVel += clamp(wantVel - this.faceVel, -PLAYER.faceAccel * dt, PLAYER.faceAccel * dt);
+    const fa = o.faceAccel || PLAYER.faceAccel;
+    this.faceVel += clamp(wantVel - this.faceVel, -fa * dt, fa * dt);
     const turnStep = this.faceVel * dt, gap = wrap(faceTo - this.heading);
     // mai oltre la direzione voluta
     this.heading = wrap(this.heading + (Math.abs(turnStep) > Math.abs(gap) && Math.sign(turnStep) === Math.sign(gap) ? gap : turnStep));
@@ -520,11 +521,10 @@ export function choosePass(from, dirX, dirZ, mates, opponents, cone = PASS.cone,
   return best;
 }
 
-// Velocita' del rasoterra: cresce con la potenza e con la distanza, piu' secca
-// sotto pressione, mai cosi' lenta da non arrivare.
+// Velocita' del rasoterra: cresce con la distanza e un po' con la potenza,
+// piu' secca sotto pressione, mai cosi' lenta da non arrivare.
 export function passSpeed(d, power, press = 0) {
-  const s = clamp(PASS.speedPower * power + PASS.speedDist * Math.min(1, d / PASS.speedDistRef), 0, 1);
-  const v = PASS.speedMin + (PASS.speedMax - PASS.speedMin) * s + PASS.pressBoost * press;
+  const v = clamp(PASS.speedBase + PASS.speedPerM * d + PASS.speedPower * power + PASS.pressBoost * press, PASS.speedMin, PASS.speedMax);
   return Math.min(KICK.maxSpeed, Math.max(v, rollSpeedFor(d, PASS.arriveMin)));
 }
 

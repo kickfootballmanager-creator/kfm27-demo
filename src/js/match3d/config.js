@@ -45,8 +45,10 @@ export const BALL = {
   radius: 0.11,           // 22 cm di diametro, disegnata a grandezza vera
   gravity: 9.81,
   airDrag: 0.013,         // resistenza quadratica: a = -k |v| v
-  rollFriction: 1.6,      // m/s^2 costanti quando rotola
-  rollDrag: 0.05,         // 1/s: a 26 m/s la palla perde 2,9 m/s^2, a 8 m/s 2
+  // a terra: come nel riferimento un rasoterra da 16,4 m/s arriva a 11 dopo
+  // 12 m (6 m/s^2 a 16 m/s, 5,6 a 11, 5 quasi ferma)
+  rollFriction: 4.6,      // m/s^2 costanti quando rotola
+  rollDrag: 0.1,          // 1/s
   restitution: 0.6,       // rimbalzo verticale
   carryBounce: 1.2,       // m/s: palla al piede che cade piu' piano di cosi' non rimbalza piu'
   minBounce: 0.6,         // sotto questa velocita' verticale smette di rimbalzare
@@ -78,9 +80,13 @@ export const PHYSICS = {
 };
 
 export const KICK = {
-  maxSpeed: 34,
+  maxSpeed: 35,
   groundMin: 14,          // rasoterra: mai piu' lento di cosi', neanche da vicino
-  groundMax: 26
+  groundMax: 26,
+  // dal comando all'inizio del gesto (main.queueKick): il giocatore continua
+  // la corsa o la conduzione e calcia al tocco dopo; con ANIM.*.lead fa i
+  // 0,35-0,40 s dal tasto al contatto del riferimento
+  setup: 0.25
 };
 
 export const PLAYER = {
@@ -166,7 +172,7 @@ export const CONTROL = {
 
 // Pressione prolungata: potenza 0..1 per passaggio, filtrante, cross e tiro.
 export const POWER = {
-  chargeTime: 1.0,        // secondi per arrivare al massimo
+  chargeTime: 0.35,       // secondi per arrivare al massimo (riferimento: a meta' dopo 0,17 s)
   barHide: 0.45           // secondi in cui la barra resta visibile dopo il calcio
 };
 
@@ -177,6 +183,14 @@ export const RECEIVE = {
   horizon: 5,             // secondi di traiettoria previsti
   reaction: 0.05,
   faceDist: 6,            // sotto questa distanza dalla palla il ricevente la guarda
+  // Come nel riferimento il ricevente frena e si gira verso la palla in circa
+  // 0,3 s: con il punto d'intercetto entro waitDist m la aspetta di fronte,
+  // frenando a `brake` m/s^2 e girando il busto fino a faceRate rad/s [da
+  // fermo, a 5 m/s] con faceAccel rad/s^2
+  waitDist: 6,
+  brake: 24,
+  faceRate: [14, 8],
+  faceAccel: 160,
   timeout: 6,             // passaggio che nessuno raggiunge: dopo 6 s il joystick torna libero
   // Il destinatario la controlla quando la palla gli arriva al corpo (entro
   // capture m), o nel punto piu' vicino se gli passa accanto entro
@@ -218,13 +232,15 @@ export const PASS = {
   wFree: 0.35,
   freeRadius: 8,          // un avversario entro questa distanza "copre" il compagno
   lead: 0.6,              // frazione del movimento del compagno anticipata dal passaggio
-  speedMin: 14,           // m/s: tocco leggero verso il compagno vicino
-  speedMax: 26,           // m/s: potenza piena verso il compagno lontano
-  speedPower: 0.55,       // quota della velocita' decisa dalla potenza
-  speedDist: 0.45,        // quota decisa dalla distanza
-  speedDistRef: 45,       // a questa distanza la quota della distanza e' piena
-  pressBoost: 2,          // m/s in piu' se passatore o ricevente sono pressati
-  arriveMin: 6,           // la palla arriva sempre almeno a questa velocita'
+  // velocita' come nel riferimento (29 passaggi, 16,4 m/s di mediana a 12 m):
+  // speedBase + speedPerM a metro di distanza + speedPower con la potenza
+  speedBase: 11.2,
+  speedPerM: 0.27,
+  speedPower: 1.5,
+  speedMin: 12,
+  speedMax: 24,
+  pressBoost: 0.5,        // m/s in piu' se passatore o ricevente sono pressati
+  arriveMin: 7,           // la palla arriva sempre almeno a questa velocita'
   blindDist: [8, 30],     // nessun compagno nel cono: spazio a potenza zero e piena
   speedError: 0.08        // errore relativo sulla forza, scalato dall'attributo
 };
@@ -233,10 +249,10 @@ export const PASS = {
 // decide quanto lontano nello spazio.
 export const THROUGH = {
   cone: 0.9,
-  lead: [4, 16],          // metri davanti alla corsa del compagno, a potenza zero e piena
+  lead: [7, 20],          // metri davanti alla corsa del compagno, a potenza zero e piena
   arrive: [4, 10],        // m/s con cui arriva nello spazio senza un compagno (palla nel vuoto)
-  speedMin: 12,
-  speedMax: 26,
+  speedMin: 10,           // riferimento: 15 m/s in partenza, 8 all'arrivo
+  speedMax: 15.5,
   wReach: 1.1,            // come nel passaggio la barra sceglie anche il compagno, ma conta lo spazio
   wSpace: 0.8,            // peso dello spazio libero davanti al compagno
   goalGap: 7,             // il punto d'arrivo resta almeno a tanti metri dalla linea di porta
@@ -280,7 +296,7 @@ export const FEINT = {
 // giocatore) e l'altezza sulla linea di porta; oltre overPower la palla sale
 // fino a scavalcare la traversa, come in PES.
 export const SHOT = {
-  minSpeed: 16,
+  minSpeed: 21,           // con ATTR.shotSpeed: 28 m/s di mediana come nel riferimento
   height: [0.25, 2.0],    // metri sulla linea di porta: potenza zero, potenza overPower
   overHeight: 2.2,        // metri in piu' a potenza piena
   heightError: 0.45,      // errore d'altezza per radiante d'errore di mira e metro di distanza
@@ -302,7 +318,7 @@ export const ATTR = {
   turnRateBall: [3.6, 7], // rad/s con la palla
   dribbleSpeed: [0.84, 0.96],
   passError: [0.09, 0.012],
-  shotSpeed: [28, 34],    // m/s a potenza piena
+  shotSpeed: [30, 35],    // m/s a potenza piena
   shotError: [0.1, 0.022],
   tackle: [0.25, 0.8]
 };
@@ -333,11 +349,12 @@ export const FORMATION_ROLES = {
 export const SHAPE = {
   defY: 73,               // y del modulo che sta sulla linea difensiva
   attY: 15,               // y del modulo che sta sulla linea delle punte
-  attack: { lineOffset: -26, lineMin: -40, lineMax: 6, len: 38, width: 30, ballZ: 0.15 },
+  // width: come nel riferimento le squadre stanno larghe 39 m (prima 34)
+  attack: { lineOffset: -26, lineMin: -40, lineMax: 6, len: 38, width: 32, ballZ: 0.15 },
   // behindBall: la linea difensiva resta almeno tanti metri dietro la palla (lato porta)
-  defend: { lineScale: 0.55, lineOffset: -14, lineMin: -45, lineMax: -4, behindBall: 7, len: 26, width: 22, ballZ: 0.4 },
+  defend: { lineScale: 0.55, lineOffset: -14, lineMin: -45, lineMax: -4, behindBall: 7, len: 26, width: 28.5, ballZ: 0.4 },
   kickoff: { line: -24, len: 21, width: 28 },
-  maxZ: 31                // nessuna posizione oltre questa distanza dal centro in larghezza
+  maxZ: 32                // nessuna posizione oltre questa distanza dal centro in larghezza
 };
 
 // Intelligenza artificiale. `difficulty` (0..1) scala reazione, precisione e aggressivita'
@@ -894,10 +911,13 @@ export const ANIM = {
   // rad: durante il calcio il corpo gira come la clip; quel che manca alla
   // direzione voluta si aggiunge fino al contatto, al massimo tanto
   kickCorr: 0.6,
-  pass: { role: 'pass', lead: 0.22, recover: 0.3, moveMag: 0.35, turn: 4 },
-  through: { role: 'pass', lead: 0.22, recover: 0.3, moveMag: 0.35, turn: 4 },
-  cross: { role: 'long', lead: 0.27, recover: 0.35, moveMag: 0.3, turn: 4 },
-  shot: { role: 'shot', lead: 0.25, recover: 0.4, moveMag: 0.3, turn: 4 },
+  // come nel riferimento il piede si carica solo negli ultimi 0,10-0,13 s
+  // (prima c'e' KICK.setup di corsa o conduzione)
+  pass: { role: 'pass', lead: 0.12, recover: 0.3, moveMag: 0.35, turn: 4 },
+  through: { role: 'pass', lead: 0.12, recover: 0.3, moveMag: 0.35, turn: 4 },
+  cross: { role: 'long', lead: 0.15, recover: 0.35, moveMag: 0.3, turn: 4 },
+  shot: { role: 'shot', lead: 0.13, recover: 0.4, moveMag: 0.3, turn: 4 },
+  kickFade: 0.8,          // ingresso del calcio: al piu' questa frazione del caricamento (pieno al contatto)
   firstTime: 0.08,        // di prima: il piede e' gia' quasi sulla palla
   recoverMove: 0.35,      // joystick ridotto mentre si finisce il tiro
   // Ricezione da fermi: la clip di stop (con la palla gia' al piede) per
@@ -1091,7 +1111,7 @@ export const FOUL = {
   noise: 0.25,
   yellow: 0.6,
   secondYellow: 0.15,     // gia' ammonito: per il secondo giallo serve tanto di piu'
-  red: 1.35,
+  red: 1.45,               // rossi rari: circa uno ogni 8-10 partite (test di durata)
   // azione promettente fermata: vittima lanciata verso la porta (speed m/s)
   // entro dist metri, al massimo `defenders` avversari fra lei e la porta
   promising: { add: 0.28, dist: 45, speed: 3, defenders: 2 },
