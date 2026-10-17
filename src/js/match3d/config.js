@@ -50,6 +50,11 @@ export const BALL = {
   rollFriction: 4.6,      // m/s^2 costanti quando rotola
   rollDrag: 0.1,          // 1/s
   restitution: 0.6,       // rimbalzo verticale
+  shadowWithMap: 0.7,     // ombra a disco sotto la palla con le ombre vere accese
+  // rotazione disegnata al piu' visualSpin rad/s (0,9 rad a fotogramma): a 18
+  // m/s la palla girava di 2,7 rad a fotogramma e a 60 Hz sembrava ferma o
+  // girare all'indietro, cioe' scivolare. La fisica usa sempre la rotazione vera.
+  visualSpin: 55,
   carryBounce: 1.2,       // m/s: palla al piede che cade piu' piano di cosi' non rimbalza piu'
   minBounce: 0.6,         // sotto questa velocita' verticale smette di rimbalzare
   // Rotazione (ball.js): magnus k in a = k (w x v); a 25 m/s con 50 rad/s
@@ -69,7 +74,9 @@ export const BALL = {
   // Rimbalzo sul corpo dei giocatori (main.deflect): tiri sempre, gli altri
   // palloni sopra minY m o oltre fastLoose m/s; rest lungo la normale, keep di
   // lato, rotazione a caso fino a spin rad/s; chi devia non la riprende per lock s.
-  deflect: { minY: 0.45, fastLoose: 12, check: 1.6, rest: 0.3, keep: 0.6, spin: 25, lock: 0.25 },
+  // Rasoterra: una sfera sotto legY m (piede, tibia) puo' controllarlo
+  // (main.trapLow); un compagno che non lo aspettava lo controlla a mateTrap.
+  deflect: { minY: 0.45, fastLoose: 12, check: 1.6, rest: 0.3, keep: 0.6, spin: 25, lock: 0.25, legY: 0.6, mateTrap: 0.85 },
   boardRestitution: 0.35,
   stopSpeed: 0.05
 };
@@ -206,7 +213,13 @@ export const RECEIVE = {
   // push: metri del primo tocco orientato o senza punto della clip; yawScale:
   // quanto si puo' allargare o stringere la rotazione della clip; lost: palla
   // oltre tanti metri, lo stop finisce e la riprende la conduzione.
-  trap: { reach: 0.85, maxHoriz: 7, cushion: 6, airY: 0.35, spinKeep: 0.3, push: 0.9, yawScale: [0.4, 1.6], lost: 2.2 }
+  // minAhead: m davanti al busto sotto cui la palla viene spinta avanti a keepRate 1/s
+  trap: { reach: 0.85, maxHoriz: 7, cushion: 6, airY: 0.35, spinKeep: 0.3, push: 0.9, yawScale: [0.4, 1.6], lost: 2.2, minAhead: 0.6, keepRate: 8 },
+  // Stop anticipato (main.preTrap): la clip parte quando la palla arrivera'
+  // al punto del tocco (touch.r m dal giocatore, piu' slack) proprio nel
+  // fotogramma del tocco; il destinatario la controlla li', non a capture m.
+  // late: s oltre il tocco della clip dopo cui la controlla comunque entro receiveRadius.
+  pre: { slack: 0.15, minR: 0.3, late: 0.08 }
 };
 
 // Primo tocco orientato: con il joystick lontano dal busto il ricevente

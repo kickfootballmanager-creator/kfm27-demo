@@ -362,10 +362,10 @@ export class Ball {
     else this.w.set(0, sideSpin(spin), 0);
   }
 
-  // Orientamento: un passo di fisica di rotazione con w.
+  // Orientamento disegnato: un passo di rotazione con w, al piu' BALL.visualSpin rad/s.
   spinStep(dt) {
     this.qPrev.copy(this.q);
-    const a = this.w.length() * dt;
+    const a = Math.min(this.w.length(), BALL.visualSpin) * dt;
     if (a > 1e-7) this.q.premultiply(_eq.setFromAxisAngle(_ew.copy(this.w).normalize(), a)).normalize();
   }
 
@@ -491,6 +491,6 @@ export class Ball {
     const s = 0.5 + h * 0.06;
     this.shadow.position.set(m.position.x, 0.012, m.position.z);
     this.shadow.scale.set(s, s, 1);
-    this.shadow.material.opacity = Math.max(0.15, 1 - h * 0.12);
+    this.shadow.material.opacity = Math.max(0.15, 1 - h * 0.12) * (this.shadowDim ?? 1);
   }
 }

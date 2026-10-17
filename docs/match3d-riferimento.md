@@ -990,3 +990,40 @@ della prova 4 sono doppie ammonizioni, 2 nella stessa partita con 8 gialli;
 la quota di falli da dietro resta fra il 60 e il 69 per cento in tutte le
 prove. Su 50 partite (tappe 4 e 5) i rossi sono 10, 0,2 a partita: sul
 limite dell'obiettivo.
+
+### Blocco B: palla e gesti (17/10)
+
+- **Barra di potenza bloccata**: una carica annullata senza calcio (possesso
+  perso mentre si tiene premuto, passaggio in difesa, colpo di testa) non
+  avviava il timer che la nasconde, e la barra restava ferma sull'ultimo
+  valore. Ora sparisce subito (`main.syncMarkers`). Il difetto c'era gia'
+  con la barra in basso.
+- **Passaggi che attraversano gli avversari**: `main.deflect` ignorava i
+  palloni sotto 0,45 m e sotto 12 m/s, e l'anticipo era un sorteggio una
+  volta per pallone. Ora un rasoterra che tocca le sfere di piede o tibia
+  di chi non lo aspettava viene controllato (`trapLow`: probabilita'
+  dell'anticipo dalla difesa e dalla velocita' della palla rispetto a lui; un
+  compagno all'85%) o rimbalza sulla gamba restando a terra
+  (`BALL.deflect` legY, mateTrap).
+- **Ricezione** (confronto con A10: palla a 11,5 m/s, 3,4 dopo 0,3 s): la
+  palla veniva fermata in un fotogramma a 0,6-0,78 m dal corpo, la clip di
+  stop partiva solo allora e il piede la toccava 0,2-0,4 s dopo; poi la palla
+  finiva a 0,2 m dal corpo, fra le gambe. Ora `main.preTrap` fa partire la
+  clip prima dell'arrivo, con il tocco (`ev.touch` della clip) nel
+  fotogramma in cui arriva la palla; il destinatario la controlla alla
+  distanza del tocco (`RECEIVE.pre`); dopo il tocco la palla resta almeno
+  0,6 m davanti al busto (`RECEIVE.trap` minAhead, keepRate). Catture prima
+  e dopo: `debug/riferimenti/tappe5/ricez/` (ko7, ko7e).
+- **Palla che fluttua**: con le ombre vere accese l'ombra a disco sotto la
+  palla veniva nascosta e restava solo quella del sole, piccola e spostata di
+  lato: in campo la palla non aveva appoggio. Ora l'ombra a disco c'e'
+  sempre (`BALL.shadowWithMap` 0,7). La rotazione disegnata e' limitata a
+  55 rad/s (`BALL.visualSpin`): a 18 m/s la palla girava di 2,7 rad a
+  fotogramma e sembrava ferma o girare all'indietro. Fisica invariata e
+  realistica (resistenza 6,3 m/s^2 a 22 m/s, un pallone vero 6,4); lanci
+  misurati in partita: 21,7 m in 1,48 s, culmine 4,85 m.
+- Le stesse diagnosi su ombra e rotazione erano nei 12 file non committati
+  del 04/10; qui sono riscritte sopra l'ultimo commit.
+
+Test di durata (10 partite): 5 violazioni (piedi 2, portiere 2, osso 1),
+statistiche nell'obiettivo (falli 21,8, gialli 3, rossi 0,1, scivolate 4).

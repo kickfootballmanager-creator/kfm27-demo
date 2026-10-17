@@ -178,8 +178,10 @@ export function pickTrap(tpl, p, want) {
   if (!res) return null;
   const ev = res.entry.meta.ev, s = tpl.scale;
   // ballEnd: dove la clip lascia la palla (x sinistra, y, z avanti, rispetto
-  // alla radice alla fine), yawEnd: quanto gira il corpo
-  return { clip: res.entry.name, cost: res.cost, ballEnd: ev.ballEnd ? ev.ballEnd.map((v) => v * s) : null, yawEnd: ev.yawEnd || 0 };
+  // alla radice alla fine), yawEnd: quanto gira il corpo; touch: istante del
+  // tocco e distanza in piano della palla dalla radice in quell'istante
+  const touch = ev.touch && ev.touch.ball ? { t: ev.touch.t, r: Math.hypot(ev.touch.ball[0], ev.touch.ball[2]) * s } : null;
+  return { clip: res.entry.name, cost: res.cost, ballEnd: ev.ballEnd ? ev.ballEnd.map((v) => v * s) : null, yawEnd: ev.yawEnd || 0, touch };
 }
 
 // Intercetto (palla avversaria presa al volo): la clip con la palla dalla

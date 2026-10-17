@@ -40,7 +40,7 @@ Leggere "Stato" qui sotto: l'ultimo blocco "in corso" e la sua lista "manca".
 |---|---|---|
 | Preparazione (worktree, diario, test di partenza) | fatta | |
 | A, analisi dei video | fatto: `docs/match3d-riferimento.md` A10 | vedi registro |
-| B, palla e gesti | da fare | |
+| B, palla e gesti | fatto | vedi registro |
 | C, equilibrio | da fare | |
 | D, gol e calcio d'inizio | da fare | |
 | E, stadio | da fare | |
@@ -116,3 +116,30 @@ Da dove ripartire:
 - Sezione A10 in `docs/match3d-riferimento.md` con la tabella del registro
   sopra e le conseguenze per i blocchi B-D. Il blocco cambia solo documenti:
   il test di durata che vale e' quello di partenza (5 violazioni).
+- Commit `f8b1ba4`, push `23b8932..f8b1ba4` (con i 5 commit delle tappe
+  1-5). GitHub Pages (`strumenti/pages_check.mjs`): manager caricato,
+  MATCH3D_ENABLED spento anche con ?match3d, nessun file match3d scaricato,
+  nessun errore.
+
+### Blocco B (in corso)
+- Barra di potenza: una carica annullata senza calcio la lasciava a schermo
+  ferma (main.syncMarkers); ora sparisce subito.
+- Rasoterra contro i corpi (main.deflect, trapLow): un pallone basso che
+  prende piede o tibia viene controllato (AI.intercept, compagni 85%) o
+  rimbalza a terra; prima sotto 12 m/s attraversava le gambe.
+- Ricezione (main.preTrap, startTrap, contacts): la clip di stop parte prima
+  dell'arrivo con il tocco nel fotogramma giusto, la cattura avviene alla
+  distanza del tocco, la palla resta almeno 0,6 m davanti (RECEIVE.trap
+  minAhead, keepRate). Prima: palla fermata a 0,6-0,78 m in un fotogramma,
+  tocco a vuoto dopo, palla a 0,2 m dal corpo. Catture in
+  `debug/riferimenti/tappe5/ricez/` (ko7 prima, ko7e dopo).
+- Palla che fluttua: con le ombre vere l'ombra a disco spariva (ora sempre,
+  BALL.shadowWithMap 0,7); rotazione disegnata limitata a 55 rad/s
+  (BALL.visualSpin). Lanci misurati: plausibili (21,7 m, 1,48 s, 4,85 m).
+- Test di durata del blocco B: 5 violazioni (piedi 2, portiere 2, osso 1),
+  statistiche nell'obiettivo.
+
+Prossimo (blocco C), cause trovate: DUEL.contact side 0,9 e back 1,0 (quasi
+ogni avvicinamento laterale diventa trattenuta o spinta: 84% dei falli);
+carrierThink decide appena ricevuta palla (tenuta 0,5 s); difesa larga
+(SHAPE.defend width 28,5) e alta (behindBall 7).
