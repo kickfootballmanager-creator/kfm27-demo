@@ -667,7 +667,9 @@ export class Rules {
     p.action = {
       t: 0, rate: 1, end: Math.max(0.5, REPLAY.live - L.lead), moves: true, celebrateRun: true,
       tx, tz, endX: tx + fx * da - fz * ds, endZ: tz + fz * da + fx * ds,
-      tick: (a, dt) => { p.goTo(dt, tx, tz, h); },
+      // il via lo da' l'orologio della regia: se il gioco rallenta (pochi fps)
+      // la corsa finirebbe dopo lo stacco sul primo piano
+      tick: (a, dt) => { p.goTo(dt, tx, tz, h); if (m.show && m.show.t >= REPLAY.live - L.lead) a.end = a.t; },
       onEnd: () => { this.celebrate(p, clip); }
     };
     return true;
