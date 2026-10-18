@@ -153,13 +153,16 @@ export const DRIBBLE = {
   // si sposta al piu' a stillTurn rad/s
   orbitBelow: 1.2, orbitAngle: 0.45, faceBall: 5, stillTurn: 2.5,
   follow: 22,             // 1/s: quanto in fretta la distanza si adegua
-  maxRel: 9,              // m/s: velocita' massima della palla rispetto al giocatore
-  relAcc: 70,             // m/s^2: quanto in fretta cambia (tocco continuo)
+  // Riferimento (18/10): nei 2 s dopo la ricezione la palla si muove rispetto
+  // al giocatore a 1,8 m/s di mediana, 3,4 al 90%; prima qui 3,2 e 6,2, fino a
+  // 13 m/s quando la conduzione a tocchi tornava al tocco continuo
+  maxRel: 3.5,            // m/s: velocita' massima della palla rispetto al giocatore
+  relAcc: 25,             // m/s^2: quanto in fretta cambia (tocco continuo)
   // Conduzione a tocchi (main.dribbleRoll): sopra minSpeed m/s e con la svolta
   // sotto maxTurn rad la palla rotola libera fra un tocco e l'altro; il tocco
   // dopo fra minT e maxT s; si torna al tocco continuo con la palla oltre
   // maxErr m da dove la vorrebbe, si riparte entro startErr m.
-  roll: { minSpeed: 2.2, maxTurn: 0.6, minT: 0.35, maxT: 0.9, maxErr: 0.8, startErr: 0.25, maxSpeed: 14 }
+  roll: { minSpeed: 1.4, maxTurn: 0.6, minT: 0.35, maxT: 0.9, maxErr: 0.8, startErr: 0.25, maxSpeed: 14 }
 };
 
 export const CONTROL = {
@@ -206,6 +209,7 @@ export const RECEIVE = {
   // rispetto a lui; palla fino a trapHeight m (stop di petto).
   capture: 0.6,
   slowRel: 3,
+  slowReach: 0.85,
   trapHeight: 1.9,
   // Stop (main.startTrap): la palla arriva dove la clip la lascia in reach
   // della durata dello stop, piano (maxHoriz m/s al piu', rispetto al giocatore
@@ -262,12 +266,20 @@ export const PASS = {
 
 // Filtrante: rasoterra nello spazio davanti al compagno che corre. La potenza
 // decide quanto lontano nello spazio.
+// Filtranti del riferimento (31 in v1, docs/match3d-riferimento.md, blocco 1):
+// arrivo 8,4 m davanti al ricevente (mediana), a 28 gradi dalla sua corsa;
+// velocita' che cresce con la distanza, 9-14 m/s sui corti, 20-24 m/s sui
+// 22-36 m (speedBase + speedPerM al metro); la velocita' si adatta al tempo
+// del compagno solo entro `fit` volte quella della legge.
 export const THROUGH = {
   cone: 0.9,
-  lead: [7, 20],          // metri davanti alla corsa del compagno, a potenza zero e piena
+  lead: [5, 14],          // metri davanti alla corsa del compagno, a potenza zero e piena
   arrive: [4, 10],        // m/s con cui arriva nello spazio senza un compagno (palla nel vuoto)
-  speedMin: 10,           // riferimento: 15 m/s in partenza, 8 all'arrivo
-  speedMax: 15.5,
+  speedBase: 8.5,
+  speedPerM: 0.55,
+  fit: [0.85, 1.05],
+  speedMin: 9,
+  speedMax: 24,
   wReach: 1.1,            // come nel passaggio la barra sceglie anche il compagno, ma conta lo spazio
   wSpace: 0.8,            // peso dello spazio libero davanti al compagno
   goalGap: 7,             // il punto d'arrivo resta almeno a tanti metri dalla linea di porta
@@ -275,7 +287,8 @@ export const THROUGH = {
   // della velocita' massima, senza tornare indietro di oltre `behind` m
   runMin: 0.6,
   behind: 1.5,
-  behindBall: 0.5          // ne' oltre tanti metri dietro di lui lungo la strada della palla
+  behindBall: 0.5,         // ne' oltre tanti metri dietro di lui lungo la strada della palla...
+  sameDir: 0.5             // ...se la palla va nel suo verso (coseno fra palla e corsa)
 };
 
 // Cross dalle fasce verso l'area, lancio lungo altrove. Palla alta che
@@ -418,7 +431,9 @@ export const AI = {
     passV: 11,
     lane: { react: 0.3, run: 0.8, reach: 0.9, span: 0.5 },
     pressedAt: 3,         // un avversario entro questa distanza mette pressione
-    feintChance: 0.25,
+    // nel riferimento il portatore pressato protegge o passa: quasi mai finte
+    feintChance: 0.06,
+    feintFrom: 1.6,       // e mai col difensore gia' addosso (finta a gambe in aria sul contrasto)
     crossChance: 0.7,
     error: [1.6, 0.8],    // moltiplicatore dell'errore di passaggio e tiro [difficulty 0, 1]
     pressedThink: 0.5,    // sotto pressione decide piu' in fretta
@@ -494,7 +509,13 @@ export const TACKLE = {
   lungeSpeed: 5,          // m/s minimi dell'affondo
   poke: 4.5,              // m/s della palla tolta
   keep: 0.45,             // probabilita' di tenerla invece di allontanarla
-  lock: 0.35              // chi l'ha appena persa non la riprende subito
+  lock: 0.35,             // chi l'ha appena persa non la riprende subito
+  // Contrasti automatici (pressing dell'utente e dell'IA): come nel
+  // riferimento il piede va sulla palla con un passo, senza affondo. Il
+  // contrasto premuto (X due volte) ha anche gli affondi in piedi, mai quelli
+  // di lato a gambe in aria (738/739, replay del 18/10 14:21)
+  pressClips: ['644_Small_Tackles_Stand_Left', '645_Small_Tackles_Stand_Right', '310_Jogging_Tackles_01', '510_Run_Tackles_01', '511_Run_Tackles_02'],
+  manualSkip: ['738_Tackles_Stand_90', '739_Tackles_Stand_270']
 };
 
 // Difesa stile PES: Pressing tenuto porta sul portatore, da vicino marcatura
@@ -515,7 +536,15 @@ export const PRESS = {
   autoClose: 0.5,         // sotto questa distanza prevista l'angolo non conta
   // il difensore dell'IA accompagna e sceglie il momento: meno tentativi (prima 0,4/0,18 e 1,2/0,6)
   autoReact: [0.7, 0.4],  // s in marcatura prima del primo contrasto [difesa bassa, alta]
-  autoEvery: [2.2, 1.3]   // s fra due contrasti automatici [difesa bassa, alta]
+  autoEvery: [2.2, 1.3],  // s fra due contrasti automatici [difesa bassa, alta]
+  // Pressing dell'utente (X tenuto) come nel riferimento: corsa sulla palla,
+  // non sul corpo; davanti si arriva a `front` m dalla palla fra lei e la
+  // porta, da dietro o di lato la si affianca a `beside` m; frenata a `brake`
+  // m/s^2 per non passargli accanto; il piede ci va dopo `react` s e ogni
+  // `every` s [difesa bassa, alta]. Levetta lontano dal portatore: lo si
+  // accompagna a `back` m senza entrare.
+  // horizon, lag: ricerca del punto d'intercetto (s); lead: s d'anticipo sull'aggancio per m/s di avvicinamento
+  user: { front: 0.8, beside: 0.55, brake: 7, react: [0.3, 0.12], every: [1.0, 0.55], back: 1.9, away: -0.35, horizon: 3, lag: 0.2, lead: 0.5 }
 };
 
 // Esito di un contrasto: palla recuperata, il portatore salta l'uomo, fallo.
@@ -751,6 +780,14 @@ export const KEEPER = {
   chargeDist: 40,         // uscita chiesta dall'utente: solo con la palla entro tanti metri dalla porta
   holdTime: 1.4,          // secondi con la palla in mano prima del rinvio
   throwMax: 28,           // compagno libero entro questa distanza: rimessa con le mani
+  // Rinvio dell'utente (KeeperAI.userRelease, comandi di PES 2021): lancio con
+  // le mani fino a throwMax m (apice throwApex m sopra la mano), senza
+  // compagno a throwFree m per potenza; al volo da kick[0] a kick[1] m con la
+  // potenza (highExtra in piu' col rinvio alto), al compagno entro kickSlack m
+  // da quella distanza; apici kickApex e highApex m. In area si muove con la
+  // palla in mano fino a boxMargin m dalle linee dell'area.
+  // throwRise: m d'apice in piu' per metro di lancio
+  user: { throwMax: 30, throwApex: 0.6, throwRise: 0.1, throwFree: [8, 25], kick: [22, 60], highExtra: 8, kickSlack: 14, kickApex: 13, highApex: 20, boxMargin: 0.4 },
   stepSpeed: 2.6,         // m/s massimi in guardia senza scatto (passi del portiere che non scivolano)
   // Tiro parabile per gli attributi (KeeperAI.assess): dopo la reazione le
   // mani arrivano a body + arm metri dall'asse del corpo (armLow sotto lowY m
@@ -1113,21 +1150,23 @@ export const RULES = {
     // gli altri si scansano a passo entro `dist` m dalla corsa di chi esulta,
     // fino a `ahead` s davanti a lui (main.clearWay)
     clear: { dist: 1.8, ahead: 0.6 },
-    // clip del pacchetto `pack` (Meshy): corsa di `run` m (a `margin` m dalle
-    // linee) durante la diretta, gesto `lead` s prima del primo piano
-    late: { pack: 'meshy', run: 7, margin: 3, lead: 0.2 }
+    // corsa verso la bandierina (a `flag` m dalle due linee) durante la
+    // diretta; le clip del pacchetto `pack` (Meshy) fanno il gesto `lead` s
+    // prima del primo piano, le altre all'arrivo
+    late: { pack: 'meshy', flag: 4, lead: 0.2 }
   },
   // Calcio d'inizio come nel riferimento (4 calci d'inizio di v1, dal radar):
-  // al centro solo chi batte, che passa all'indietro al giocatore del punto
-  // kick[receiver]; la palla gli arriva a `arrive` m/s. Schieramento in metri
-  // con la propria porta verso x negative e z come sullo schermo: `kick` per
-  // chi batte (lui escluso), `defend` per l'altra squadra; ognuno va al punto
-  // piu' vicino al suo posto nel modulo. L'IA tocca la palla `aiContact` s
-  // dopo che lo schieramento e' in vista. La clip KickOff si sceglie per la
-  // direzione del compagno (135, 180, 225 gradi); lead: s dal via al
-  // contatto, after: s dopo il contatto.
+  // al centro solo chi batte, girato verso la propria porta, che passa in
+  // avanti rispetto al suo corpo (clip di passaggio da fermo, la prima
+  // caricata di `clips`; prima i KickOff 135/180/225 col colpo all'indietro)
+  // al giocatore del punto kick[receiver]; la palla gli arriva a `arrive` m/s.
+  // Schieramento in metri con la propria porta verso x negative e z come
+  // sullo schermo: `kick` per chi batte (lui escluso), `defend` per l'altra
+  // squadra; ognuno va al punto piu' vicino al suo posto nel modulo. L'IA
+  // tocca la palla `aiContact` s dopo che lo schieramento e' in vista. lead:
+  // s dal via al contatto, after: s dopo il contatto.
   kickoff: {
-    clips: ['444_KickOff_135', '445_KickOff_180', '446_KickOff_225'], lead: 0.5, after: 0.25, arrive: 10, aiContact: 2.75,
+    clips: ['504_Pass_Stand_0', '469_Low_Pass_Stand_0'], lead: 0.5, after: 0.25, arrive: 10, aiContact: 2.75,
     receiver: 3,
     kick: [[-17.6, -2.9], [-17.6, 5], [-11.7, -15.9], [-11.7, 0.8], [-11.7, 18], [-2.9, -24.5], [-2.9, -10.2], [-2.9, 12.2], [-2.9, 26.2]],
     defend: [[-1, 10.8], [-2.2, -12.2], [-6, 20], [-9.7, -5.9], [-9.8, 8.9], [-11.7, 1.5], [-14.7, -10.6], [-14.9, 13.5], [-17.5, 5.2], [-17.5, -2.1]]

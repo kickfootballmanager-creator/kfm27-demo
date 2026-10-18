@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { KEEPER, PITCH, GOAL, BALL, ATTR, PLAYER, RULES, FK } from './config.js';
+import { KEEPER, PITCH, GOAL, BALL, ATTR, PLAYER, RULES, FK, PASS } from './config.js';
 import { rootAt, clipDuration } from './avatar.js';
-import { freeness } from './player.js';
+import { freeness, choosePass, chooseThrough } from './player.js';
 import { palm } from './rig.js';
 
 // IA del portiere: POSIZIONE, USCITA, PARATA, RINVIO. Muove il portiere a 60 Hz;
@@ -517,6 +517,8 @@ export class KeeperAI {
     const m = this.m, k = this.p;
     m.gain(k, 'parata');
     k.holding = true;
+    // come in PES il portiere con la palla in mano lo comanda l'utente
+    if (m.human(this.side)) m.setControlled(k);
     this.lastTouch = { part, result: 'presa', speed, seq: m.poss.seq };
     m.note('parata', { k, parte: part, esito: 'presa', velocita: speed, clip: k.avatar.gestureName() || '' });
     return true;
@@ -634,6 +636,84 @@ export class KeeperAI {
       const D = releaseSpec(m.tpl, KEEPER.clips.dropkick);
       m.startKeeperGesture(k, D.clip, D.from, D.contact, D.end, D.rate, { release: 'kick', spec: D, target: far, scaleS: 0, scaleA: 0.5 });
     }
+  }
+
+  // Rinvio dell'utente con la palla in mano (comandi di PES 2021): X lancio
+  // con le mani al compagno che la levetta e la potenza scelgono, Triangolo
+  // lancio nello spazio davanti a lui, Cerchio (e Quadrato) rinvio al volo,
+  // R1 + Cerchio rinvio alto. Il portiere si gira verso il punto e parte la
+  // clip del rinvio; la palla parte al rilascio (gestures.release).
+  userRelease(kind, power, inp) {
+    const m = this.m, k = this.p, U = KEEPER.user;
+    if (k.action || !k.holding || m.owner !== k) return false;
+    const ax = inp && inp.mag > 0 ? inp.x : k.dirX, az = inp && inp.mag > 0 ? inp.z : k.dirZ, al = Math.hypot(ax, az) || 1;
+    const mates = m.teams[this.side].players, opp = m.teams[this.side === 'home' ? 'away' : 'home'].players;
+    const thrown = kind === 'pass' || kind === 'through';
+    const high = !thrown && !!(inp && inp.sprint);
+    let to = null, point = null;
+    if (kind === 'pass') {
+      to = choosePass(k, ax, az, mates, opp, inp && inp.mag > 0 ? PASS.cone : PASS.coneNoStick, power);
+      if (to && Math.hypot(to.pos.x - k.pos.x, to.pos.z - k.pos.z) > U.throwMax) to = null;
+      point = to ? { x: to.pos.x + to.vel.x * 0.5, z: to.pos.z + to.vel.z * 0.5 } : null;
+    } else if (kind === 'through') {
+      const c = chooseThrough(k, ax, az, mates, opp, power);
+      to = c.mate;
+      if (to) point = { x: c.tx, z: c.tz };
+    } else {
+      // al volo: la potenza e' la distanza; il compagno nel cono piu' vicino a quella distanza
+      const want = U.kick[0] + (U.kick[1] - U.kick[0]) * power + (high ? U.highExtra : 0);
+      let bc = U.kickSlack;
+      for (const q of mates) {
+        if (q === k || q.down || q.sentOff) continue;
+        const dx = q.pos.x - k.pos.x, dz = q.pos.z - k.pos.z, d = Math.hypot(dx, dz);
+        if ((dx * ax + dz * az) / (d * al || 1) < Math.cos(PASS.cone)) continue;
+        if (Math.abs(d - want) < bc) { bc = Math.abs(d - want); to = q; }
+      }
+      point = to ? { x: to.pos.x + to.vel.x * 1.5, z: to.pos.z + to.vel.z * 1.5 } : { x: k.pos.x + ax / al * want, z: k.pos.z + az / al * want };
+    }
+    // nessun compagno per il lancio: davanti nella direzione della levetta
+    if (!point) { const d = U.throwFree[0] + (U.throwFree[1] - U.throwFree[0]) * power; point = { x: k.pos.x + ax / al * d, z: k.pos.z + az / al * d }; }
+    const hl = PITCH.length / 2 - 1, hw = PITCH.width / 2 - 1;
+    point.x = Math.max(-hl, Math.min(hl, point.x)); point.z = Math.max(-hw, Math.min(hw, point.z));
+    // con le mani al piu' throwMax m, con un arco che sale con la distanza
+    // (prima piatto: un lancio nello spazio di 27 m partiva a 32 m/s)
+    let pd = Math.hypot(point.x - k.pos.x, point.z - k.pos.z);
+    if (thrown && pd > U.throwMax) { point.x = k.pos.x + (point.x - k.pos.x) * U.throwMax / pd; point.z = k.pos.z + (point.z - k.pos.z) * U.throwMax / pd; pd = U.throwMax; }
+    k.face(Math.atan2(point.x - k.pos.x, point.z - k.pos.z));
+    const S = releaseSpec(m.tpl, thrown ? KEEPER.clips.throw : KEEPER.clips.dropkick);
+    m.startKeeperGesture(k, S.clip, S.from, S.contact, S.end, S.rate, {
+      release: thrown ? 'throw' : 'kick', spec: S, target: to, point, apex: thrown ? U.throwApex + U.throwRise * pd : high ? U.highApex : U.kickApex, scaleS: 0, scaleA: thrown ? 0.4 : 0.5
+    });
+    m.note('rinvio', { k, tipo: thrown ? (kind === 'through' ? 'lancio nello spazio' : 'lancio') : high ? 'rinvio alto' : 'rinvio', a: to, potenza: power });
+    return true;
+  }
+
+  // Bersaglio che il rinvio dell'utente sceglierebbe adesso (anello sul compagno).
+  userTarget(kind, power, inp) {
+    const m = this.m, k = this.p, U = KEEPER.user;
+    const ax = inp && inp.mag > 0 ? inp.x : k.dirX, az = inp && inp.mag > 0 ? inp.z : k.dirZ;
+    const mates = m.teams[this.side].players, opp = m.teams[this.side === 'home' ? 'away' : 'home'].players;
+    if (kind === 'through') return chooseThrough(k, ax, az, mates, opp, power).mate;
+    if (kind === 'cross' || kind === 'shot') return null;
+    const to = choosePass(k, ax, az, mates, opp, inp && inp.mag > 0 ? PASS.cone : PASS.coneNoStick, power);
+    return to && Math.hypot(to.pos.x - k.pos.x, to.pos.z - k.pos.z) <= U.throwMax ? to : null;
+  }
+
+  // R1 con la levetta ferma: posa la palla a terra e gioca coi piedi (la palla
+  // cade dalle mani; main.tick la riprende al piede quando tocca terra).
+  putDown() {
+    const m = this.m, k = this.p;
+    if (k.action || !k.holding || m.owner !== k) return false;
+    k.holding = false;
+    k.holdHand = null;
+    k.dropping = true;
+    k.putDown = true;
+    const b = m.ball;
+    b.pos.copy(k.avatar.heldAt);
+    b.prev.copy(b.pos);
+    b.vel.set(k.vel.x + k.dirX * 0.6, 0, k.vel.z + k.dirZ * 0.6);
+    m.note('rinvio', { k, tipo: 'palla a terra' });
+    return true;
   }
 
   // Lato (-1, 0, 1 in z) scelto con la levetta dall'utente che comanda il

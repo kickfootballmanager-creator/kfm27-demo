@@ -536,9 +536,13 @@ export function passSpeed(d, power, press = 0) {
 
 // Filtrante: arriva nello spazio alla velocita' voluta, piu' veloce se piu' lontano.
 export function throughSpeed(d, power, t) {
-  // con il tempo del compagno (throughPoint): arriva sul punto insieme a lui
-  if (t > 0 && Number.isFinite(t)) return clamp(rollSpeedIn(d, t), THROUGH.speedMin, THROUGH.speedMax);
-  return clamp(rollSpeedFor(d, lerp2(THROUGH.arrive, power)), THROUGH.speedMin, THROUGH.speedMax);
+  const T = THROUGH, law = clamp(T.speedBase + T.speedPerM * d, T.speedMin, T.speedMax);
+  const lo = Math.max(T.speedMin, law * T.fit[0]), hi = Math.min(T.speedMax, law * T.fit[1]);
+  // con il tempo del compagno (throughPoint): arriva sul punto insieme a lui,
+  // ma senza uscire dalla legge del riferimento (prima: 10-15,5 m/s per ogni
+  // distanza, un filtrante di 23 m arrivava 1,3 s dopo il compagno)
+  if (t > 0 && Number.isFinite(t)) return clamp(rollSpeedIn(d, t), lo, hi);
+  return clamp(rollSpeedFor(d, lerp2(T.arrive, power)), lo, hi);
 }
 
 // Secondi che `m` impiega a correre `dist` metri al massimo verso (dx, dz),

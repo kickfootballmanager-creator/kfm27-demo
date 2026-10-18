@@ -31,10 +31,15 @@ function goalSide(m, team, car) {
   return Math.atan2(gx - car.pos.x, -car.pos.z);
 }
 
-// Pressing dell'utente sul portatore `car`.
+// Pressing dell'utente sul portatore `car` (X tenuto). Levetta ferma o verso
+// di lui: si va sulla palla (pressBall). Levetta lontano o di lato: jockey,
+// lo si accompagna o gli si gira attorno, rivolti a lui.
 export function userPress(m, p, car, inp, dt) {
-  const P = PRESS, s = pressState(p, car);
+  const P = PRESS, U = P.user, s = pressState(p, car);
   const dx = car.pos.x - p.pos.x, dz = car.pos.z - p.pos.z, d = Math.hypot(dx, dz);
+  const toward = inp.mag > 0 ? (inp.x * dx + inp.z * dz) / (d || 1) : 1;
+  if (toward > 0.5) { pressBall(m, p, car, inp, dt, s); return; }
+  if (toward < U.away) s.r = Math.max(s.r, U.back);
   if (s.engaged > 0 && d > P.release) s.engaged = 0;
   if (s.engaged <= 0 && d > P.engage) {
     // corsa decisa verso dove sara' il portatore
@@ -61,22 +66,71 @@ export function userPress(m, p, car, inp, dt) {
   const td = Math.hypot(tx, tz);
   const b = m.ball;
   p.drive(dt, tx, tz, Math.min(1, td / 0.6), { face: { x: b.pos.x - p.pos.x, z: b.pos.z - p.pos.z }, sprint: inp.sprint || td > 2.5 });
-  autoTackle(m, p, s, lerp2(PRESS.autoReact, defUnit(p)), 1);
+  // chi accompagna all'indietro non entra
+  if (toward >= U.away) autoTackle(m, p, s, lerp2(PRESS.autoReact, defUnit(p)), 1);
+}
+
+// Pressing sulla palla, come nel riferimento: il difensore corre dove sara'
+// la palla, non dove sta il corpo del portatore; di fronte si mette fra palla
+// e porta a U.front m, di lato o da dietro la affianca a U.beside m. Frena
+// in tempo (U.brake) e si muove con il portatore, cosi' non gli passa accanto;
+// il piede va sulla palla da solo con le clip piccole (TACKLE.pressClips).
+// Prima correva sul corpo e da 4 m girava attorno a lui a 1,35 m, verso la
+// porta: arrivava di lato, gli passava accanto e il contrasto era raro.
+function pressBall(m, p, car, inp, dt, s) {
+  const P = PRESS, U = P.user, b = m.ball, top = p.params.maxSpeed;
+  const dx = car.pos.x - p.pos.x, dz = car.pos.z - p.pos.z, d = Math.hypot(dx, dz) || 1;
+  // dove arriva prima della palla, se il portatore tiene la sua corsa: di lato
+  // gli taglia la strada invece di inseguirlo
+  let T = 0;
+  for (; T < U.horizon; T += 0.05) {
+    const px = b.pos.x + car.vel.x * T - p.pos.x, pz = b.pos.z + car.vel.z * T - p.pos.z;
+    if (Math.hypot(px, pz) - U.front <= top * Math.max(0, T - U.lag)) break;
+  }
+  const bx = b.pos.x + car.vel.x * T, bz = b.pos.z + car.vel.z * T;
+  let tx, tz;
+  if (approach(p, car) === 'front') {
+    const gx = -m.dirOf(p.team) * HL - bx, gz = -bz, gl = Math.hypot(gx, gz) || 1;
+    // fra la palla e la porta, ma dalla parte da cui arriva: non gli gira attorno
+    const ax = p.pos.x - bx, az = p.pos.z - bz, al = Math.hypot(ax, az) || 1;
+    const ux = gx / gl + ax / al, uz = gz / gl + az / al, ul = Math.hypot(ux, uz) || 1;
+    tx = bx + ux / ul * U.front; tz = bz + uz / ul * U.front;
+  } else {
+    const cv = Math.hypot(car.vel.x, car.vel.z), fx = cv > 0.5 ? car.vel.x / cv : car.dirX, fz = cv > 0.5 ? car.vel.z / cv : car.dirZ;
+    const side = (p.pos.x - bx) * -fz + (p.pos.z - bz) * fx < 0 ? -1 : 1;
+    tx = bx - fz * side * U.beside; tz = bz + fx * side * U.beside;
+  }
+  // velocita' voluta: quella del portatore piu' l'avvicinamento, che cala
+  // vicino al punto quanto basta per fermarsi li'
+  // lontano il punto d'intercetto sta fermo; vicino si muove con il portatore
+  const ox = tx - p.pos.x, oz = tz - p.pos.z, od = Math.hypot(ox, oz);
+  const close = Math.sqrt(2 * U.brake * Math.max(0, od - 0.05)), k = clamp(1 - (T - 0.3) / 0.5, 0, 1);
+  const vx = car.vel.x * k + (od > 1e-3 ? ox / od * close : 0), vz = car.vel.z * k + (od > 1e-3 ? oz / od * close : 0);
+  const v = Math.min(top, Math.hypot(vx, vz));
+  const sprint = inp.sprint || d > P.sprintDist || v > top * PLAYER.jogFactor;
+  const face = d < P.engage ? { x: b.pos.x - p.pos.x, z: b.pos.z - p.pos.z } : null;
+  p.drive(dt, vx, vz, v < 0.15 ? 0 : clamp(v / (top * (sprint ? 1 : PLAYER.jogFactor)), 0, 1), { sprint, face });
+  // se il portatore gli corre incontro il piede deve essere pronto prima
+  const closing = Math.max(0, ((car.vel.x - p.vel.x) * -dx + (car.vel.z - p.vel.z) * -dz) / d);
+  s.engaged = d < P.engage + closing * U.lead ? s.engaged + dt : 0;
+  s.ang = Math.atan2(-dx, -dz); s.r = clamp(d, P.minR, P.maxR);
+  autoTackle(m, p, s, lerp2(U.react, defUnit(p)), 1, { every: U.every, reach: TACKLE.legReach + 0.2 });
 }
 
 // Contrasto automatico: palla a portata, davanti al busto, a tempo.
 // Portata: dove saranno palla e difensore al contatto del piede, se lui
 // continua la sua corsa; l'affondo aggiunge TACKLE.lunge.
 // `react`: secondi in marcatura prima del primo; `pace`: cadenza (IA piu' brava = piu' alta).
-export function autoTackle(m, p, s, react, pace) {
+// `o.every`: secondi fra due contrasti [difesa bassa, alta]; `o.reach`: portata prevista massima.
+export function autoTackle(m, p, s, react, pace, o = {}) {
   if (m.phase !== 'play' || p.action || p.down || p.stagger > 0 || s.engaged < react || m.poss.clock < s.next) return false;
   const b = m.ball, T = TACKLE, t = T.hit;
   const bx = b.pos.x + (b.vel.x - p.vel.x) * t - p.pos.x, bz = b.pos.z + (b.vel.z - p.vel.z) * t - p.pos.z;
   const d = Math.hypot(bx, bz);
-  if (d > T.contactDist + T.lunge - PRESS.autoMargin || b.pos.y > 0.6) return false;
+  if (d > (o.reach ?? T.contactDist + T.lunge - PRESS.autoMargin) || b.pos.y > 0.6) return false;
   // palla davanti al busto; se sara' fra i piedi l'angolo non conta
   if (d > PRESS.autoClose && Math.abs(wrap(headingOf(bx, bz) - p.heading)) > PRESS.autoAngle) return false;
-  s.next = m.poss.clock + lerp2(PRESS.autoEvery, defUnit(p)) / pace;
+  s.next = m.poss.clock + lerp2(o.every || PRESS.autoEvery, defUnit(p)) / pace;
   return m.startTackle(p);
 }
 

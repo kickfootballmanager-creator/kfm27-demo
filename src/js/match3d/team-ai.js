@@ -227,7 +227,9 @@ export class TeamAI {
       return;
     }
     p.aiTarget = this.world(clamp(line + R.depth, -HL + 10, HL - 7), s);
-    p.aiSprint = true;
+    // di corsa ma non in scatto, come nel riferimento (5,9 m/s al filtrante):
+    // lo scatto viene dopo il passaggio, sulla palla (main.runOnto)
+    p.aiSprint = false;
     // il pallone non e' arrivato: si torna in linea, pronti a ripartire
     if (run.t > R.goMax && m.receiver !== p) { run.go = false; run.t = 0; run.wait = rand(...R.wait); }
   }
@@ -335,7 +337,7 @@ export class TeamAI {
     if (pick.kind === 'through' && pick.to) this.goRun(pick.to);
     if (pick.kind === 'dribble') {
       p.dribbleDir = this.dribbleDir(p);
-      if (pressed && press < 2.6 && Math.random() < C.feintChance) m.startFeint(p, null);
+      if (pressed && press < 2.6 && press > C.feintFrom && Math.random() < C.feintChance) m.startFeint(p, null);
       return;
     }
     let dx, dz;
@@ -446,8 +448,10 @@ export class TeamAI {
     this.presser = presser;
     this.cover = cover;
     this.chaser = chaser;
-    // chi non pressa piu' ricomincia da zero la marcatura stretta
-    for (const p of field) if (p.press && p !== presser && p !== chaser && !(cover && p === cover && m.callPress)) p.press.engaged = 0;
+    // chi non pressa piu' ricomincia da zero la marcatura stretta; non il
+    // giocatore dell'utente, che pressa col suo tasto (prima lo si azzerava a
+    // ogni decisione e il suo contrasto automatico non partiva mai)
+    for (const p of field) if (p.press && p !== presser && p !== chaser && !(cover && p === cover && m.callPress) && !(p === m.ctrl && !m.ctrlAuto)) p.press.engaged = 0;
 
     // Gli altri in zona: sulla linea di passaggio fra il portatore e
     // l'avversario libero piu' vicino al proprio posto; vicino alla porta

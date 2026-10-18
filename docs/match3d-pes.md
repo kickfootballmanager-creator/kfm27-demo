@@ -176,12 +176,22 @@ traversa superata oltre `SHOT.overPower` (tacca rossa sulla barra).
 - R2 + levetta (jockey): il difensore resta rivolto al portatore e si sposta
   con lui; per contrastare si molla R2 e si preme X due volte.
 
-Da noi (difesa stile PES della skill): Pressing tenuto porta il giocatore sul
-portatore; da vicino entra in marcatura stretta e con la levetta gira attorno
-al portatore restando rivolto verso di lui. Il contrasto parte da solo quando
-distanza e angolo lo permettono. L'esito (palla recuperata, il portatore la
-passa prima, il portatore salta l'uomo, fallo) dipende da difesa del
-difensore, dribbling del portatore, tempismo e difficolta'.
+Da noi (difesa stile PES della skill, rifatta il 18/10 su richiesta
+dell'utente, `defense.pressBall`, numeri in `PRESS.user`): Pressing tenuto
+senza levetta (o con la levetta verso il portatore) porta il giocatore sulla
+palla, non sul corpo: corre al punto dove arriva prima della palla (di lato
+taglia la strada), davanti si ferma fra palla e porta a 0,8 m, di lato o da
+dietro la affianca a 0,55 m; frena in tempo e si muove con il portatore,
+cosi' non gli passa accanto. Il piede va sulla palla da solo dopo 0,12-0,3 s
+di marcatura e ogni 0,55-1 s, con le clip piccole (644/645 da fermo, 310 e
+510/511 in corsa), mai con gli affondi. Levetta lontano dal portatore: lo si
+accompagna a 1,9 m senza entrare; levetta di lato: jockey attorno a lui. X
+due volte: contrasto in piedi, anche con gli affondi ma mai quelli di lato a
+gambe in aria (738/739). L'esito (palla recuperata, il portatore la passa
+prima, il portatore salta l'uomo, fallo) dipende da difesa del difensore,
+dribbling del portatore, tempismo, angolo e difficolta'. Chi fa fallo non
+tocca la palla finche' l'arbitro decide (prima la prendeva lui e poi
+arrivava il fischio).
 
 ### Difesa dell'IA e disciplina
 
@@ -285,12 +295,15 @@ rallentatore (0,45) negli ultimi 1,5 s, fino a 0,7 s dopo il gol.
   giocatori al centro: chi batte tocca corto al compagno accanto.
 
 Da noi (`main.placeKickoff`, `rules.kickoffTap`, numeri in
-`RULES.kickoff`): posizioni dal modulo, ognuno nella sua meta', avversari
-fuori dal cerchio. Batte l'attaccante piu' avanzato, rivolto al compagno che
-gli sta accanto, 1,2 m dietro la linea e 2 m di lato, con la palla davanti
-al piede sinistro. La clip kickoff tocca la palla nel fotogramma del
-contatto e il tocco corto arriva al compagno a 3 m/s. Il test di durata
-controlla posizioni, due giocatori al centro e che il compagno riceva.
+`RULES.kickoff`): schieramento del video di riferimento, ognuno nella sua
+meta', avversari fuori dal cerchio, al centro solo chi batte. Dal 18/10,
+come chiesto dall'utente, chi batte sta girato verso la propria porta,
+cioe' verso il compagno che riceve 11,7 m dietro, e passa in avanti
+rispetto al suo corpo con una clip di passaggio da fermo (504_Pass_Stand_0,
+o 469_Low_Pass_Stand_0 se il pacchetto non e' caricato); prima guardava la
+porta avversaria e colpiva all'indietro (445_KickOff_180). La palla arriva
+al compagno a 10 m/s. Il test di durata controlla posizioni, uno solo al
+centro e che il compagno riceva.
 
 ## Arbitro, falli, cartellini, rigori, fuorigioco
 
@@ -329,6 +342,33 @@ controlla posizioni, due giocatori al centro e che il compagno riceva.
   cambia la mira. Premuto mentre si gira, il lancio parte appena e' girato.
   Passaggio e filtrante giocano corto, cross e tiro lungo, come prima.
 
+## Portiere con la palla e rinvio dal fondo
+
+PES 2021, schema predefinito (manuale Konami e guide dei comandi), portiere
+con la palla in mano: X lancio con le mani, Triangolo lancio nello spazio,
+Cerchio rinvio al volo nella direzione della levetta, R1 + Cerchio rinvio
+alto; levetta per camminare con la palla, R1 con la levetta per correre,
+R1 a levetta mollata per posare la palla a terra e giocarla coi piedi.
+Sul rinvio dal fondo batte il portiere coi comandi dei calci piazzati:
+levetta per la direzione, barra per la distanza.
+
+Da noi dal 18/10 (`KeeperAI.userRelease`, `userTarget`, `putDown`,
+`main.keeperCarry`, numeri in `KEEPER.user`): quando il portiere
+dell'utente blocca la palla (o la riceve coi piedi) il comando passa a lui,
+come in PES; si muove in area con la palla in mano (non esce dall'area).
+X lancia al compagno che levetta e potenza scelgono (fino a 30 m, arco che
+sale con la distanza), Triangolo nello spazio davanti al compagno del
+filtrante, Cerchio (e Quadrato) rinvio al volo: la potenza e' la distanza
+(22-60 m), al compagno nel cono piu' vicino a quella distanza; con R1 tenuto
+rinvio alto (+8 m, apice 20 m). R1 a levetta ferma posa la palla, che cade
+dalle mani e si gioca coi piedi. Rinvio dal fondo: batte il portiere
+dell'utente; X passaggio corto al compagno della levetta, Triangolo
+filtrante, Cerchio lancio con la barra, Quadrato lancio lungo a tutta
+potenza. Senza comandi per 6 s batte l'IA (lancio lungo). Dopo il rinvio
+il comando passa al compagno che riceve o al piu' vicino alla palla. Prima
+il portiere dell'utente non si comandava mai: con la palla in mano decideva
+l'IA e il rinvio dal fondo partiva sempre lungo e dritto, qualunque tasto.
+
 ## Fonti
 
 - PES Mastery, passaggi: https://pesmastery.com/pes-passing-tutorial/
@@ -343,6 +383,8 @@ controlla posizioni, due giocatori al centro e che il compagno riceva.
 - Comandi PES 2021, schema predefinito: https://www.fifplay.com/pes-2021-controls/
 - PES Mastery, punizioni: https://pesmastery.com/pes-free-kick-tutorial/
 - PES Mastery, rimessa laterale: https://pesmastery.com/throw-in/
+- Manuale Konami, comandi del portiere: https://dds.konami.com/games/manual/pes2019/PS4/en/control_keeper.html
+- Portiere in PES 2021: https://www.magicgameworld.com/pes-2021-how-to-control-the-goalkeeper/
 - PES Mastery, passaggi, filtrante e ricezione (R2 + levetta): https://pesmastery.com/pes-passing-tutorial/
 - PES Mastery, difesa (Stand Off con X e levetta, R1 + X, contrasto con X due volte): https://pesmastery.com/pes-defending-tutorial/
 - PES Mastery, difesa in eFootball (Match-up, spallata): https://pesmastery.com/efootball-defending-tutorial/

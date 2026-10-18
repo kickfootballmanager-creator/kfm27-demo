@@ -8,6 +8,7 @@
 //        [--dist 6] [--height 1.6] [--sheet 6x4] [--no-frames]
 //        [--cam x,y,z --look x,y,z]   telecamera fissa (stessa inquadratura prima e dopo)
 //        [--hook file.js]   espressione propria sul nastro caricato (window.__rd)
+//        [--clean]          senza il riquadro delle misure
 //
 // --list: solo eventi e picchi delle misure (scatti delle ossa, bacino lontano
 // dall'anello, piedi che scivolano), per trovare chi e quando guardare.
@@ -320,6 +321,8 @@ async function main() {
   console.log('\ngrafico: ' + join(OUT, 'chart.png') + ' (' + tag(chartBody) + ')');
   if (flag('no-frames')) { cdp.closeBrowser(); srv.close(); return; }
   const shots = [];
+  // --clean: fotogrammi senza il riquadro delle misure (video per l'utente)
+  if (flag('clean')) await evaluate(cdp, "document.querySelectorAll('div').forEach((d) => { if (d.style.zIndex === '2147483647') d.style.display = 'none'; })");
   for (let k = from; k <= to; k += EVERY) {
     const fixed = CAM && LOOK ? JSON.stringify([...CAM.split(',').map(Number), ...LOOK.split(',').map(Number)]) : 'null';
     await evaluate(cdp, `window.__rd.shot(${k}, ${JSON.stringify(VIEW)}, ${who}, ${DIST}, ${HEIGHT}, ${fixed})`);

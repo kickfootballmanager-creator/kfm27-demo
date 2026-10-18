@@ -68,7 +68,7 @@ export function startTackle(m, p, manual = false) {
   const far = (v) => Math.hypot(bx + v.x * T.hit, bz + v.z * T.hit);
   const reach = Math.min(T.lunge + p.speed * T.hit, Math.max(0, Math.max(far(cv), far(b.vel)) - T.contactDist));
   const lungeV = Math.min(p.speed + T.lungeSpeed, reach / Math.max(0.05, T.hit - T.lungeFrom));
-  const pk = pickTackle(m.tpl, p, { lead: T.hit, speed: Math.max(p.speed, lungeV), reach, ballLeft: -(bx * p.rightX + bz * p.rightZ) });
+  const pk = pickTackle(m.tpl, p, { lead: T.hit, speed: Math.max(p.speed, lungeV), reach, ballLeft: -(bx * p.rightX + bz * p.rightZ), only: manual ? null : T.pressClips, skip: manual ? T.manualSkip : null });
   if (pk) p.avatar.playOnce(pk.clip, pk.from, T.duration, pk.rate);
   m.note('contrasto', { p, su: car && car.team !== p.team ? car : null, premuto: !!manual, clip: pk ? pk.clip : '' });
   const h0 = p.heading, x0 = p.pos.x, z0 = p.pos.z;
@@ -638,7 +638,10 @@ function release(m, k, o) {
   k.holdHand = null;
   if (m.owner !== k) return;
   const d = m.dirOf(k.team);
-  if (o.release === 'throw' && t) {
+  // rinvio dell'utente: punto e altezza scelti con levetta e potenza (KeeperAI.userRelease)
+  if (o.point) {
+    b.lobTo(o.point.x, o.point.z, o.release === 'throw' ? b.pos.y + o.apex : o.apex);
+  } else if (o.release === 'throw' && t) {
     b.lobTo(t.pos.x + t.vel.x * 0.5, t.pos.z + t.vel.z * 0.5, b.pos.y + 1.2);
   } else if (t) {
     b.lobTo(t.pos.x + t.vel.x * 1.5, t.pos.z + t.vel.z * 1.5, 13);

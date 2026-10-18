@@ -1,4 +1,4 @@
-import { RULES, PITCH, BALL, CONTROL, FOUL, ADVANTAGE, FK, REACT, REPLAY } from './config.js';
+import { RULES, PITCH, BALL, CONTROL, FOUL, ADVANTAGE, FK, REACT, REPLAY, PLAYER } from './config.js';
 import { headingOf, choosePass } from './player.js';
 import { rollSpeedFor } from './ball.js';
 import { rootAction, react } from './gestures.js';
@@ -157,7 +157,8 @@ export class Rules {
         this.set.aimTo = this.throwTarget(taker, 'auto', taker.dirX, taker.dirZ, this.set.aimPower, RULES.throwIn.turnMax);
       }
     }
-    if (side === m.userSide && !taker.keeper) m.setControlled(taker);
+    // il rinvio dal fondo lo batte l'utente col suo portiere, come in PES
+    if (side === m.userSide && (!taker.keeper || type === 'goalkick')) m.setControlled(taker);
     else if (!m.ctrl || m.ctrl === taker || m.ctrl.team !== m.userSide || m.ctrl.keeper) m.setControlled(m.nearestTo(m.squad.players, spot.x, spot.z));
     this.go('restart');
   }
@@ -256,7 +257,14 @@ export class Rules {
       if (btn !== 'auto' && !this.throwReady(p)) s.queued = { kind, inp, power, t: 0 };
       else this.throwIn(p, kind, inp, power);
     }
-    else if (s.type === 'goalkick') m.startKick(p, 'cross', 0.8, { mag: 1, x: m.dirOf(p.team), z: 0 });
+    // rinvio dal fondo: l'IA lancia lungo; l'utente sceglie come in PES, X
+    // passaggio corto al compagno della levetta, Triangolo filtrante, Cerchio
+    // lancio, Quadrato lancio lungo a tutta potenza (prima ogni tasto lanciava dritto)
+    else if (s.type === 'goalkick') {
+      const fwd = { mag: 1, x: m.dirOf(p.team), z: 0 };
+      if (btn === 'auto') m.startKick(p, 'cross', 0.8, fwd);
+      else m.startKick(p, btn === 'shot' ? 'cross' : btn, btn === 'shot' ? 1 : power, inp && inp.mag > 0 ? inp : fwd);
+    }
     else if (s.type === 'penalty') m.setpieces.penaltyShot(p, btn === 'auto' ? 0.55 + Math.random() * 0.33 : power, inp, btn === 'auto');
     else if (s.type === 'freekick') this.freeKickTake(p, btn, power, inp);
     else {
@@ -276,7 +284,7 @@ export class Rules {
       const dd = Math.hypot(q.pos.x, q.pos.z);
       if (dd < bd) { bd = dd; to = q; }
     }
-    // chi batte guarda avanti: la clip (135, 180, 225 gradi) va dal compagno
+    // chi batte guarda il compagno: passaggio in avanti rispetto al corpo
     const clip = to ? m.kickoffClip(p.heading, Math.atan2(to.pos.x - p.pos.x, to.pos.z - p.pos.z)).clip : m.kickClip;
     const meta = clip && m.tpl.meta[clip];
     const contact = meta ? meta.ev.contact.t : 0.517, from = meta ? Math.max(0, contact - K.lead) : 0;
@@ -285,7 +293,7 @@ export class Rules {
     p.action = {
       clip: clip || 'kickoff', t: 0, rate: 1, end: end - from,
       events: [{ at: contact - from, fn: () => {
-        // all'indietro come nel riferimento: parte a circa 15 m/s, arriva a K.arrive
+        // verso la propria meta' come nel riferimento: parte a circa 15 m/s, arriva a K.arrive
         if (to) m.ball.rollAt(to.pos.x, to.pos.z, rollSpeedFor(Math.hypot(to.pos.x - m.ball.pos.x, to.pos.z - m.ball.pos.z), K.arrive));
         else m.ball.kick(-d * 6, 0, 0);
         m.poss.fly('passaggio', p, to, "calcio d'inizio");
@@ -418,6 +426,9 @@ export class Rules {
     // restano sbilanciamenti e colpi senza caduta
     const level = this.reactLevel(info.kind, from, sev, off);
     react(m, victim, level, off, info.dir || null);
+    // chi ha fatto fallo non tocca la palla finche' l'arbitro decide: prima la
+    // prendeva lui col piede ancora sulla caviglia e poi arrivava il fischio
+    off.foulLock = ADVANTAGE.decide + 0.4;
     if (m.owner === victim) {
       m.ball.kick(victim.vel.x * 0.6, 0, victim.vel.z * 0.6);
       m.poss.loose('contrasto', off);
@@ -632,7 +643,7 @@ export class Rules {
     const p = ok(scorer) ? scorer : m.teams[team].players.filter(ok).sort((x, y) => far(x) - far(y))[0] || null;
     if (p) {
       const clip = this.nextCelebration();
-      if (!this.lateCelebration(p, clip)) this.celebrate(p, clip);
+      if (!this.flagCelebration(p, clip)) this.celebrate(p, clip);
       m.cameraFocus = p;
     }
     m.show.p = p;
@@ -652,25 +663,37 @@ export class Rules {
     return this.deck.length ? this.deck.pop() : RULES.celebration.clip;
   }
 
-  // Esultanze di Meshy (acrobazie quasi sul posto): come nel riferimento chi
-  // ha segnato corre durante la diretta e fa il gesto nel primo piano. La
-  // corsa sa gia' dove la clip lo portera' (endX, endZ: lo usa main.cheer).
-  lateCelebration(p, clip) {
-    const m = this.m, meta = m.tpl.meta[clip], L = RULES.celebration.late;
-    if (!meta || meta.pack !== L.pack || !clipDuration(m.tpl, clip)) return false;
-    const hl = PITCH.length / 2 - L.margin, hw = PITCH.width / 2 - L.margin;
-    const tx = Math.max(-hl, Math.min(hl, p.pos.x + Math.sin(p.heading) * L.run));
-    const tz = Math.max(-hw, Math.min(hw, p.pos.z + Math.cos(p.heading) * L.run));
-    const h = Math.atan2(tx - p.pos.x, tz - p.pos.z);
-    const r0 = rootAt(m.tpl, clip, 0), r1 = rootAt(m.tpl, clip, clipDuration(m.tpl, clip));
-    const da = r1.a - r0.a, ds = r1.s - r0.s, fx = Math.sin(h), fz = Math.cos(h);
+  // Come nel riferimento chi ha segnato corre durante la diretta verso la
+  // bandierina dalla sua parte (L.flag m dentro le due linee) e i compagni lo
+  // raggiungono li': la corsa sa gia' dove la clip lo portera' (endX, endZ:
+  // main.cheer). La clip parte guardando la bandierina e finisce li': chi ha
+  // una sua corsa (Studio33) parte prima, all'arrivo; le acrobazie di Meshy,
+  // quasi sul posto, aspettano il primo piano (L.lead s prima). Prima correva
+  // 7 m dritto davanti a se', ovunque fosse.
+  flagCelebration(p, clip) {
+    const m = this.m, meta = m.tpl.meta[clip], L = RULES.celebration.late, dur = clipDuration(m.tpl, clip);
+    if (!meta || !dur) return false;
+    const fx0 = m.dirOf(p.team) * (PITCH.length / 2 - L.flag), fz0 = (Math.sign(p.pos.z) || 1) * (PITCH.width / 2 - L.flag);
+    const r0 = rootAt(m.tpl, clip, 0), r1 = rootAt(m.tpl, clip, dur);
+    const da = r1.a - r0.a, ds = r1.s - r0.s;
+    const h = Math.atan2(fx0 - p.pos.x, fz0 - p.pos.z), fx = Math.sin(h), fz = Math.cos(h);
+    // la corsa della clip copre l'ultimo tratto; se e' piu' lunga della strada che resta, parte subito
+    const far = Math.hypot(fx0 - p.pos.x, fz0 - p.pos.z), own = Math.max(0, da);
+    const run = Math.max(0, far - own), tx = p.pos.x + fx * run, tz = p.pos.z + fz * run;
+    const late = meta.pack === L.pack;
     p.action = {
       t: 0, rate: 1, end: Math.max(0.5, REPLAY.live - L.lead), moves: true, celebrateRun: true,
       tx, tz, endX: tx + fx * da - fz * ds, endZ: tz + fz * da + fx * ds,
       // il via lo da' l'orologio della regia: se il gioco rallenta (pochi fps)
       // la corsa finirebbe dopo lo stacco sul primo piano
-      tick: (a, dt) => { p.goTo(dt, tx, tz, h); if (m.show && m.show.t >= REPLAY.live - L.lead) a.end = a.t; },
-      onEnd: () => { this.celebrate(p, clip); }
+      tick: (a, dt) => {
+        // di scatto (goTo correva a 5 m/s), frenando per fermarsi sul punto
+        const dx = tx - p.pos.x, dz = tz - p.pos.z, dd = Math.hypot(dx, dz), there = dd < 0.3;
+        if (there) p.drive(dt, 0, 0, 0, { face: { x: fx, z: fz } });
+        else p.drive(dt, dx, dz, Math.min(1, Math.sqrt(2 * PLAYER.decel * PLAYER.decelLow * dd) / p.params.maxSpeed), { sprint: true });
+        if ((there && !late) || (m.show && m.show.t >= REPLAY.live - L.lead)) a.end = a.t;
+      },
+      onEnd: () => { p.face(h); this.celebrate(p, clip); }
     };
     return true;
   }

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { PHYSICS, RENDER, REPLAY, RULES, PLAYER, CONTROL, DRIBBLE, SHOT, PASS, KIT, RECEIVE, FIRST_TOUCH, ANIM, ANIMLIB, POWER, FEINT, AI, AERIAL, SHAPE, PITCH, SLIDE, BALL, DUEL, OFFSIDE, DEBUG, PRESS, THROUGH, TAPE, BALL_LOOK, LIGHT, KICK, FOULACT, MARKS } from './config.js';
+import { PHYSICS, RENDER, REPLAY, RULES, PLAYER, CONTROL, DRIBBLE, SHOT, PASS, KIT, RECEIVE, FIRST_TOUCH, ANIM, ANIMLIB, POWER, FEINT, AI, AERIAL, SHAPE, PITCH, SLIDE, BALL, DUEL, OFFSIDE, DEBUG, PRESS, THROUGH, TAPE, BALL_LOOK, LIGHT, KICK, FOULACT, MARKS, KEEPER } from './config.js';
 import { buildPitch } from './pitch.js';
 import { Ball, shadowTexture, aimWithSpin, rollSpeedIn } from './ball.js';
 import { BroadcastCamera } from './camera.js';
@@ -715,10 +715,10 @@ class Match {
       field.forEach((p, i) => { const q = pts[at[i]]; if (q) put(p, q.x, q.z, headingOf(d, 0)); });
       if (kick) mate = field[at.indexOf(K.receiver)] || null;
     }
-    // chi batte guarda avanti; la clip KickOff scelta per la direzione del
-    // compagno che riceve dice dove sta la palla rispetto a lui
-    const d = this.dirOf(side), h = headingOf(d, 0), r = K.kick[K.receiver];
-    const k = this.kickoffClip(h, Math.atan2(r[0] * d, r[1]));
+    // chi batte guarda il compagno che riceve, verso la propria porta; la clip
+    // di passaggio dice dove sta la palla rispetto a lui
+    const d = this.dirOf(side), r = K.kick[K.receiver], h = Math.atan2(r[0] * d, r[1]);
+    const k = this.kickoffClip(h, h);
     this.kickClip = k.clip;
     const fx = Math.sin(h), fz = Math.cos(h), lx = Math.cos(h), lz = -Math.sin(h);
     put(taker, -(fx * k.ball.ahead + lx * k.ball.left), -(fz * k.ball.ahead + lz * k.ball.left), h);
@@ -841,7 +841,8 @@ class Match {
   kickoff(side = this.userSide) { this.rules.kickoff(side); }
 
   // Clip del calcio d'inizio per un compagno in direzione `to` (rad nel campo)
-  // da chi guarda verso `h`: 135, 180 o 225 gradi. Palla dove la mette la clip.
+  // da chi guarda verso `h`: la piu' vicina per l'angolo del nome (la prima
+  // di RULES.kickoff.clips a pari angolo). Palla dove la mette la clip.
   kickoffClip(h, to) {
     const rel = wrapAngle(to - h);
     let best = null, bc = Infinity;
@@ -911,6 +912,7 @@ class Match {
 
   userMove(dt, p, inp, withBall) {
     const b = this.ball, o = this.owner;
+    if (p.keeper && p.holding) { this.keeperCarry(dt, p, inp); return; }
     // controllo stretto (R2): passi corti, palla piu' vicina
     p.close = withBall && !!inp.held.close;
     if (!this.userAttacking() && this.phase === 'play') {
@@ -934,6 +936,16 @@ class Match {
       p.drive(dt, inp.x, inp.z, mag, { sprint: inp.sprint, withBall, close: p.close });
     } else if (inp.sprint && !o && b.live) this.runToBall(dt, p);
     else p.drive(dt, 0, 0, 0, { withBall });
+  }
+
+  // Portiere dell'utente con la palla in mano: si sposta con la levetta (R1
+  // scatto) ma resta in area, a KEEPER.user.boxMargin m dalle sue linee.
+  keeperCarry(dt, p, inp) {
+    p.drive(dt, inp.x, inp.z, inp.mag, { sprint: inp.sprint && inp.mag > 0.2 });
+    const own = -this.dirOf(p.team), M = KEEPER.user.boxMargin, HLn = PITCH.length / 2;
+    const a = clamp(p.pos.x * own, HLn - PITCH.penaltyDepth + M, HLn - M), hw = PITCH.penaltyWidth / 2 - M;
+    p.pos.x = a * own;
+    p.pos.z = clamp(p.pos.z, -hw, hw);
   }
 
   // Levette dallo schermo al campo, secondo dove guarda la telecamera: in su
@@ -1158,6 +1170,10 @@ class Match {
     this.tickN = (this.tickN || 0) + 1;
     const inp = this.mapInput(this.controls.read(dt));
     this.lastInp = inp;
+    // il portiere si comanda solo con la palla (o mentre gliela passano): dopo
+    // il rinvio il comando torna al giocatore di movimento piu' vicino
+    const gk = this.ctrl;
+    if (gk && gk.keeper && this.phase === 'play' && this.owner !== gk && this.receiver !== gk && !gk.action) this.setControlled(this.nearestTo(this.squad.players, this.ball.pos.x, this.ball.pos.z));
     const me = this.ctrl;
     if (inp.mag > 0 || inp.any) this.hud.hideHint();
     const touching = inp.mag > 0 || inp.any || Object.values(inp.btn.held).some(Boolean);
@@ -1168,6 +1184,7 @@ class Match {
     for (const p of this.everyone) {
       if (p.stagger > 0) p.stagger = Math.max(0, p.stagger - dt);
       if (p.burst > 0) p.burst = Math.max(0, p.burst - dt);
+      if (p.foulLock > 0) p.foulLock = Math.max(0, p.foulLock - dt);
     }
     // Rete di sicurezza: un pallone che nessuno raggiunge torna libero.
     if (this.poss.flying && this.poss.age > RECEIVE.timeout) this.poss.loose('nessuno la raggiunge');
@@ -1194,6 +1211,7 @@ class Match {
       else if (!live) this.settle(dt, p);
       else if (p.keeper && p !== me) this.teams[p.team].keeperAI.update(dt);
       else if (this.receiver === p) { this.aerial(p, inp); if (!p.action) { this.runToBall(dt, p); this.preTrap(p, p === me ? inp : null); } }
+      else if (p.trap && this.owner === p && (p !== me || this.ctrlAuto || inp.mag <= 0)) this.trapMove(dt, p);
       else if (p !== me || this.ctrlAuto) { this.aerial(p, null); if (!p.action) this.teams[p.team].ai.steer(dt, p); }
       else this.userMove(dt, p, inp, withBall);
     }
@@ -1241,7 +1259,18 @@ class Match {
       const k = this.owner, h = k.avatar.heldAt;
       if (h.y > 0.2 && Math.hypot(h.x - k.pos.x, h.z - k.pos.z) < 2.5) b.hold(h.x, h.y, h.z);
       else b.hold(k.pos.x + k.dirX * 0.3, HELD_Y, k.pos.z + k.dirZ * 0.3);
-    } else if (this.owner && this.owner.dropping) b.step(dt);   // rinvio al volo: cade dalla mano
+    } else if (this.owner && this.owner.dropping) {
+      // rinvio al volo: cade dalla mano; posata a terra (putDown): al primo
+      // rimbalzo la riprende la conduzione, davanti ai piedi
+      b.step(dt);
+      const k = this.owner;
+      if (k.putDown && b.pos.y <= BALL.radius + 0.03) {
+        k.dropping = k.putDown = false;
+        b.pos.y = BALL.radius; b.vel.y = 0;
+        k.ballAngle = Math.atan2(b.pos.x - k.pos.x, b.pos.z - k.pos.z);
+        k.ballDist = Math.max(DRIBBLE.rest, Math.hypot(b.pos.x - k.pos.x, b.pos.z - k.pos.z));
+      }
+    }
     else if (this.owner && !this.rules.waitingTaker(this.owner)) this.dribble(dt);
     else b.step(dt);
     this.setpieces.tick(dt);
@@ -1260,7 +1289,9 @@ class Match {
     this.passTarget = null;
     const w = this.windup;
     if (w) this.passTarget = w.target || null;
-    else if (this.ctrl && this.owner === this.ctrl && b.live && !this.ctrl.holding) {
+    else if (this.ctrl && this.ctrl.keeper && this.ctrl.holding && this.owner === this.ctrl && b.live) {
+      this.passTarget = this.teams[this.ctrl.team].keeperAI.userTarget(this.charging || 'pass', this.charging ? this.charge : 0, inp);
+    } else if (this.ctrl && this.owner === this.ctrl && b.live && !this.ctrl.holding) {
       const c = this.ctrl, k = this.charging, pw = k ? this.charge : 0;
       const ax = inp.mag > 0 ? inp.x : c.dirX, az = inp.mag > 0 ? inp.z : c.dirZ;
       if (k === 'through') this.passTarget = chooseThrough(c, ax, az, this.squad.players, this.opponents, pw).mate;
@@ -1323,6 +1354,8 @@ class Match {
       }
     }
     if (inp.down.feint && this.owner === me) this.buffer = { kind: 'feint', t: CONTROL.buffer };
+    // R1 a levetta ferma: il portiere posa la palla e gioca coi piedi (PES 2021)
+    if (me && me.keeper && me.holding && this.phase === 'play' && inp.down.sprint && inp.mag <= 0.2 && !this.charging) this.teams[me.team].keeperAI.putDown();
 
     if (!this.buffer || !me) return;
     // Ripresa battuta dall'utente: la barra vale anche qui (angolo, rimessa).
@@ -1344,6 +1377,7 @@ class Match {
     if (this.buffer.wait > 0 && this.owner === me) { this.buffer.wait -= dt; return; }
     const buf = this.buffer;
     this.buffer = null;
+    if (me.keeper && me.holding) { if (buf.kind !== 'feint') this.teams[me.team].keeperAI.userRelease(buf.kind, buf.power, inp); return; }
     if (buf.kind === 'feint') this.startFeint(me, inp);
     else this.startKick(me, buf.kind, buf.power, inp);
   }
@@ -1594,11 +1628,16 @@ class Match {
     // anticipo; palla gia' davanti a lui: il primo punto che raggiunge.
     // Mai indietro lungo la strada della palla: tornava a prenderla ai piedi.
     const bl = Math.hypot(b.vel.x, b.vel.z) || 1, ux = b.vel.x / bl, uz = b.vel.z / bl;
+    // palla che va nel suo stesso verso (gli arriva da dietro): mai indietro
+    // a prenderla. Palla che gli taglia la strada: incontro, come nel
+    // riferimento (53 gradi fra palla e corsa); prima scartava anche quei
+    // punti e lo mandava in fondo alla traiettoria, lontano dalla palla (18/10)
+    const rv = Math.hypot(p.vel.x, p.vel.z), same = rv > 1 && (p.vel.x * ux + p.vel.z * uz) / rv > T.sameDir;
     let pick = null, early0 = null;
     for (const s of path) {
       if (s.y > CONTROL.trapHeight) continue;
       // mai indietro verso la propria porta, ne' dietro di lui sulla strada della palla
-      if ((s.x - p.pos.x) * d < -T.behind || (s.x - p.pos.x) * ux + (s.z - p.pos.z) * uz < -T.behindBall) continue;
+      if ((s.x - p.pos.x) * d < -T.behind || (same && (s.x - p.pos.x) * ux + (s.z - p.pos.z) * uz < -T.behindBall)) continue;
       const dist = Math.max(0, Math.hypot(s.x - p.pos.x, s.z - p.pos.z) - RECEIVE.capture);
       const early = runTime(p, dist, s.x - p.pos.x, s.z - p.pos.z) + RECEIVE.reaction <= s.t;
       if (early0 === null) early0 = early;
@@ -1611,6 +1650,14 @@ class Match {
     p.drive(dt, dx, dz, 1, { sprint: true, face: Math.hypot(bx, bz) < 2.5 ? { x: bx, z: bz } : null });
   }
 
+
+  // Durante lo stop il corpo va dove il tocco manda la palla (direzione di fine
+  // stop) alla velocita' che ha: prima l'IA girava subito verso la sua meta e
+  // la palla, mandata dritta, finiva 1,9 m di lato e tornava ai piedi a 13 m/s.
+  trapMove(dt, p) {
+    const h = p.trap.hE, top = p.params.maxSpeed * (p.sprinting ? 1 : PLAYER.jogFactor) * p.params.dribbleSpeed;
+    p.drive(dt, Math.sin(h), Math.cos(h), clamp(p.speed / top, 0, 1), { sprint: p.sprinting, withBall: true });
+  }
 
   // Palla in coordinate polari attorno al giocatore (angolo nel campo): lo
   // segue a ogni passo e per cambiare lato gira attorno ai piedi, a velocita'
@@ -1719,7 +1766,9 @@ class Match {
     const R = DRIBBLE.roll, st = p.roll || (p.roll = { u, rate: 1.4, on: false });
     const du = wrap01(u - st.u);
     if (du < 0.5 && dt > 0) st.rate += (Math.max(0.6, du / dt) - st.rate) * Math.min(1, dt * 8);
-    const touched = u < st.u && st.u - u > 0.5;
+    // un tocco per passo: mai due a un fotogramma di distanza (ripartenza e
+    // giro della fase insieme, replay del 18/10 14:22)
+    const touched = u < st.u && st.u - u > 0.5 && !(this.poss.clock - (st.last ?? -9) < R.minT * 0.6);
     st.u = u;
     // possesso nuovo (ricezione, contrasto vinto): si riparte dal tocco continuo
     if (st.seq !== this.poss.seq) { st.seq = this.poss.seq; st.on = false; }
@@ -1740,6 +1789,7 @@ class Match {
       b.pos.y = BALL.radius;
       b.kick(dx / d * v0, 0, dz / d * v0);
       st.on = true;
+      st.last = this.poss.clock;
       this.note('tocco', { p, velocita: v0, tempo: T });
     }
     b.step(dt);
@@ -1840,7 +1890,7 @@ class Match {
   // libera, la prende il piu' vicino.
   contacts(inp) {
     const b = this.ball, poss = this.poss;
-    const locked = (p) => this.kickLock && this.kickLock.p === p;
+    const locked = (p) => (this.kickLock && this.kickLock.p === p) || p.foulLock > 0;
     const to = this.receiver;
     // il destinatario la controlla quando gli arriva al corpo, o nel punto piu'
     // vicino se gli passa accanto: prima la prendeva a 1,25 m e la palla
@@ -1849,7 +1899,9 @@ class Match {
       const rx = b.pos.x - to.pos.x, rz = b.pos.z - to.pos.z, d = Math.hypot(rx, rz);
       // ...o lenta rispetto a lui (tocco d'inizio, palla che si ferma): ci arriva con un passo
       const rvx = b.vel.x - to.vel.x, rvz = b.vel.z - to.vel.z;
-      const away = rx * rvx + rz * rvz > 0, slow = Math.hypot(rvx, rvz) < RECEIVE.slowRel;
+      // lenta solo a portata di un passo: a 1,25 m la clip di stop toccava l'aria
+      // e la palla restava 1,2 m davanti per tutto lo stop (18/10)
+      const away = rx * rvx + rz * rvz > 0, slow = Math.hypot(rvx, rvz) < RECEIVE.slowRel && d < RECEIVE.slowReach;
       // stop gia' partito (preTrap): la palla si ferma dove la tocca il piede della clip
       const pre = to.preTrap && to.preTrap.seq === poss.seq ? to.preTrap : null, P = RECEIVE.pre;
       const capture = pre ? Math.max(P.minR, pre.pk.touch.r + P.slack) : RECEIVE.capture;
@@ -1888,7 +1940,8 @@ class Match {
     const hands = p.keeper && this.poss.team !== p.team && Math.abs(p.pos.x + this.dirOf(p.team) * PITCH.length / 2) < PITCH.penaltyDepth && Math.abs(p.pos.z) < PITCH.penaltyWidth / 2;
     this.gain(p, cause);
     p.holding = hands;
-    if (p.team === this.userSide && !p.keeper) this.switchTo(p);
+    // come in PES anche il portiere: con la palla (in mano o al piede) lo comanda l'utente
+    if (p.team === this.userSide) this.switchTo(p);
     if (!hands) this.firstTouch(p, p === this.ctrl ? inp : null, cause);
   }
 
@@ -2025,7 +2078,7 @@ class Match {
       b.pos.y = BALL.radius;
       b.kick(vx, 0, vz);
     }
-    p.trap = { t: t0, T: dur, seq: this.poss.seq, clip: pk.clip, h0: p.heading, k };
+    p.trap = { t: t0, T: dur, seq: this.poss.seq, clip: pk.clip, h0: p.heading, k, hE: want !== null ? want : hE };
     this.note('stop', { p, clip: pk.clip, altezza: b.pos.y, verso: want !== null ? 'levetta' : 'clip' });
   }
 

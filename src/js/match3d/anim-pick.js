@@ -206,7 +206,10 @@ export function pickIntercept(tpl, p, want) {
 // fare anche lei (una clip da fermo trascinata dall'affondo traslava).
 export function pickTackle(tpl, p, want) {
   const M = ANIM.match, R = ANIM.kickRate;
-  const cands = roleClips(tpl, 'tackle').filter((e) => e.meta.ev && e.meta.ev.contact);
+  // want.only: solo queste clip (se caricate); want.skip: mai queste
+  const all = roleClips(tpl, 'tackle').filter((e) => e.meta.ev && e.meta.ev.contact && !(want.skip && want.skip.includes(e.name)));
+  const only = want.only ? all.filter((e) => want.only.includes(e.name)) : all;
+  const cands = only.length ? only : all;
   if (!cands.length) return null;
   const res = choose(p, 'tackle', cands, (e) => {
     const c = e.meta.ev.contact;

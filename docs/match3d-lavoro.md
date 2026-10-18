@@ -10,34 +10,27 @@ skill aggiornata.
 
 ## Da dove ripartire
 
-Tutti i blocchi A-F sono fatti (18/10). Restano, in ordine: replay dopo una
-grande parata e VAR sul fuorigioco (non fatti); aspetto dei giocatori dai dati
-(oggi testa scelta col seme del giocatore, non da `appearance.json`); prova
-dello stadio su un telefono vero (livello basso 538.000 triangoli); decidere
-cosa fare dei 12 file non committati di `kfm27`. File fuori da git creati qui
-in `kfm27-lavoro/src/assets/match3d/`: `stadium/stadium-high|low.glb`,
-`heads.glb`, `anims-meshy.glb` (si rifanno con gli script in `tools/match3d/`).
+18/10: seconda richiesta lunga, blocchi 0-6 (vedi "Blocchi 0-6" in fondo al
+registro). Blocchi 0 e 1 fatti; poi 2 (pelle e teste Meshy), 3 (texture e
+porte dello stadio), 4 (divise), 5 (caricamento e presentazione), 6 (solo
+bozzetto della modalita' Calcio d'inizio, poi fermarsi). Resoconto finale per
+blocco con come provarlo. Meshy: al piu' 1500 crediti senza chiedere.
 
 ## Come e' organizzato
 
-- **Si lavora in `C:\Users\UTENTE\Desktop\kfm27-lavoro`**, una worktree di
-  git sul ramo `lavoro`, nata da `8019126`. In `kfm27` restano intatti i 12
-  file modificati e non committati del 04/10 (pressing come PES 2021,
-  pallonetto L1 + tiro, culmine del tiro, portiere rilassato e retropassaggio,
-  rotazione e ombra della palla, note PES): l'utente ha chiesto di non
-  toccarli. Cosi' quello che si prova e' identico a quello che si committa.
-- Push: `git push origin lavoro:main` (fast-forward). Il `main` locale di
-  `kfm27` resta indietro: per provare in `kfm27` bisogna prima decidere cosa
-  fare dei 12 file.
-- Per provare il gioco: `python -m http.server 8080` dentro `kfm27-lavoro`,
-  poi http://localhost:8080/?match3d.
+- **Dal 18/10 si lavora solo in `C:\Users\UTENTE\Desktop\kfm27`**, ramo
+  `main`, push con `git push origin main`. La worktree `kfm27-lavoro` non si
+  usa piu'. I 12 file del 04/10 stanno sul ramo locale
+  `salvataggio/modifiche-04-10` (736d37d, non pubblicato): non toccarlo.
+- Per provare il gioco: `python -m http.server 8080` dentro `kfm27`, poi
+  http://localhost:8080/?match3d (o dalla carriera, "Gioca ora").
 - File esclusi da git copiati nella worktree: `anims-*.glb`, `player.glb`,
   `ball/ball.glb`, `ball/soccerball.fbx`, `coach_start_reference.png`,
   `src/assets/sponsor/` (non tracciato, dell'utente: non committarlo).
   Collegati con una giunzione: `src/assets/match3d/source/` (Studio33, 1,5 GB),
   `src/assets/players/`, `debug/` (video di riferimento e strumenti).
 - Gli strumenti in `debug/riferimenti/strumenti/*.mjs` servono la cartella di
-  `KFM_ROOT` (di base `kfm27-lavoro`).
+  `KFM_ROOT` (di base `kfm27`).
 - Le skill stanno in `kfm27/.claude/skills` (non tracciate).
 
 ## Stato
@@ -239,3 +232,132 @@ carrierThink decide appena ricevuta palla (tenuta 0,5 s); difesa larga
   0 errori, statistiche nell'obiettivo. Commit e push del blocco F.
 - Video affiancati del resoconto: `debug/riferimenti/gesti2/video/` (7 gesti
   e 2 esultanze).
+
+## Blocchi 0-6 (dal 18/10, solo in `kfm27`)
+
+Richiesta: blocco 0 (esultanza in rules.js), 1 (gameplay come il
+riferimento, punto per punto con misure, differenze nel diario e video
+affiancati), 2 (pelle e teste), 3 (stadio), 4 (divise), 5 (caricamento e
+presentazione), 6 (bozzetto della modalita' Calcio d'inizio, poi fermarsi).
+Ogni blocco: test di durata, commit e push. Meshy al piu' 1500 crediti.
+
+### Blocco 0 (fatto)
+
+- `rules.lateCelebration`: il via del gesto lo da' l'orologio della regia
+  (`m.show.t`), non il tempo della simulazione: a pochi fps la corsa finiva
+  dopo lo stacco sul primo piano. Commit `d7a3155`.
+
+### Blocco 1 (fatto)
+
+Strumenti nuovi in `debug/riferimenti/strumenti/`: `possesso_rif.py`
+(possesso nel riferimento: piedi sotto il triangolo lime, palla vicina,
+telecamera del momento), `hook-possesso.js` e `possesso_modi.py` (stesse
+misure in KFM27, per modo della conduzione), `possesso_conf.py`,
+`kstrip.py` (strisce di KFM27 come `strip.py`), `scena-filtrante.js`,
+`scena-pressing.js`, `scena-portiere.js` (scene ripetibili con comandi
+simulati), `palla_anomalie.py`, `palla_accel.py`, `hook-nastri.js`,
+`affianca.py` e `prima_dopo.py` (video), `replay-debug.mjs --clean`.
+Video: `debug/riferimenti/blocco1/video/1-8_*.mp4`, riferimento (o prima)
+sopra e KFM27 sotto, a velocita' vera e poi rallentati.
+
+**Possesso dopo la ricezione** (2 s dalla ricezione, riferimento v1 con la
+telecamera inseguita, KFM27 4 partite IA contro IA):
+
+| | Riferimento | KFM27 prima | KFM27 dopo |
+|---|---|---|---|
+| Distanza palla-piede, mediana / 90% | 0,41-0,55 / circa 1,0 m | 0,71 / 1,09 m | 0,59 / 0,93 m |
+| Velocita' della palla rispetto al giocatore, mediana / 90% | 1,8 / 3,4 m/s (con il rumore della misura) | 3,2 / 6,2 nella conduzione continua, fino a 13 | 1,4 / 3,5 m/s |
+| Ricezioni con la palla oltre 1,2 m dal piede | 33% (rumore) | 49% | 14-26% |
+| Tocchi al secondo | 2-4 (a vista, 112,2 s: tocchi ogni 0,15-0,55 s) | 1,5 | 1,1-1,2 |
+| Velocita' della palla in possesso p50 / p75 / p90 | 4,4 / 6,0 / 7,8 m/s (radar) | | 4,8-5,0 / 6,4-6,7 / 8,2-8,9 |
+
+Cause e correzioni:
+- La palla "volava": durante lo stop l'IA girava subito verso la sua meta e
+  la palla, mandata dritta, finiva 1,9 m di lato; la conduzione continua poi
+  la riportava ai piedi a 13 m/s. Ora durante lo stop il corpo segue la
+  direzione del tocco (`main.trapMove`, `p.trap.hE`), e rispetto al
+  giocatore la palla non va oltre 3,5 m/s (`DRIBBLE.maxRel`, prima 9) ne'
+  cambia velocita' oltre 25 m/s^2 (`relAcc`, prima 70).
+- Palla lenta presa a 1,25 m: la clip di stop toccava l'aria e la palla
+  restava 1,2 m davanti per tutto lo stop. Ora solo entro 0,85 m
+  (`RECEIVE.slowReach`).
+- Due tocchi di conduzione in fotogrammi consecutivi (replay del 18/10
+  14:22, f40-f41): un tocco al piu' ogni 0,6 x `roll.minT`.
+- Conduzione a tocchi anche piano (`roll.minSpeed` 1,4, prima 2,2).
+- Differenza che resta: i tocchi. Le clip di conduzione Studio33 toccano la
+  palla una volta per ciclo di passo (0,57-0,7 s); il riferimento a passo
+  lento tocca anche a ogni passo. Servirebbero clip con due tocchi per ciclo.
+
+**Filtrante** (replay dell'utente del 18/10 14:22: a10 calcia a 15,5 m/s, a7
+corre oltre la linea della palla e torna indietro, intercetta h2): la scelta
+del punto sulla traiettoria scartava i punti "dietro di lui lungo la strada
+della palla" anche quando la palla gli arrivava di traverso, e lo mandava in
+fondo alla traiettoria. Ora lo scarto vale solo con la palla nel suo verso
+(`THROUGH.sameDir`). Velocita' come nel riferimento (31 filtranti di v1:
+9-14 m/s sui corti, 20-24 m/s sui 22-36 m, `THROUGH.speedBase/speedPerM`),
+arrivo 8,4 m davanti al ricevente, chi corre non scatta prima del
+passaggio. Scena del replay: ricevuto dopo 1,2 s. Test di durata: filtranti
+riusciti 4,2 a partita (prima 2,3).
+
+**Pressing con X tenuto** (riferimento 78,4-82,0 s e 258,6-262,1 s: il
+difensore chiude a meno di un metro, accompagna e toglie la palla col piede,
+senza cadute): prima correva sul corpo del portatore e da 4 m gli girava
+attorno a 1,35 m verso la porta, arrivava di lato e gli passava accanto; in
+piu' l'IA della squadra azzerava a ogni decisione il tempo di marcatura del
+giocatore dell'utente, e il suo contrasto automatico non partiva mai. Ora
+(`defense.pressBall`, `PRESS.user`) corsa sul punto d'intercetto della
+palla, davanti fra palla e porta a 0,8 m, di lato o da dietro a 0,55 m,
+frenata e passo del portatore, piede sulla palla con le clip piccole.
+Scene (`scena-pressing.js`): di fronte palla rubata in 2,5 s, di lato
+(taglia la strada) in 2,5 s, da dietro un portatore piu' veloce non si
+prende (come nel calcio vero), portatore fermo: la passa prima.
+
+**Falli** (replay del 18/10 14:21: a19 dell'utente preme X due volte, parte
+l'affondo 738_Tackles_Stand_90 mentre home 6 fa la finta 557_Tricks a gambe
+in aria; il piede prende la caviglia, reazione 267, e nello stesso
+fotogramma la palla passa a chi ha fatto fallo, poi il fischio dopo 0,75 s):
+- contrasti automatici (pressing, IA) solo con le clip piccole
+  (`TACKLE.pressClips`); il contrasto premuto mai con gli affondi di lato
+  738/739 (`TACKLE.manualSkip`);
+- l'IA non fa la finta col difensore gia' a meno di 1,6 m e la fa meno
+  (6% invece del 25%): nel riferimento il portatore pressato protegge o passa;
+- chi fa fallo non tocca la palla per 0,85 s (`foulLock`): la palla resta a
+  chi ha subito il fallo e l'arbitro decide vantaggio o punizione.
+  Test di durata: 1,4 falli a partita (obiettivo 0-4), nessun cartellino.
+
+**Palla**: nei replay dell'utente nessun teletrasporto ne' strappo
+(`palla_anomalie.py`); quello che si vede e' la conduzione. Accelerazione
+orizzontale della palla a terra in possesso fuori dai tocchi
+(`palla_accel.py`; una palla vera fra due tocchi rallenta di 2-5 m/s^2):
+prima p90 73 m/s^2 e 29% dei fotogrammi oltre 30; dopo p90 34 e 15%. Resta
+la conduzione continua (da fermi, in protezione, nelle svolte strette), che
+porta la palla senza tocchi veri. Costanti della palla gia' vicine al vero
+(resistenza dell'aria 0,013 come un pallone reale, attrito a terra dal
+riferimento).
+
+**Esultanza**: nei 4 gol di v1 chi segna si allontana dalla porta verso la
+linea laterale e la bandierina; il primo piano lo mostra coi cartelloni
+dietro. Prima correva 7 m dritto davanti a se'. Ora (`rules.flagCelebration`)
+corre di scatto verso la bandierina dalla sua parte (4 m dentro le linee) e
+la clip finisce li'; i compagni vanno dove la clip lo porta (`main.cheer`).
+Gol forzato: arrivo alla bandierina in 3,7 s a 8,7 m/s, gesto all'arrivo.
+
+**Calcio d'inizio** (richiesta dell'utente): chi batte girato verso la
+propria porta passa in avanti rispetto al corpo (504_Pass_Stand_0) al
+compagno 11,7 m dietro; prima guardava avanti e colpiva all'indietro
+(445_KickOff_180). Nota in `docs/match3d-pes.md`.
+
+**Portiere** (comandi di PES 2021 in `docs/match3d-pes.md`): prima il
+portiere dell'utente non si comandava mai (decideva l'IA, rinvio dal fondo
+sempre lungo e dritto). Ora con la palla in mano o al piede lo comanda
+l'utente: si muove in area, X lancio, Triangolo nello spazio, Cerchio e
+Quadrato rinvio al volo (potenza = distanza), R1 + Cerchio rinvio alto, R1 a
+levetta ferma palla a terra; rinvio dal fondo con X, Triangolo, Cerchio,
+Quadrato. Sei scene provate (`scena-portiere.js`): tutte vanno; lanci con le
+mani 14-20 m/s (prima della correzione dell'arco 32 m/s). Nei video di
+riferimento l'utente non rinvia mai col portiere: il video 7 e' solo KFM27.
+
+Test di durata del blocco 1 (`soak_blocco1.log`): 4 violazioni in 10 partite
+(limite 7: 3 gol parabili, 1 posa ferma che trasla, gia' presenti prima),
+0 errori; 2,3 gol, 5,4 tiri, 1,4 falli, 0,6 scivolate a partita, contrasti
+vinti 10,8 (prima 9,7).
