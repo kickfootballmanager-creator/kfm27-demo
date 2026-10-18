@@ -136,7 +136,8 @@ export class AnimLibrary {
   // Pacchetti del livello: `start` prima della partita, `later` durante.
   async loadLevel(level) {
     const L = ANIMLIB.levels[level] || ANIMLIB.levels.low;
-    for (const p of L.start) await this.load(p);
+    // un pacchetto facoltativo che manca (meshy) non ferma la partita
+    for (const p of L.start) await this.load(p).catch((e) => { if (!ANIMLIB.optional.includes(p)) throw e; console.warn('anims: ' + p + ' assente'); });
     this.later = L.later.slice();
     return this;
   }

@@ -1010,12 +1010,15 @@ export const ANIM = {
 // Pacchetti della libreria di animazioni per livello di qualita' (anim-lib.js):
 // alto tutto all'avvio, medio l'essenziale all'avvio e il resto durante la
 // partita, basso solo l'essenziale. Fisica, IA e comandi non cambiano.
+// meshy: esultanze generate con Meshy sul Calciatore (capriola, ruota;
+// tools/match3d/meshy_build.py), nel mazzo delle esultanze con le Studio33.
 export const ANIMLIB = {
   levels: {
-    high: { start: ['core', 'more', 'extra'], later: [] },
-    medium: { start: ['core'], later: ['more', 'extra'] },
+    high: { start: ['core', 'more', 'extra', 'meshy'], later: [] },
+    medium: { start: ['core'], later: ['more', 'extra', 'meshy'] },
     low: { start: ['core'], later: [] }
-  }
+  },
+  optional: ['meshy']
 };
 
 // Telecamera di gioco come nel riferimento (docs/match3d-riferimento.md, A1):
@@ -1101,12 +1104,18 @@ export const RULES = {
   // finisce prima dello stacco segue `filler`. Fino a `gather.max` compagni
   // entro `gather.range` m lo raggiungono dopo `gather.delay` s, gli si fermano
   // attorno a `gather.radius` m ed esultano con le clip di `gather.clips`.
+  // Il cerchio sta dove la clip porta chi esulta; un posto a meno di
+  // `gather.pathClear` m dalla sua corsa si sposta di lato; la corsa della
+  // clip di un compagno si accorcia perche' si fermi a `gather.hug` m da lui.
   celebration: {
     clip: 'celebration', filler: '059_Ceremony',
-    gather: { delay: 0.8, max: 4, range: 40, radius: 2.4, clips: ['052_Ceremony', '033_Celebration_01_ForSequence', '059_Ceremony', '034_Celebration_02_ForSequence'] },
+    gather: { delay: 0.8, max: 4, range: 40, radius: 2.4, pathClear: 1.6, hug: 0.8, clips: ['052_Ceremony', '033_Celebration_01_ForSequence', '059_Ceremony', '034_Celebration_02_ForSequence'] },
     // gli altri si scansano a passo entro `dist` m dalla corsa di chi esulta,
     // fino a `ahead` s davanti a lui (main.clearWay)
-    clear: { dist: 1.8, ahead: 0.6 }
+    clear: { dist: 1.8, ahead: 0.6 },
+    // clip del pacchetto `pack` (Meshy): corsa di `run` m (a `margin` m dalle
+    // linee) durante la diretta, gesto `lead` s prima del primo piano
+    late: { pack: 'meshy', run: 7, margin: 3, lead: 0.2 }
   },
   // Calcio d'inizio come nel riferimento (4 calci d'inizio di v1, dal radar):
   // al centro solo chi batte, che passa all'indietro al giocatore del punto

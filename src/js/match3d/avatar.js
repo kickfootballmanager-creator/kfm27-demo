@@ -11,6 +11,9 @@ const GLB_URL = new URL('../../assets/match3d/player.glb', import.meta.url).href
 // Clip Mixamo di riserva (player.glb): spostamento della radice e fotogrammi
 // chiave misurati sugli FBX originali (tools/match3d/measure_clips.py).
 const MOTION_URL = new URL('../../assets/match3d/player.motion.json', import.meta.url).href;
+// Teste generate con Meshy (tools/match3d/meshy_heads.py), fuori da git: se
+// manca il file tutti hanno la testa del Calciatore.
+const HEADS_URL = new URL('../../assets/match3d/heads.glb', import.meta.url).href;
 
 // Materiali di player.glb nell'ordine dei colori passati allo shader;
 // l'ultimo colore (6) e' il secondo colore della maglia.
@@ -26,10 +29,12 @@ export function loadPlayerModel(level = 'low') {
   if (!cache) {
     cache = Promise.all([
       new GLTFLoader().loadAsync(GLB_URL),
-      fetch(MOTION_URL).then((r) => (r.ok ? r.json() : { clips: {} })).catch(() => ({ clips: {} }))
-    ]).then(([gltf, motion]) => {
+      fetch(MOTION_URL).then((r) => (r.ok ? r.json() : { clips: {} })).catch(() => ({ clips: {} })),
+      loadHeads().catch(() => null)
+    ]).then(([gltf, motion, heads]) => {
       const tpl = buildTemplate(gltf);
       tpl.motion = motion.clips || {};
+      tpl.heads = heads ? prepareHeads(tpl, heads) : null;
       return tpl;
     }).catch((e) => { cache = null; throw e; });
   }
@@ -130,6 +135,122 @@ export function clipDuration(tpl, clip) {
 export function gestureTable(tpl, clip) {
   if (!(clip in tpl.gposes)) tpl.gposes[clip] = gesturePoses(tpl.meta[clip], tpl.scale);
   return tpl.gposes[clip];
+}
+
+// heads.glb: nel JSON le teste (nome, pelle, riquadro UV, immagine), nel
+// binario le posizioni di riposo dei vertici di testa e collo, gli
+// spostamenti di ogni testa e i PNG dei riquadri.
+async function loadHeads() {
+  const res = await fetch(HEADS_URL);
+  if (!res.ok) return null;
+  const buf = await res.arrayBuffer();
+  const dv = new DataView(buf);
+  const jl = dv.getUint32(12, true);
+  const json = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, 20, jl)));
+  const bin = 28 + jl;
+  const view = (i) => { const v = json.bufferViews[i]; return new Uint8Array(buf, bin + v.byteOffset, v.byteLength); };
+  const floats = (r) => new Float32Array(view(r.view).slice().buffer, 0, r.n);
+  const E = json.extras;
+  const list = await Promise.all(E.heads.map(async (h) => ({
+    ...h,
+    disp: floats(h.disp),
+    image: await createImageBitmap(new Blob([view(h.image.view)], { type: h.image.mime }))
+  })));
+  return { list, positions: floats(E.positions) };
+}
+
+// Vertici del corpo (pelle) che una testa sposta: indice nella geometria
+// unita -> indice nelle posizioni di heads.glb, per posizione di riposo.
+function prepareHeads(tpl, H) {
+  const key = (x, y, z) => Math.round(x * 1000) + ',' + Math.round(y * 1000) + ',' + Math.round(z * 1000);
+  const keys = new Map();
+  const P = H.positions;
+  for (let k = 0; k < P.length / 3; k++) keys.set(key(P[k * 3], P[k * 3 + 1], P[k * 3 + 2]), k);
+  const pos = tpl.geometry.attributes.position, part = tpl.geometry.attributes.kitPart;
+  const map = new Int32Array(pos.count).fill(-1);
+  let found = 0;
+  for (let i = 0; i < pos.count; i++) {
+    if (part.getX(i) !== 0) continue;
+    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+    let k = keys.get(key(x, y, z));
+    // arrotondamento al bordo di un millesimo: i vicini
+    for (let dx = -1; k === undefined && dx <= 1; dx++) for (let dy = -1; k === undefined && dy <= 1; dy++) for (let dz = -1; k === undefined && dz <= 1; dz++) {
+      k = keys.get(Math.round(x * 1000) + dx + ',' + (Math.round(y * 1000) + dy) + ',' + (Math.round(z * 1000) + dz));
+    }
+    if (k !== undefined) { map[i] = k; found++; }
+  }
+  return { list: H.list, map, found, built: {} };
+}
+
+// Una testa di Meshy: geometria con testa e collo spostati (normali rifatte
+// saldando i vertici doppi delle cuciture), senza i capelli del Calciatore,
+// e texture del corpo tinta come la nuova pelle con la testa sopra.
+export function headVariant(tpl, v) {
+  const H = tpl.heads;
+  if (!H || v < 0 || v >= H.list.length) return null;
+  if (H.built[v]) return H.built[v];
+  const h = H.list[v], base = tpl.geometry;
+  const g = base.clone();
+  const pos = g.attributes.position, nor = g.attributes.normal, part = g.attributes.kitPart;
+  const moved = [];
+  for (let i = 0; i < pos.count; i++) {
+    const k = H.map[i];
+    if (k < 0) continue;
+    pos.setXYZ(i, pos.getX(i) + h.disp[k * 3], pos.getY(i) + h.disp[k * 3 + 1], pos.getZ(i) + h.disp[k * 3 + 2]);
+    moved.push(i);
+  }
+  const idx = g.index.array;
+  if (h.hair) {
+    const keep = [];
+    for (let t = 0; t < idx.length; t += 3) if (part.getX(idx[t]) !== 5) keep.push(idx[t], idx[t + 1], idx[t + 2]);
+    g.setIndex(keep);
+  }
+  const ix = g.index.array;
+  const wkey = (i) => Math.round(pos.getX(i) * 1e4) + ',' + Math.round(pos.getY(i) * 1e4) + ',' + Math.round(pos.getZ(i) * 1e4);
+  const touched = new Set(moved), acc = new Map();
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+  for (let t = 0; t < ix.length; t += 3) {
+    const i0 = ix[t], i1 = ix[t + 1], i2 = ix[t + 2];
+    if (!touched.has(i0) && !touched.has(i1) && !touched.has(i2)) continue;
+    a.fromBufferAttribute(pos, i0); b.fromBufferAttribute(pos, i1); c.fromBufferAttribute(pos, i2);
+    const n = new THREE.Vector3().crossVectors(b.sub(a), c.sub(a));
+    for (const i of [i0, i1, i2]) {
+      const kk = wkey(i);
+      const s = acc.get(kk);
+      if (s) s.add(n); else acc.set(kk, n.clone());
+    }
+  }
+  for (const i of moved) {
+    const s = acc.get(wkey(i));
+    if (s && s.lengthSq() > 0) { s.normalize(); nor.setXYZ(i, s.x, s.y, s.z); }
+  }
+  pos.needsUpdate = nor.needsUpdate = true;
+  // texture: corpo tinto come la pelle della testa, poi il riquadro della testa
+  const src = tpl.skinMap && tpl.skinMap.image;
+  let map = tpl.skinMap || null;
+  if (src) {
+    const cv = document.createElement('canvas');
+    cv.width = src.width; cv.height = src.height;
+    const cx = cv.getContext('2d', { willReadFrequently: true });
+    cx.drawImage(src, 0, 0);
+    const tint = h.tint;   // la stessa del trasferimento (meshy_heads.py)
+    const im = cx.getImageData(0, 0, cv.width, cv.height), d = im.data;
+    for (let p = 0; p < d.length; p += 4) { d[p] = Math.min(255, d[p] * tint[0]); d[p + 1] = Math.min(255, d[p + 1] * tint[1]); d[p + 2] = Math.min(255, d[p + 2] * tint[2]); }
+    cx.putImageData(im, 0, 0);
+    const [u0, v0, u1, v1] = h.rect;
+    cx.drawImage(h.image, u0 * cv.width, (1 - v1) * cv.height, (u1 - u0) * cv.width, (v1 - v0) * cv.height);
+    map = new THREE.CanvasTexture(cv);
+    for (const k of ['flipY', 'colorSpace', 'wrapS', 'wrapT', 'anisotropy', 'magFilter', 'minFilter']) map[k] = tpl.skinMap[k];
+  }
+  H.built[v] = { geometry: g, map };
+  return H.built[v];
+}
+
+// Testa di un giocatore: stabile per giocatore (seme), -1 = quella del Calciatore.
+export function headOf(tpl, seed) {
+  const n = tpl.heads ? tpl.heads.list.length : 0;
+  if (!n) return -1;
+  return (seed % (n + 1)) - 1;
 }
 
 // Le sei mesh diventano una sola SkinnedMesh (una draw call per giocatore):
@@ -247,10 +368,11 @@ function color(css, fallback) {
 
 // Un materiale per squadra: colori della divisa e disegno della maglia nello
 // shader, la pelle dalla texture del modello.
-export function kitMaterial(tpl, kit) {
+// `skinMap`: texture del corpo con una testa di Meshy (headVariant), altrimenti quella del modello.
+export function kitMaterial(tpl, kit, skinMap) {
   // due facce: sotto l'orlo della maglia, nei polsini e nei pantaloncini si vede
   // l'interno della stoffa (sotto i vestiti il corpo non c'e': si vedeva l'erba)
-  const m = new THREE.MeshStandardMaterial({ map: tpl.skinMap || null, roughness: MODEL.roughness, metalness: 0, side: THREE.DoubleSide });
+  const m = new THREE.MeshStandardMaterial({ map: skinMap || tpl.skinMap || null, roughness: MODEL.roughness, metalness: 0, side: THREE.DoubleSide });
   const colors = [
     new THREE.Color(1, 1, 1),
     color(kit.primary, '#e8ecf0'),

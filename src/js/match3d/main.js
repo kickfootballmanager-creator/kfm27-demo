@@ -34,6 +34,11 @@ const KEY_HINT = hintRow('Attacco', ['WASD muovi', 'J passaggio', 'U tiro', 'K c
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 // scarto casuale centrato in zero (somma di tre uniformi, come in gestures.js)
 const gauss = () => (Math.random() + Math.random() + Math.random() - 1.5) * 2;
+// distanza di (px, pz) dal segmento a-b
+const segDist = (px, pz, ax, az, bx, bz) => {
+  const dx = bx - ax, dz = bz - az, l2 = dx * dx + dz * dz || 1, t = clamp(((px - ax) * dx + (pz - az) * dz) / l2, 0, 1);
+  return Math.hypot(px - (ax + dx * t), pz - (az + dz * t));
+};
 // nome sopra il giocatore: lungo diventa iniziale e cognome (Lautaro Martinez -> L. Martinez)
 const shortName = (n) => { const w = String(n || '').trim().split(/\s+/); return w.length > 1 && w.join(' ').length > MARKS.nameMax ? w[0][0] + '. ' + w.slice(1).join(' ') : w.join(' '); };
 
@@ -751,19 +756,48 @@ class Match {
       s.filled = true;
       return this.rules.celebrate(p, RULES.celebration.filler);
     }
-    const near = (q) => Math.hypot(q.pos.x - c.pos.x, q.pos.z - c.pos.z);
+    // il cerchio dei compagni sta dove la clip porta chi esulta (la ruota corre 3,6 m)
+    const E = this.celebrationEnd(c);
+    const near = (q) => Math.hypot(q.pos.x - E.x, q.pos.z - E.z);
     if (!s.mates) {
       s.mates = this.teams[c.team].players.filter((q) => q !== c && !q.keeper && !q.down && near(q) < G.range).sort((a, b) => near(a) - near(b)).slice(0, G.max);
       s.joined = new Set();
     }
     const i = s.mates.indexOf(p);
     if (i < 0 || s.joined.has(p)) return false;
-    const dx = p.pos.x - c.pos.x, dz = p.pos.z - c.pos.z, d = Math.hypot(dx, dz) || 1;
+    const dx = p.pos.x - E.x, dz = p.pos.z - E.z, d = Math.hypot(dx, dz) || 1;
     const r = G.radius + 0.3 * i;
-    if (d > r + 0.4) { p.goTo(dt, c.pos.x + dx / d * r, c.pos.z + dz / d * r, headingOf(-dx, -dz)); return true; }
+    let ux = dx / d, uz = dz / d;
+    // un posto del cerchio sulla corsa di chi esulta va di lato, dalla parte del compagno
+    const px = E.x - E.sx, pz = E.z - E.sz, pl = Math.hypot(px, pz);
+    if (pl > 0.5 && segDist(E.x + ux * r, E.z + uz * r, E.sx, E.sz, E.x, E.z) < G.pathClear) {
+      const nx = -pz / pl, nz = px / pl, sg = nx * dx + nz * dz >= 0 ? 1 : -1;
+      ux = nx * sg; uz = nz * sg;
+    }
+    const tx = E.x + ux * r, tz = E.z + uz * r;
+    if (Math.hypot(p.pos.x - tx, p.pos.z - tz) > 0.4) { p.goTo(dt, tx, tz, headingOf(E.x - tx, E.z - tz)); return true; }
     s.joined.add(p);
-    if (!this.rules.celebrate(p, G.clips[i % G.clips.length])) p.drive(dt, 0, 0, 0, { face: { x: -dx, z: -dz } });
+    if (!this.rules.celebrate(p, G.clips[i % G.clips.length])) p.drive(dt, 0, 0, 0, { face: { x: E.x - p.pos.x, z: E.z - p.pos.z } });
+    else {
+      // la clip del compagno lo porta avanti fino a reach m (la 052 avanza e poi
+      // torna un po'): si ferma a `hug` m da chi esulta
+      const a = p.action;
+      let reach = 0;
+      for (let t = 0; t <= a.end; t += 0.1) reach = Math.max(reach, rootAt(this.tpl, a.clip, a.from + t).a - a.r0.a);
+      if (reach > 0.3) a.scaleA = clamp((Math.hypot(p.pos.x - E.x, p.pos.z - E.z) - G.hug) / reach, 0, 1);
+    }
     return true;
+  }
+
+  // Dove finisce la corsa dell'esultanza in corso di `c` (x, z) e da dove parte (sx, sz).
+  celebrationEnd(c) {
+    const a = c.action;
+    if (a && a.celebrateRun) return { x: a.endX, z: a.endZ, sx: a.tx, sz: a.tz };
+    if (!a || !a.root || !a.celebrate) return { x: c.pos.x, z: c.pos.z, sx: c.pos.x, sz: c.pos.z };
+    const r = rootAt(this.tpl, a.clip, a.from + a.end);
+    const da = (r.a - a.r0.a) * (a.scaleA ?? 1), ds = (r.s - a.r0.s) * (a.scaleS ?? 1);
+    const fx = Math.sin(a.h0), fz = Math.cos(a.h0);
+    return { x: a.x0 + fx * da - fz * ds, z: a.z0 + fz * da + fx * ds, sx: a.x0, sz: a.z0 };
   }
 
   // Corpi che separate() non sposta: a terra, dentro un gesto che li muove con

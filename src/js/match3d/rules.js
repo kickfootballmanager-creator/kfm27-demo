@@ -1,4 +1,4 @@
-import { RULES, PITCH, BALL, CONTROL, FOUL, ADVANTAGE, FK, REACT } from './config.js';
+import { RULES, PITCH, BALL, CONTROL, FOUL, ADVANTAGE, FK, REACT, REPLAY } from './config.js';
 import { headingOf, choosePass } from './player.js';
 import { rollSpeedFor } from './ball.js';
 import { rootAction, react } from './gestures.js';
@@ -631,7 +631,8 @@ export class Rules {
     const far = (p) => Math.hypot(p.pos.x - b.x, p.pos.z - b.z);
     const p = ok(scorer) ? scorer : m.teams[team].players.filter(ok).sort((x, y) => far(x) - far(y))[0] || null;
     if (p) {
-      this.celebrate(p, this.nextCelebration());
+      const clip = this.nextCelebration();
+      if (!this.lateCelebration(p, clip)) this.celebrate(p, clip);
       m.cameraFocus = p;
     }
     m.show.p = p;
@@ -649,6 +650,27 @@ export class Rules {
       for (let i = d.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [d[i], d[j]] = [d[j], d[i]]; }
     }
     return this.deck.length ? this.deck.pop() : RULES.celebration.clip;
+  }
+
+  // Esultanze di Meshy (acrobazie quasi sul posto): come nel riferimento chi
+  // ha segnato corre durante la diretta e fa il gesto nel primo piano. La
+  // corsa sa gia' dove la clip lo portera' (endX, endZ: lo usa main.cheer).
+  lateCelebration(p, clip) {
+    const m = this.m, meta = m.tpl.meta[clip], L = RULES.celebration.late;
+    if (!meta || meta.pack !== L.pack || !clipDuration(m.tpl, clip)) return false;
+    const hl = PITCH.length / 2 - L.margin, hw = PITCH.width / 2 - L.margin;
+    const tx = Math.max(-hl, Math.min(hl, p.pos.x + Math.sin(p.heading) * L.run));
+    const tz = Math.max(-hw, Math.min(hw, p.pos.z + Math.cos(p.heading) * L.run));
+    const h = Math.atan2(tx - p.pos.x, tz - p.pos.z);
+    const r0 = rootAt(m.tpl, clip, 0), r1 = rootAt(m.tpl, clip, clipDuration(m.tpl, clip));
+    const da = r1.a - r0.a, ds = r1.s - r0.s, fx = Math.sin(h), fz = Math.cos(h);
+    p.action = {
+      t: 0, rate: 1, end: Math.max(0.5, REPLAY.live - L.lead), moves: true, celebrateRun: true,
+      tx, tz, endX: tx + fx * da - fz * ds, endZ: tz + fz * da + fx * ds,
+      tick: (a, dt) => { p.goTo(dt, tx, tz, h); },
+      onEnd: () => { this.celebrate(p, clip); }
+    };
+    return true;
   }
 
   // Esultanza intera di `p`, con la corsa della clip; false se la clip manca.

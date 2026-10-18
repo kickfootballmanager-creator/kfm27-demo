@@ -138,7 +138,10 @@ class Writer:
         return {"@": off, "n": int(arr.size)}
 
 
-def pack(raw, out, metas, hips):
+def pack(raw, out, metas, hips, keep_rest=()):
+    """keep_rest: nomi delle ossa la cui traccia resta anche se ferma nella posa
+    di riposo (una chiave sola): senza traccia, nella fusione con un'altra clip
+    l'osso tornerebbe alla T-pose."""
     j, bin_ = read_glb(raw)
     nodes = j["nodes"]
     name_of = [n.get("name") for n in nodes]
@@ -179,7 +182,7 @@ def pack(raw, out, metas, hips):
         # (senza tracce il mixer di three.js le riporta alla posa originale)
         dev = quat_angle(R, R[:, :1]).max(axis=1)
         const = dev < tol * 0.5
-        at_rest = np.array([const[k] and quat_angle(R[k, 0], rest[nd]) < tol[k] * 0.5 for k, (nd, _) in enumerate(rot_ch)])
+        at_rest = np.array([const[k] and quat_angle(R[k, 0], rest[nd]) < tol[k] * 0.5 and name_of[nd] not in keep_rest for k, (nd, _) in enumerate(rot_ch)])
         moving = ~const
         keep = reduce_frames(times, R[moving] if moving.any() else None, tol[moving], pos_ch)
         tkeep = times[keep]

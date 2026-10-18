@@ -1155,3 +1155,18 @@ CF convertito (`tools/match3d/stadium_build.py`, file fuori da git):
 - Disegno: basso 112 chiamate e 538.000 triangoli (senza stadio 76 e
   246.000), alto 143 e 835.000. Test di durata: 6 violazioni in 10 partite,
   statistiche nell'obiettivo.
+
+### Blocco F: Meshy (18/10)
+
+- Mancavano la capriola all'indietro e la ruota (tabella delle esultanze,
+  gol 2 e 3 di v1). Ora: capriola (libreria Meshy), ruota poi pugni al cielo
+  e capriola poi braccia alzate (testo -> movimento), sul Calciatore.
+  Come nel riferimento chi segna corre durante la diretta (4,2 s) e fa il
+  gesto nel primo piano; i compagni lo raggiungono dove la clip finisce e
+  si fermano a 0,8 m (prima uno gli entrava dentro).
+  Confronto: `debug/riferimenti/gesti2/video/8_esultanza_ruota.mp4` e
+  `9_esultanza_capriola.mp4` (riferimento sopra, KFM27 sotto, 8,5 s).
+- Volti generici: 17 teste inventate (nessun volto reale, nessun marchio)
+  con capelli e barba, come i giocatori senza licenza di PES.
+- Gesti principali rifatti con la versione di oggi: `gesti2/video/`
+  1_passaggio ... 7_parata, stessa finestra del riferimento di allora.

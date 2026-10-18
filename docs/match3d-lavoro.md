@@ -10,7 +10,13 @@ skill aggiornata.
 
 ## Da dove ripartire
 
-Leggere "Stato" qui sotto: l'ultimo blocco "in corso" e la sua lista "manca".
+Tutti i blocchi A-F sono fatti (18/10). Restano, in ordine: replay dopo una
+grande parata e VAR sul fuorigioco (non fatti); aspetto dei giocatori dai dati
+(oggi testa scelta col seme del giocatore, non da `appearance.json`); prova
+dello stadio su un telefono vero (livello basso 538.000 triangoli); decidere
+cosa fare dei 12 file non committati di `kfm27`. File fuori da git creati qui
+in `kfm27-lavoro/src/assets/match3d/`: `stadium/stadium-high|low.glb`,
+`heads.glb`, `anims-meshy.glb` (si rifanno con gli script in `tools/match3d/`).
 
 ## Come e' organizzato
 
@@ -44,7 +50,7 @@ Leggere "Stato" qui sotto: l'ultimo blocco "in corso" e la sua lista "manca".
 | C, equilibrio | fatto | vedi registro |
 | D, gol e calcio d'inizio | fatto | vedi registro |
 | E, stadio | fatto | vedi registro |
-| F, Meshy | da fare | |
+| F, Meshy | fatto | vedi registro |
 
 Crediti Meshy spesi: 0 (saldo 2992 il 17/10).
 
@@ -188,3 +194,48 @@ carrierThink decide appena ricevuta palla (tenuta 0,5 s); difesa larga
   terreno erboso dietro i cartelloni), disegno misurato ai tre livelli.
 - Test di durata: 6 violazioni in 10 partite (limite 7), 0 errori,
   statistiche nell'obiettivo. Commit e push del blocco E.
+
+### Blocco F (fatto)
+
+- Crediti Meshy: 587 in tutto (2992 -> 2405), sotto i 1500 concessi.
+  Registro di ogni compito in `src/assets/match3d/source/meshy/registro.json`;
+  la chiave sta solo in MESHY_API_KEY (`tools/match3d/meshy.py` non la stampa).
+- Animazioni, pilota poi serie: rigging del Calciatore (5), capriola dalla
+  libreria (azione 452, 3), "ruota poi pugni al cielo" e "capriola poi braccia
+  alzate" da testo (10 + 3 l'una; la ruota rifatta una volta), 47 crediti.
+  `tools/match3d/meshy_build.py` le porta sul Calciatore (stesse ossa per
+  nome, rotazioni nel mondo rispetto alla posa di riposo, corsa nei metadati)
+  in `anims-meshy.glb`, ruolo celebrate: entrano nel mazzo delle esultanze
+  (livello alto subito, medio in secondo piano, pacchetto facoltativo).
+- Teste: pilota (30) poi 16 teste (480) e una rifatta (30). Meshy restituisce
+  sempre una testa intera anche chiedendo "solo capelli": teste, capigliature
+  e barbe arrivano insieme, 17 combinazioni (carnagioni chiare, olivastre,
+  scure, est asiatica; rasato, cresta, ricci, treccine, grigi, crocchia;
+  barba corta, piena, rossa, pizzetto). Master 4K in `source/meshy`.
+  `tools/match3d/meshy_heads.py`: testa del Calciatore proiettata su quella di
+  Meshy (peso da 0 sopra il colletto a 1 sotto la mascella: giunzione
+  identica), colore trasferito nelle UV del corpo (punto piu' vicino),
+  riquadro di 512 px, tinta della pelle del corpo. `heads.glb` (6,4 MB,
+  ignorato da git). In gioco (`avatar.headVariant`, `headOf`): testa stabile
+  per giocatore, una draw call come prima.
+- Esultanze: il cerchio dei compagni sta dove la clip porta chi esulta, un
+  posto sulla sua corsa va di lato, la corsa della clip del compagno si
+  accorcia a 0,8 m da lui (prima la 052 lo portava dentro chi esulta).
+  Distanza minima misurata con gol forzati: 0,54-0,72 m.
+- Come nel riferimento le acrobazie di Meshy si vedono nel primo piano: chi
+  segna corre 7 m durante la diretta e la clip parte 0,2 s prima dello
+  stacco (`RULES.celebration.late`, `rules.lateCelebration`).
+- Il primo test di durata del blocco ha dato 10 violazioni: 6 erano il
+  controllo "clip con ossa senza traccia" (glb_pack toglieva le tracce delle
+  ossa ferme nella posa di riposo; ora `keep_rest` le tiene per le clip di
+  Meshy). Senza quelle, 4.
+- Il secondo test di durata: 8 violazioni, 3 del controllo del braccio sulle
+  clip di Meshy (capriola: un gomito piegato al contrario per 2 fotogrammi;
+  ruota: gomito 1-3 gradi fuori dalla cerniera). `meshy_build.elbow` ora
+  raddrizza l'avambraccio fino a 20 gradi di piega quando la cerniera supera
+  30 gradi (45 fotogrammi): misurato col `rig.armAngles` del gioco su ogni
+  fotogramma, cerniera massima 30,5 gradi (limite 35), torsione 49 (70).
+- Test di durata finale del blocco F: 5 violazioni (portiere 4, osso 1),
+  0 errori, statistiche nell'obiettivo. Commit e push del blocco F.
+- Video affiancati del resoconto: `debug/riferimenti/gesti2/video/` (7 gesti
+  e 2 esultanze).

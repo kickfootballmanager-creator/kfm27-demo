@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { ANIM, PLAYER, PITCH, GOAL, PASS, SHOT, ATTR, THROUGH, CROSS, FORMATIONS, FORMATION_ROLES, KICK, BALL, DUEL } from './config.js';
 import { playerParams } from './attributes.js';
-import { Avatar } from './avatar.js';
+import { Avatar, headVariant, headOf, kitMaterial } from './avatar.js';
 import { Locomotion } from './anim.js';
 import { pickTransition, stopTime, rootPath, distAt, timeAtDist, timeAtSpeed } from './anim-pick.js';
 import { rollSpeedFor, rollSpeedIn, rollTime, loftFor } from './ball.js';
@@ -472,7 +472,11 @@ export function buildTeam(team, side, attackDir, tpl, material, keeperMaterial, 
     const data = src
       ? { ...src, number: src.number || i + 1, role: src.role || slot.role }
       : { id: null, name: '', number: i + 1, role: slot.role, overall: ATTR.fallback };
-    const pl = new Player(data, keeper ? keeperKit : kit, tpl, keeper ? keeperMaterial : material, shadowTex, attackDir);
+    // testa: stabile per giocatore; con una testa di Meshy materiale e geometria propri
+    const head = headVariant(tpl, headOf(tpl, seedOf('testa#' + (data.id ?? '') + (data.name || '') + '#' + data.number)));
+    const mat = head ? kitMaterial(tpl, keeper ? keeperKit : kit, head.map) : (keeper ? keeperMaterial : material);
+    const pl = new Player(data, keeper ? keeperKit : kit, tpl, mat, shadowTex, attackDir);
+    if (head) pl.avatar.body.geometry = head.geometry;
     pl.team = side;
     pl.slot = slot;
     pl.keeper = keeper;
